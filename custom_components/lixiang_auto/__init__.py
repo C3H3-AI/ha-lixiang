@@ -546,16 +546,17 @@ def _async_register_services(hass: HomeAssistant) -> None:
                         when = (_json.loads(raw) or {}).get("picTime") or raw
                     except (ValueError, TypeError):
                         when = raw
-            if not when:
-                result[vin] = {"error": "无拍照时间（先触发一次远程拍照）"}
-                continue
-
+            # ★ 2026-10-03 修 bug：**不要因为 when 为空就提前退出**。
+            #   此前是 `if not when: continue` —— 而 when 来自实体属性，
+            #   车辆离线/实体 unavailable 时它是空的，于是根本走不到
+            #   下面读 VSS fileKeys 的逻辑 → 永远返回「无拍照时间」。
+            #   现在：先尽力读 VSS，when 仅用于展示。
             try:
                 # ★ 2026-10-03 决定性修正：**不要拼路径**。
                 #   VSS `Vehicle.360Svm.Park.Filekey` 的 JSON 自带 fileKeys
                 #   （App 的 XPhotoDataHandle.smali 就是这么用的）。
                 #   拼路径之所以总是失败：文件名时间戳 ≠ picTime
-                #   （实测 20:27:20 vs 20260905202717，差 3 秒）。
+                #   （实测 18:43:29 vs 20260903184323，差 6 秒）。
                 keys = []
                 raw_fk = None
                 coord = d.get("coordinator")
@@ -563,11 +564,25 @@ def _async_register_services(hass: HomeAssistant) -> None:
                     sig = (coord.data.get("vss") or {}).get(
                         "Vehicle.360Svm.Park.Filekey")
                     raw_fk = sig.get("value") if isinstance(sig, dict) else None
+                # 缓存里没有 → 直接问一次服务端（VSS 缓存会滞后，实测差 3 小时）
+                if not raw_fk:
+                    try:
+                        live = await hass.async_add_executor_job(
+                            api.get_vss_state, ["Vehicle.360Svm.Park.Filekey"])
+                        sig2 = (live.get("data") or live).get(
+                            "Vehicle.360Svm.Park.Filekey") or {}
+                        raw_fk = sig2.get("value") if isinstance(sig2, dict) else None
+                    except Exception:  # noqa: BLE001
+                        pass
                 if raw_fk:
                     fk_map = await hass.async_add_executor_job(
                         api.svm_filekeys_from_vss, raw_fk)
                     keys = list(fk_map.values())
-                if not keys:
+                    # 顺带刷新展示用的时间（VSS 里的 picTime 比实体属性新）
+                    _pt = await hass.async_add_executor_job(api.svm_pic_time, raw_fk)
+                    if _pt:
+                        when = _pt
+                if not keys and when:
                     # 兜底：真没有 fileKeys 时才按模板拼（通常拿不到）
                     keys = await hass.async_add_executor_job(
                         api.svm_photo_filekeys, when, want_car_type or "")
