@@ -287,15 +287,70 @@ class LixiangLocationPage extends HTMLElement {
     const stt = this._txt(this._eid("photo_status"));
     q("#v-photots").textContent = info || stt || "暂无记录";
 
-    // 照片占位（集成无图片）
+    // ★ 2026-10-03：驻车照片改为【真实图片】
+    //   链路（抓包逆向）：VSS 拍照时间 → 构造 5 路 OSS key →
+    //   lixiang_auto.get_svm_photo 换签名 URL → <img src>。
+    //   URL 有时效，所以缓存 2 分钟（够一次浏览，又不至于显示过期图）。
+    this._renderPhotos(q, info);
+  }
+
+  /** 渲染 5 路驻车照片（前/后/左/右/俯视）。 */
+  async _renderPhotos(q, photoTime) {
     const box = q("#photos");
-    if (!box.dataset.done) {
-      const cams = [["俯视","ic_home_zhengyan.webp"],["前","ic_home_navigation.webp"],["后","ic_home_return.webp"]];
-      box.innerHTML = cams.map(([lbl, ic]) =>
-        `<div class="ph"><div class="none">${lbl}视图<br>（图片需 App 查看）</div>
+    if (!box) return;
+    const ANGLES = [["Top", "俯视"], ["Front", "前"], ["Rear", "后"],
+                    ["Left", "左"], ["Right", "右"]];
+
+    // 首次：占位骨架（避免空白闪烁）
+    if (!box.dataset.init) {
+      box.dataset.init = "1";
+      box.innerHTML = ANGLES.map(([k, lbl]) =>
+        `<div class="ph" data-a="${k}"><div class="none">${lbl}视图<br>加载中…</div>
          <div class="lbl">${lbl}</div></div>`).join("");
-      box.dataset.done = "1";
     }
+
+    const stamp = String(photoTime || "");
+    const now = Date.now();
+    if (this._phCache && this._phCache.stamp === stamp &&
+        now - this._phCache.at < 120000) {
+      this._paintPhotos(box, this._phCache.urls, ANGLES);
+      return;
+    }
+    if (this._phBusy) return;
+    this._phBusy = true;
+    try {
+      const res = await this._hass.callService(
+        "lixiang_auto", "get_svm_photo",
+        photoTime ? { time: photoTime } : {}, undefined, false, true);
+      const payload = (res && (res.result || res.response)) || {};
+      const first = Object.values(payload)[0] || {};
+      const urls = first.urls || {};
+      this._phCache = { stamp, urls, at: Date.now() };
+      this._paintPhotos(box, urls, ANGLES, first.error);
+    } catch (err) {
+      this._paintPhotos(box, {}, ANGLES, String(err && err.message || err));
+    } finally {
+      this._phBusy = false;
+    }
+  }
+
+  /** 把 URL 填进对应方位；缺失的显示原因而不是假装有图。 */
+  _paintPhotos(box, urls, angles, err) {
+    const list = Object.entries(urls || {});
+    angles.forEach(([key, lbl]) => {
+      const cell = box.querySelector(`.ph[data-a="${key}"]`);
+      if (!cell) return;
+      const hit = list.find(([k]) => k && k.includes(`picIn${key}.jpg`));
+      if (hit) {
+        cell.innerHTML = `<img src="${hit[1]}" alt="${lbl}视图" loading="lazy"
+             style="width:100%;height:100%;object-fit:cover;border-radius:8px">
+           <div class="lbl">${lbl}</div>`;
+      } else {
+        const why = err ? "获取失败" : (list.length ? "该方位无图" : "尚未拍照");
+        cell.innerHTML = `<div class="none">${lbl}视图<br>（${why}）</div>
+           <div class="lbl">${lbl}</div>`;
+      }
+    });
   }
 
   _haversine(lat1, lon1, lat2, lon2) {
