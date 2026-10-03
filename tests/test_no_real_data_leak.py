@@ -68,7 +68,11 @@ SKIP_PARTS = (
 # 说明：这些是"看起来像真实数据"的形态，不是具体值。
 
 # VIN：HLX 开头 + 14 位（排除全 X 的脱敏占位）
-RE_VIN = re.compile(r"\bHLX(?!32X{6,})[A-Z0-9]{12,}\b")
+# VIN：HLX 开头 + 14 位。排除两类：
+#   ① 全 X 脱敏占位（HLX32XXXXXXXXXXXX）
+#   ② 明显的构造值（含 TEST/FAKE/DUMMY/EXAMPLE 字样）
+RE_VIN = re.compile(r"\bHLX(?![A-Z0-9]*(?:TEST|FAKE|DUMMY|EXAMPLE))"
+                    r"(?!32X{6,})[A-Z0-9]{12,}\b")
 
 # 车牌：省份简称 + 字母 + 5 位（排除示例号）
 RE_PLATE = re.compile(
@@ -264,6 +268,7 @@ _PHONE_TAIL = "3" + "6776363"                 # 8 位（构造，非真实号）
 SAMPLES = [
     ("HLX32" + _VIN_TAIL, True),              # 命中 VIN 规则
     ("HLX32XXXXXXXXXXXX", False),             # 脱敏占位
+    ("HLX32TESTVIN00000", False),             # 构造值（含 TEST）
     (_PROV + "A12345", False),                # 示例车牌（白名单）
     (_PROV + _ORG + "FS3517", True),          # 命中车牌规则
     ("13800138000", False),                   # 官方示例号
