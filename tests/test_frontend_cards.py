@@ -101,7 +101,10 @@ def test_static_path_registered():
 def test_cards_no_sensitive_data():
     """卡片不得含敏感信息。"""
     # 排除脱敏占位符（全 X）
-    pats = [r"HLX(?!32X{12})[A-Z0-9]{14}", r"1[3-9]\d{9}", r"nzy\d{6}"]
+    # ★ 手机号规则加 \b 边界：否则长数字常量（如 GCJ-02 的偏心率常量）
+    #   中间会命中 1[3-9]\d{9} 造成误报（实测会误报为手机号）。
+    #   真实手机号单独成串，前后不会紧邻其他数字。
+    pats = [r"HLX(?!32X{12})[A-Z0-9]{14}", r"\b1[3-9]\d{9}\b", r"nzy\d{6}"]
     for fname in EXPECTED:
         src = (CARDS / fname).read_text(encoding="utf-8")
         for p in pats:
