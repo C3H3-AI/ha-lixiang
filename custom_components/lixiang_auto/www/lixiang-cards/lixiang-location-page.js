@@ -12,8 +12,11 @@
  *   sensor.360 拍照状态 / 拍照信息
  *
  * 能力边界：
- *   ⚠️ 驻车照片图片本身不在集成里（只有状态），需 App 查看
- *   ✅ 闪灯/鸣笛/拍照 可触发
+ *   ✅ 驻车照片可显示（2026-10-03 打通）：
+ *      VSS 拍照时间 → 构造 5 路 OSS key → lixiang_auto.get_svm_photo
+ *      换签名 URL → <img>。链路逆向自 5 月抓包。
+ *   ✅ 闪灯/鸣笛 可触发
+ *   ⚠️ 触发拍照（button.远程拍照）实测 2009 —— 与充电同因，需 JOB 通道
  */
 
 const CARD_TAG = "lixiang-location-page";
@@ -88,6 +91,32 @@ const STYLE = `
   .ph img { width:100%; height:100%; object-fit:cover; }
   .ph .lbl { position:absolute; left:8px; top:8px; font-size:11px; color:#fff;
              background:rgba(0,0,0,.45); padding:2px 7px; border-radius:6px; }
+  .ph { cursor:pointer; }
+  .ph:active { transform:scale(.97); }
+  .ph .zoom { position:absolute; right:6px; bottom:6px; width:20px; height:20px;
+              border-radius:50%; background:rgba(0,0,0,.5); color:#fff;
+              display:flex; align-items:center; justify-content:center;
+              font-size:12px; line-height:1; }
+  /* ── 照片大图查看（点缩略图打开）── */
+  .lightbox { position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:9999;
+              display:none; flex-direction:column; }
+  .lightbox.on { display:flex; }
+  .lightbox .lbhd { display:flex; align-items:center; gap:10px;
+                    padding:14px 18px; color:#fff; font-size:15px; }
+  .lightbox .lbx { margin-left:auto; font-size:22px; cursor:pointer;
+                   width:32px; height:32px; display:flex; align-items:center;
+                   justify-content:center; border-radius:50%;
+                   background:rgba(255,255,255,.14); }
+  .lightbox .lbbody { flex:1; display:flex; align-items:center;
+                      justify-content:center; padding:0 14px 22px; }
+  .lightbox img { max-width:100%; max-height:100%; object-fit:contain;
+                  border-radius:10px; }
+  .lightbox .lbnav { display:flex; gap:8px; justify-content:center;
+                     padding:0 0 18px; }
+  .lightbox .lbnav span { padding:7px 15px; border-radius:18px;
+                          background:rgba(255,255,255,.14); color:#fff;
+                          font-size:13px; cursor:pointer; }
+  .lightbox .lbnav span.on { background:var(--lx-blue); }
   .ph .none { position:absolute; inset:0; display:flex; align-items:center;
               justify-content:center; font-size:11px; color:rgba(255,255,255,.5);
               text-align:center; padding:0 10px; line-height:1.5; }
@@ -177,8 +206,17 @@ class LixiangLocationPage extends HTMLElement {
             <img src="${__iconBase}/ic_home_photo.png" alt="" onerror="this.style.visibility='hidden'">重新拍照</div>
         </div>
         <div class="photos" id="photos"></div>
-        <div class="tip">驻车照片由车辆摄像头拍摄。集成当前只能触发拍照与读取状态，
-          图片本身需在理想 App 中查看。</div>
+        <div class="lightbox" id="lightbox" role="dialog" aria-modal="true"
+             aria-label="驻车照片大图">
+          <div class="lbhd"><span id="lb-title">驻车照片</span>
+            <div class="lbx" id="lb-close" role="button" tabindex="0"
+                 aria-label="关闭">×</div></div>
+          <div class="lbbody"><img id="lb-img" alt=""></div>
+          <div class="lbnav" id="lb-nav"></div>
+        </div>
+        <div class="tip">驻车照片由车辆摄像头拍摄。点击「重新拍照」后，
+          照片会显示在这里（5 路：前 / 后 / 左 / 右 / 俯视）。
+          图片链接约 24 小时有效，过期后需重新获取。</div>
       </div>
       <div class="toast" role="status" aria-live="polite"></div>
     `;
@@ -201,6 +239,18 @@ class LixiangLocationPage extends HTMLElement {
       this._a11y(el, label, fn);
       el.addEventListener("click", fn);
     });
+
+    // 大图查看器的关闭（点遮罩空白处也关）
+    const lb = this.querySelector("#lightbox");
+    if (lb) {
+      this._a11y(this.querySelector("#lb-close"), "关闭大图",
+                 () => this._closeLightbox());
+      lb.addEventListener("click", (ev) => {
+        if (ev.target === lb || ev.target.classList.contains("lbbody")) {
+          this._closeLightbox();
+        }
+      });
+    }
 
     // 导航
     const nav = () => {
@@ -287,15 +337,133 @@ class LixiangLocationPage extends HTMLElement {
     const stt = this._txt(this._eid("photo_status"));
     q("#v-photots").textContent = info || stt || "暂无记录";
 
-    // 照片占位（集成无图片）
+    // ★ 2026-10-03：驻车照片改为【真实图片】
+    //   链路（抓包逆向）：VSS 拍照时间 → 构造 5 路 OSS key →
+    //   lixiang_auto.get_svm_photo 换签名 URL → <img src>。
+    //   URL 有时效，所以缓存 2 分钟（够一次浏览，又不至于显示过期图）。
+    this._renderPhotos(q, info);
+  }
+
+  /** 渲染 5 路驻车照片（前/后/左/右/俯视）。 */
+  async _renderPhotos(q, photoTime) {
     const box = q("#photos");
-    if (!box.dataset.done) {
-      const cams = [["俯视","ic_home_zhengyan.webp"],["前","ic_home_navigation.webp"],["后","ic_home_return.webp"]];
-      box.innerHTML = cams.map(([lbl, ic]) =>
-        `<div class="ph"><div class="none">${lbl}视图<br>（图片需 App 查看）</div>
+    if (!box) return;
+    const ANGLES = [["Top", "俯视"], ["Front", "前"], ["Rear", "后"],
+                    ["Left", "左"], ["Right", "右"]];
+
+    // 首次：占位骨架（避免空白闪烁）
+    if (!box.dataset.init) {
+      box.dataset.init = "1";
+      box.innerHTML = ANGLES.map(([k, lbl]) =>
+        `<div class="ph" data-a="${k}"><div class="none">${lbl}视图<br>加载中…</div>
          <div class="lbl">${lbl}</div></div>`).join("");
-      box.dataset.done = "1";
     }
+
+    const stamp = String(photoTime || "");
+    const now = Date.now();
+    if (this._phCache && this._phCache.stamp === stamp &&
+        now - this._phCache.at < 120000) {
+      this._paintPhotos(box, this._phCache.urls, ANGLES);
+      return;
+    }
+    if (this._phBusy) return;
+    this._phBusy = true;
+    try {
+      const res = await this._hass.callService(
+        "lixiang_auto", "get_svm_photo",
+        photoTime ? { time: photoTime } : {}, undefined, false, true);
+      const payload = (res && (res.result || res.response)) || {};
+      const first = Object.values(payload)[0] || {};
+      const urls = first.urls || {};
+      this._phCache = { stamp, urls, at: Date.now() };
+      this._paintPhotos(box, urls, ANGLES, first.error);
+    } catch (err) {
+      this._paintPhotos(box, {}, ANGLES, String(err && err.message || err));
+    } finally {
+      this._phBusy = false;
+    }
+  }
+
+  /** 打开大图查看器（可左右切换 5 路）。 */
+  _openLightbox(curKey, curLbl, curUrl, urls, angles) {
+    const lb = this.querySelector("#lightbox");
+    if (!lb) return;
+    // 只列出真正有图的方位
+    const avail = angles.map(([k, l]) => {
+      const hit = Object.entries(urls || {})
+        .find(([kk]) => kk && kk.includes(`picIn${k}.jpg`));
+      return hit ? [k, l, hit[1]] : null;
+    }).filter(Boolean);
+    if (!avail.length) return;
+
+    const show = (idx) => {
+      const [k, l, u] = avail[idx];
+      const img = lb.querySelector("#lb-img");
+      img.src = u;
+      img.alt = `${l}视图`;
+      lb.querySelector("#lb-title").textContent = `驻车照片 · ${l}`;
+      lb.querySelectorAll("#lb-nav span").forEach((sp, i) =>
+        sp.classList.toggle("on", i === idx));
+      lb.dataset.idx = String(idx);
+    };
+    const nav = lb.querySelector("#lb-nav");
+    nav.innerHTML = avail.map(([k, l], i) =>
+      `<span data-i="${i}" role="button" tabindex="0">${l}</span>`).join("");
+    nav.querySelectorAll("span").forEach((sp) => {
+      sp.onclick = () => show(Number(sp.dataset.i));
+    });
+
+    const start = Math.max(0, avail.findIndex(([k]) => k === curKey));
+    show(start);
+    lb.classList.add("on");
+    this._lbKeyHandler = (ev) => {
+      if (ev.key === "Escape") { this._closeLightbox(); return; }
+      const n = avail.length;
+      const i = Number(lb.dataset.idx || 0);
+      if (ev.key === "ArrowRight") show((i + 1) % n);
+      if (ev.key === "ArrowLeft") show((i - 1 + n) % n);
+    };
+    document.addEventListener("keydown", this._lbKeyHandler);
+    lb.querySelector("#lb-close").focus?.();
+  }
+
+  _closeLightbox() {
+    const lb = this.querySelector("#lightbox");
+    if (!lb) return;
+    lb.classList.remove("on");
+    lb.querySelector("#lb-img").src = "";   // 释放图片
+    if (this._lbKeyHandler) {
+      document.removeEventListener("keydown", this._lbKeyHandler);
+      this._lbKeyHandler = null;
+    }
+  }
+
+  /** 把 URL 填进对应方位；缺失的显示原因而不是假装有图。 */
+  _paintPhotos(box, urls, angles, err) {
+    const list = Object.entries(urls || {});
+    angles.forEach(([key, lbl]) => {
+      const cell = box.querySelector(`.ph[data-a="${key}"]`);
+      if (!cell) return;
+      const hit = list.find(([k]) => k && k.includes(`picIn${key}.jpg`));
+      if (hit) {
+        // ★ 图片可能已过期（实测 5 个月前的照片在 OSS 已 404，
+        //   而签名 URL 本身仍有效）—— 加载失败要如实说明，不静默空白。
+        cell.innerHTML = `<img src="${hit[1]}" alt="${lbl}视图" loading="lazy"
+             style="width:100%;height:100%;object-fit:cover;border-radius:8px"
+             onerror="this.parentNode.innerHTML='<div class=&quot;none&quot;>${lbl}视图<br>（图片已过期）</div><div class=&quot;lbl&quot;>${lbl}</div>'">
+           <div class="lbl">${lbl}</div>
+           <div class="zoom" aria-hidden="true">⤢</div>`;
+        // 点缩略图 → 大图（URL 只在内存里，不落 DOM 属性）
+        cell.onclick = () => this._openLightbox(key, lbl, hit[1], urls, angles);
+        cell.setAttribute("role", "button");
+        cell.setAttribute("tabindex", "0");
+        cell.setAttribute("aria-label", `${lbl}视图，点击查看大图`);
+      } else {
+        const why = err ? "获取失败" : (list.length ? "该方位无图" : "尚未拍照");
+        cell.innerHTML = `<div class="none">${lbl}视图<br>（${why}）</div>
+           <div class="lbl">${lbl}</div>`;
+      }
+    });
   }
 
   _haversine(lat1, lon1, lat2, lon2) {

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import base64
+from datetime import datetime
 import hashlib
 import hmac
 import json
@@ -605,6 +606,88 @@ class LiApiClient:
         if r.get("code") == 100105:
             r = self._signed_call_travel("GET", path, "", self._travel_bearer(True))
         return r
+
+    def get_travel_all_aggregate(self) -> dict:
+        """全里程汇总 → GET /ssp-travel-x-service/v1-0/travel/all/aggregate/{vin}
+
+        ★ 2026-10-03：从抓包（data/2026-05-05_licar_captures.json）发现
+          App 还会调这个端点，之前集成漏了。实测 App 在进入里程页时
+          调用一次，推测返回「陪伴里程」等全量累计值。
+        """
+        path = f"/ssp-travel-x-service/v1-0/travel/all/aggregate/{self._vin}"
+        r = self._signed_call_travel("GET", path, "", self._travel_bearer())
+        if r.get("code") == 100105:
+            r = self._signed_call_travel("GET", path, "", self._travel_bearer(True))
+        return r
+
+    # ---- 驻车照片（SVM，2026-10-03 抓包逆向）----
+    # ★ 完整链路（依据 data/2026-05-05_licar_captures.json 的真实请求）：
+    #
+    #   GET /chehejia-service-ois-app/ois/file/service/urls
+    #       ?fileKeys=<逗号分隔的 OSS key>&identify=vehicle
+    #
+    #   fileKey 路径模板（抓包原文）：
+    #     vehicle/svm_photo/{车型代码}/YYYYMMDD/{VIN}/data/data_center/upload/
+    #         {YYYYMMDDHHmmss}pic{方位}.jpg
+    #
+    #   方位共 5 路：Front / Rear / Left / Right / Top
+    #   例：vehicle/svm_photo/X04/20260505/{VIN}/data/data_center/upload/
+    #       20260505202638picInRear.jpg
+    #
+    #   → 接口返回每张图的签名 URL（可直接 <img src> 显示）
+    #
+    # ⚠️ 图片本身存在理想 OSS，URL 有过期时间，需现取现用。
+
+    SVM_ANGLES = ("Front", "Rear", "Left", "Right", "Top")
+
+    def svm_photo_filekeys(self, when, car_type: str = "") -> list[str]:
+        """按抓包模板构造 5 路驻车照片的 OSS key。
+
+        Args:
+            when: 拍照时间（datetime，用 VSS `Vehicle.360Svm.Park.Filekey`
+                  的 picTime；也接受 ``"2026-10-03 11:46:24"`` 这类字符串）
+            car_type: 车型代码（如 X04）；空则用实例缓存值
+
+        注：入参不标注 datetime 类型，避免为一个纯格式化函数引入模块级导入。
+        """
+        if isinstance(when, str):
+            # VSS 常见格式： "2026-10-03 11:46:24" 或 ISO
+            txt = when.strip().replace("T", " ").split(".")[0]
+            try:
+                when = datetime.strptime(txt, "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                try:
+                    when = datetime.fromisoformat(txt)
+                except ValueError:
+                    return []
+        ct = car_type or getattr(self, "_car_type_code", "") or "X04"
+        day = when.strftime("%Y%m%d")
+        stamp = when.strftime("%Y%m%d%H%M%S")
+        base = (f"vehicle/svm_photo/{ct}/{day}/{self._vin}"
+                f"/data/data_center/upload/{stamp}")
+        return [f"{base}picIn{a}.jpg" for a in self.SVM_ANGLES]
+
+    def get_svm_photo_urls(self, file_keys: list[str]) -> dict:
+        """OSS key → 签名 URL。
+
+        返回形如 ``{"urls": {key: url}}``；失败时含 ``error``。
+        """
+        if not file_keys:
+            return {"error": "empty file_keys"}
+        keys = ",".join(file_keys)
+        path = ("/chehejia-service-ois-app/ois/file/service/urls"
+                f"?fileKeys={urllib.parse.quote(keys, safe='')}&identify=vehicle")
+        try:
+            r = self._signed_call_travel("GET", path, "", self._travel_bearer())
+            if r.get("code") == 100105:
+                r = self._signed_call_travel("GET", path, "", self._travel_bearer(True))
+            _LOGGER.debug("svm urls: keys=%d code=%s body=%s",
+                         len(file_keys), r.get("code"),
+                         json.dumps(r, ensure_ascii=False)[:500])
+            return r
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.warning("svm urls 异常: %s: %s", type(e).__name__, e)
+            return {"error": f"{type(e).__name__}: {e}"[:200]}
 
     # ---- 充电记录（2026-10-02 逆向）----
     # ★ 与 travel 同一根因：需要 App 头 + 主 Bearer。

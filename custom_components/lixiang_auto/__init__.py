@@ -16,7 +16,11 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceResponse, SupportsResponse
-from homeassistant.helpers import config_validation as cv, aiohttp_client
+from homeassistant.helpers import (
+    config_validation as cv,
+    aiohttp_client,
+    entity_registry as er,
+)
 
 from .client import LiCarClient
 from .const import (
@@ -257,6 +261,7 @@ SERVICE_DUMP_ABILITY = "dump_ability"
 # ★ 2026-10-02：行程/陪伴里程查询服务（逆向自 App travel 接口）
 SERVICE_GET_TRAVEL = "get_travel"
 SERVICE_GET_CHARGE = "get_charge"
+SERVICE_GET_SVM_PHOTO = "get_svm_photo"
 
 
 def _async_register_services(hass: HomeAssistant) -> None:
@@ -469,12 +474,114 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 result[entry.data.get(CONF_VIN) or eid] = {"error": str(err)}
         return result
 
+    async def _handle_get_svm_photo(call) -> ServiceResponse:
+        """查询驻车照片（SVM）的签名 URL。
+
+        ★ 2026-10-03：从抓包逆向（lixiang-reverse/data/2026-05-05_licar_captures.json）。
+          完整链路：
+            ① 读 VSS `Vehicle.360Svm.Park.Filekey` 拿拍照时间
+            ② 按模板构造 5 路 OSS key
+            ③ 调 /ois/file/service/urls 换签名 URL → 可直接 <img src>
+
+        参数：
+          · vin     可选，多车时指定
+          · time    可选，拍照时间（缺省用集成当前状态里的拍照时间）
+          · angles  可选，只取部分方位（如 ["Front","Rear"]）
+
+        返回：``{vin: {photo_time, urls: {...}, error?}}``
+        """
+        data = call.data or {}
+        target_vin = data.get("vin")
+        want_time = data.get("time")
+        want_angles = data.get("angles")
+        result: dict = {}
+        for eid, d in (hass.data.get(DOMAIN) or {}).items():
+            if not isinstance(d, dict):
+                continue
+            api = d.get("li_api")
+            entry = hass.config_entries.async_get_entry(eid)
+            if api is None or entry is None:
+                continue
+            vin = entry.data.get(CONF_VIN) or eid
+            if target_vin and (entry.data.get(CONF_VIN) or "") != target_vin:
+                continue
+
+            # ① 拍照时间：优先入参，其次从实体拿。
+            #   ★ 实测（2026-10-03）：时间**不在** coordinator 的 vss 里，
+            #     而在 `sensor.*_360_pai_zhao_xin_xi` 的【属性】"拍照时间" 上
+            #     （sensor.py 的 extra_state_attributes 从 VSS JSON 提出来）。
+            #     所以先走实体注册表，再退回 vss 原始数据。
+            when = want_time
+            if not when:
+                for st in hass.states.async_all("sensor"):
+                    eid_reg = er.async_get(hass).async_get(st.entity_id)
+                    if eid_reg is None or eid_reg.platform != DOMAIN:
+                        continue
+                    if eid_reg.config_entry_id != eid:
+                        continue
+                    attrs = st.attributes or {}
+                    cand = attrs.get("拍照时间") or attrs.get("上报时间")
+                    if cand:
+                        when = cand
+                        break
+            if not when:
+                # 退回：coordinator 里的 VSS 原始 JSON
+                coord = d.get("coordinator")
+                sig = None
+                if coord is not None and getattr(coord, "data", None):
+                    sig = (coord.data.get("vss") or {}).get(
+                        "Vehicle.360Svm.Park.Filekey")
+                raw = sig.get("value") if isinstance(sig, dict) else None
+                if isinstance(raw, str):
+                    try:
+                        import json as _json  # noqa: PLC0415
+                        when = (_json.loads(raw) or {}).get("picTime") or raw
+                    except (ValueError, TypeError):
+                        when = raw
+            if not when:
+                result[vin] = {"error": "无拍照时间（先触发一次远程拍照）"}
+                continue
+
+            _LOGGER.debug("svm: vin=%s when=%r", vin, when, type(when).__name__)
+            try:
+                keys = await hass.async_add_executor_job(
+                    api.svm_photo_filekeys, when)
+                _LOGGER.debug("svm: 生成 %d 个 key", len(keys), keys[:2])
+                if not keys:
+                    result[vin] = {"error": f"拍照时间无法解析: {when!r}"}
+                    continue
+                # 只取要求的方位
+                if want_angles:
+                    keys = [k for k in keys
+                            if any(f"picIn{a}.jpg" in k for a in want_angles)] or keys
+                r = await hass.async_add_executor_job(api.get_svm_photo_urls, keys)
+                code = r.get("code")
+                ok = code is None or code == 0
+                urls = {}
+                if ok and isinstance(r.get("data"), dict):
+                    urls = r["data"].get("urls") or r["data"]
+                elif ok and isinstance(r.get("data"), list):
+                    for item in r["data"]:
+                        if isinstance(item, dict) and item.get("url"):
+                            urls[item.get("fileKey") or item.get("key") or ""] = item["url"]
+                out = {"photo_time": when, "urls": urls}
+                if not ok:
+                    out["error"] = f"code={code} {r.get('message') or r.get('msg') or ''}".strip()
+                result[vin] = out
+                _LOGGER.info("驻车照片(%s): %d 张, time=%s", vin, len(urls), when)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.error("驻车照片查询异常: %s", err)
+                result[vin] = {"error": f"{type(err).__name__}: {err}"[:200]}
+        return result
+
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, _handle_refresh)
     hass.services.async_register(DOMAIN, SERVICE_WAKEUP, _handle_wakeup)
     hass.services.async_register(DOMAIN, SERVICE_DUMP_ABILITY, _handle_dump_ability)
     hass.services.async_register(DOMAIN, SERVICE_GET_TRAVEL, _handle_get_travel,
                                   supports_response=SupportsResponse.OPTIONAL)
     hass.services.async_register(DOMAIN, SERVICE_GET_CHARGE, _handle_get_charge,
+                                  supports_response=SupportsResponse.OPTIONAL)
+    hass.services.async_register(DOMAIN, SERVICE_GET_SVM_PHOTO, _handle_get_svm_photo,
                                   supports_response=SupportsResponse.OPTIONAL)
 
     _LOGGER.debug(

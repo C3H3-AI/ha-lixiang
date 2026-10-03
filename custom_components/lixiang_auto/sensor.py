@@ -91,6 +91,91 @@ _DIAGNOSTIC_KEYS = frozenset({
 # ⚠️ 注意：保养项「默认启用」的判定在 signals.py 的 to_sensor_description()，
 #   不在这里 —— 实体描述表实际由 SIGNALS 动态生成（见 async_setup_entry）。
 
+# ── 保养项字段 → 中文属性名（2026-10-03 按抓包实测重写）─────────────────
+#   依据：vss_full_state.json 的 Vehicle.Carcenter.Maintain.* 每项含 33 字段。
+#   旧实现查的 higherLevel/lowerLevel/percentage/remainMileage **不存在**，
+#   导致属性长期为空。下面是实测存在的关键字段。
+_MAINT_FIELDS: tuple[tuple[str, str], ...] = (
+    ("maintainLeftMileage", "剩余里程"),
+    ("maintainLeftDays", "剩余天数"),
+    ("maintainDueDate", "到期日"),
+    ("periodMileage", "保养周期里程"),
+    ("periodMonth", "保养周期月数"),
+    ("mileageSource", "计程来源"),
+    ("engineMileage", "增程器里程"),
+    ("mileage", "累计里程"),
+    ("maintenanceMileage", "上次保养里程"),
+    ("maintenanceEngineMileage", "上次保养增程器里程"),
+    ("maintenanceValid", "是否显示"),
+    ("rule", "提醒策略"),
+)
+
+# 说明：以下字段对用户可读性低或属于内部标记，不上抛为属性
+#   iconUri / dateColor / higherLevelColor / mileageColor / timestamp /
+#   payloadId / pushingStatusVssKey / subscribeRecordVssKey /
+#   oilLife / saveCount / isMaintainIndeed / maintainIndeedReason /
+#   isAgentMaintenance / timeValid / langName
+
+
+def _maint_attrs(o: dict) -> dict:
+    """把保养项 JSON 转成可读属性。
+
+    ★ 关键换算（不做用户会看不懂）：
+
+    - ``maintainLeftDays`` 单位是**毫秒**（实测 27388800000 ≈ 317 天），
+      同时给一个人类可读的「剩余天数（可读）」。
+    - ``maintainDueDate`` 是 ``YYYYMMDD`` 整数；``"--"``/0 表示无到期日
+      （火花塞就是这种：只看里程不看时间），此时不输出。
+    - ``maintenanceValid`` 0/1 → 中文「是/否」，因为它是「该项是否在
+      App 里显示」的开关（如增程器大保养 valid=0 → App 不显示）。
+    - ``mileageSource`` engine/total → 「增程器里程 / 总里程」。
+    """
+    out: dict = {}
+    for src, label in _MAINT_FIELDS:
+        v = o.get(src)
+        if v in (None, ""):
+            continue
+
+        if src == "maintainLeftDays":
+            # 毫秒 → 天（负数/极大值 = 无期限，不展示）
+            try:
+                days = float(v) / 86400000.0
+            except (TypeError, ValueError):
+                continue
+            if days < 0 or days > 36500:        # 负数或 >100 年 → 视为无期限
+                continue
+            out["剩余天数"] = f"{days:.0f} 天"
+            out["剩余天数(数值)"] = round(days)
+            continue
+
+        if src == "maintainDueDate":
+            s = str(v).strip()
+            if not s.isdigit() or len(s) != 8:
+                continue                         # "--" 等 → 不输出
+            out["到期日"] = f"{s[:4]}-{s[4:6]}-{s[6:]}"
+            continue
+
+        if src == "maintenanceValid":
+            out["是否显示"] = "是" if str(v) in ("1", "True", "true") else "否"
+            continue
+
+        if src == "mileageSource":
+            out["计程来源"] = {"engine": "增程器里程",
+                              "total": "总里程"}.get(str(v), str(v))
+            continue
+
+        # 无时间项的保养（如火花塞只看里程）用哨兵值表示"无周期"，
+        # 实测 periodMonth = -2147483647。原样上抛对用户是纯噪音。
+        if src in ("periodMonth", "periodMileage"):
+            try:
+                if int(v) <= 0 or int(v) >= 2147483647:
+                    continue
+            except (TypeError, ValueError):
+                continue
+
+        out[label] = v
+    return out
+
 
 def _mk(key, spec):
     name, dclass, unit, sclass, icon, cat = spec
@@ -597,15 +682,31 @@ class LiCarSensor(CoordinatorEntity, RestoreSensor):
                     pass
         elif key in ("maint_acfilter", "maint_coolfuild", "maint_engine_oil",
                      "maint_brake_oil", "maint_sparkplug"):
+            # ★ 2026-10-03：字段名按抓包实测重写。
+            #
+            #   此前查的是 higherLevel / lowerLevel / percentage / remainMileage
+            #   —— 实测这 4 个字段【在服务端返回的 JSON 里根本不存在】，
+            #   所以那几个属性一直是空的，只有状态文本「剩余 N km」能用
+            #   （那是 render_value 正则从文本里提的，不是结构化数据）。
+            #
+            #   依据：vss_full_state.json 里 Vehicle.Carcenter.Maintain.*
+            #        每个保养项返回 33 个字段，含：
+            #          maintainLeftMileage / maintainLeftDays / maintainDueDate
+            #          maintenanceValid / periodMileage / periodMonth
+            #          mileageSource / engineMileage / mileage …
+            #
+            #   字段含义（对照 App 保养页）：
+            #     maintainLeftMileage  剩余里程（km）—— App 主显示
+            #     maintainLeftDays     剩余天数（**毫秒**，需换算）
+            #     maintainDueDate      到期日 YYYYMMDD（"--" 表示无）
+            #     maintenanceValid     1=显示 / 0=隐藏（如"增程器大保养"）
+            #     periodMileage/Month  保养周期（里程 / 月数）
+            #     mileageSource        计程来源 engine=增程器里程, total=总里程
             sig2 = self._vss()
             if sig2 and isinstance(sig2.get("value"), str):
                 try:
                     o = json.loads(sig2["value"])
-                    for k2, label in (("engineMileage", "发动机里程"), ("higherLevel", "上限"),
-                                      ("lowerLevel", "下限"), ("percentage", "剩余百分比"),
-                                      ("remainMileage", "剩余里程"), ("dateColor", "状态色")):
-                        if o.get(k2) not in (None, ""):
-                            attrs[label] = o[k2]
+                    attrs.update(_maint_attrs(o))
                 except (ValueError, TypeError):
                     pass
         elif key == "trip_total":

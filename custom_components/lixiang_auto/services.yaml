@@ -106,3 +106,34 @@ get_charge:
         number:
           min: 1
           max: 4
+
+get_svm_photo:
+  name: 查询驻车照片
+  description: >-
+    获取 360 驻车照片（SVM）的签名 URL。链路：读 VSS 拍照时间 → 按模板构造
+    5 路 OSS key（前/后/左/右/顶）→ 调 OIS 接口换签名 URL。
+    返回 {vin: {photo_time, urls}}，urls 可直接用于 <img src>。
+  fields:
+    vin:
+      name: VIN
+      description: 多车时指定目标车辆；留空则对所有条目执行
+      required: false
+      example: HLX32XXXXXXXXXXXX
+      selector:
+        text:
+    time:
+      name: 拍照时间
+      description: >-
+        拍照时间，格式 "YYYY-MM-DD HH:MM:SS"。留空则用集成当前状态里
+        的拍照时间（VSS Vehicle.360Svm.Park.Filekey 的 picTime）。
+      required: false
+      example: "2026-10-03 11:46:24"
+      selector:
+        text:
+    angles:
+      name: 方位
+      description: 只取部分方位，可选 Front / Rear / Left / Right / Top；留空取全部 5 路
+      required: false
+      example: '["Front", "Rear"]'
+      selector:
+        object:
