@@ -640,6 +640,64 @@ class LiApiClient:
 
     SVM_ANGLES = ("Front", "Rear", "Left", "Right", "Top")
 
+    @staticmethod
+    def svm_filekeys_from_vss(raw) -> dict:
+        """从 VSS `Vehicle.360Svm.Park.Filekey` 的 JSON 里取 fileKeys。
+
+        ★ 2026-10-03 决定性修正（依据 APK 的 XPhotoDataHandle.smali）：
+
+            该信号返回的 JSON **本身就带 fileKeys 字段**：
+
+                {"picTime":"2026-09-05 20:27:20",
+                 "fileKeys":{
+                   "picInRear": "vehicle/svm_photo/X04/20260905/{VIN}/.../20260905202717picInRear.jpg",
+                   "picInFront":"...",
+                   "picInRight":"...","picInLeft":"...","picInTop":"..."}}
+
+            App 的做法（smali 逐行可读）：
+
+                item = map.get("Vehicle.360Svm.Park.Filekey")
+                json = item.getDp().getValue()
+                fileKeys = fromJson(json).get("fileKeys").getAsJsonObject()
+                list = fileKeys.values()
+                → 调 /ois/file/service/urls?fileKeys=<list>
+
+            **所以不要去拼路径** —— 文件名里的时间戳与 picTime **并不相同**
+            （实测 picTime=20:27:20 而文件名=20260905202717，差 3 秒），
+            拼出来的 key 在 OSS 里根本不存在（接口会返回 data:{}）。
+
+        返回：``{方位: fileKey}``；解析失败返回 ``{}``。
+        """
+        if not raw:
+            return {}
+        obj = raw
+        if isinstance(raw, str):
+            try:
+                obj = json.loads(raw)
+            except (ValueError, TypeError):
+                return {}
+        if not isinstance(obj, dict):
+            return {}
+        fk = obj.get("fileKeys")
+        if not isinstance(fk, dict):
+            return {}
+        return {k: v for k, v in fk.items() if isinstance(v, str) and v}
+
+    @staticmethod
+    def svm_pic_time(raw) -> str:
+        """从同一个 JSON 里取 picTime（用于界面展示）。"""
+        if not raw:
+            return ""
+        obj = raw
+        if isinstance(raw, str):
+            try:
+                obj = json.loads(raw)
+            except (ValueError, TypeError):
+                return ""
+        if isinstance(obj, dict):
+            return str(obj.get("picTime") or obj.get("picTimestamp") or "")
+        return ""
+
     def svm_photo_filekeys(self, when, car_type: str = "") -> list[str]:
         """按抓包模板构造 5 路驻车照片的 OSS key。
 

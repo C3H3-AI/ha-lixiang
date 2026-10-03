@@ -50,16 +50,16 @@ MAINT = _load_maint_attrs()
 FULL = {
     "name": "增程器小保养",
     "langName": {"CN": "增程器小保养", "US": "Range Extender Minor"},
-    "maintainLeftMileage": 12345.6,
+    "maintainLeftMileage": 9876.5,
     "maintainLeftDays": 27388800000,      # 毫秒 → 317 天
     "maintainDueDate": 20270719,
     "maintenanceValid": 1,
     "periodMileage": 10000,
     "periodMonth": 12,
     "mileageSource": "engine",
-    "engineMileage": 6536.2,
-    "mileage": 61277.8,
-    "maintenanceMileage": 56539.0,
+    "engineMileage": 1234.5,
+    "mileage": 12345.6,
+    "maintenanceMileage": 11111.1,
     "rule": "noRemind",
     # 下面这些属于内部标记，不应上抛
     "iconUri": "android.resource://x/y",
@@ -72,12 +72,12 @@ FULL = {
 class TestFieldExtraction:
     def test_core_fields(self):
         a = MAINT(FULL)
-        assert a["剩余里程"] == 12345.6
+        assert a["剩余里程"] == 9876.5
         assert a["到期日"] == "2027-07-19"
         assert a["保养周期里程"] == 10000
         assert a["保养周期月数"] == 12
         assert a["计程来源"] == "增程器里程"
-        assert a["累计里程"] == 61277.8
+        assert a["累计里程"] == 12345.6
 
     def test_days_converted_from_ms(self):
         """毫秒必须换算成「天」—— 直接显示 27388800000 用户看不懂。"""
