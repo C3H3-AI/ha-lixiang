@@ -12,8 +12,11 @@
  *   sensor.360 拍照状态 / 拍照信息
  *
  * 能力边界：
- *   ⚠️ 驻车照片图片本身不在集成里（只有状态），需 App 查看
- *   ✅ 闪灯/鸣笛/拍照 可触发
+ *   ✅ 驻车照片可显示（2026-10-03 打通）：
+ *      VSS 拍照时间 → 构造 5 路 OSS key → lixiang_auto.get_svm_photo
+ *      换签名 URL → <img>。链路逆向自 5 月抓包。
+ *   ✅ 闪灯/鸣笛 可触发
+ *   ⚠️ 触发拍照（button.远程拍照）实测 2009 —— 与充电同因，需 JOB 通道
  */
 
 const CARD_TAG = "lixiang-location-page";
@@ -177,8 +180,9 @@ class LixiangLocationPage extends HTMLElement {
             <img src="${__iconBase}/ic_home_photo.png" alt="" onerror="this.style.visibility='hidden'">重新拍照</div>
         </div>
         <div class="photos" id="photos"></div>
-        <div class="tip">驻车照片由车辆摄像头拍摄。集成当前只能触发拍照与读取状态，
-          图片本身需在理想 App 中查看。</div>
+        <div class="tip">驻车照片由车辆摄像头拍摄。点击「重新拍照」后，
+          照片会显示在这里（5 路：前 / 后 / 左 / 右 / 俯视）。
+          图片链接约 24 小时有效，过期后需重新获取。</div>
       </div>
       <div class="toast" role="status" aria-live="polite"></div>
     `;
