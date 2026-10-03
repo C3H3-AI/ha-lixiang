@@ -1,0 +1,410 @@
+{
+  "100159410437149953": {
+    "desc": "L7Pro车型",
+    "unityModel": "L7",
+    "platform": "2",
+    "seats": 5
+  },
+  "100159891473476102": {
+    "desc": "L7Air车型",
+    "unityModel": "L7",
+    "platform": "2",
+    "seats": 5
+  },
+  "100161368942743296": {
+    "desc": "W01_25_home",
+    "unityModel": "W01B",
+    "platform": "2",
+    "seats": 6
+  },
+  "100162554354035462": {
+    "desc": "W10_26_home",
+    "unityModel": "W10B",
+    "platform": "2",
+    "seats": 6
+  },
+  "100162554354047808": {
+    "desc": "L9Premium26",
+    "unityModel": "L9C",
+    "platform": "2",
+    "seats": 6
+  },
+  "100162571533889604": {
+    "desc": "L7Customized26",
+    "unityModel": "L7C",
+    "platform": "2",
+    "seats": 5
+  },
+  "100162571533889609": {
+    "desc": "W04Max",
+    "unityModel": "W04",
+    "platform": "2",
+    "seats": 5
+  },
+  "100163911563136708": {
+    "desc": "W01Max车厢",
+    "unityModel": "W01",
+    "platform": "2",
+    "seats": 6
+  },
+  "100163963102763392": {
+    "desc": "L9Pro车型",
+    "unityModel": "L9",
+    "platform": "2",
+    "seats": 6
+  },
+  "100164890815658241": {
+    "desc": "W02Pro车型",
+    "unityModel": "W02",
+    "platform": "2",
+    "seats": 6
+  },
+  "100164925175401856": {
+    "desc": "W02Max车型",
+    "unityModel": "W02",
+    "platform": "2",
+    "seats": 6
+  },
+  "100165028254293339": {
+    "desc": "L8Air车型",
+    "unityModel": "L8",
+    "platform": "2",
+    "seats": 6
+  },
+  "100167931652606785": {
+    "desc": "L6Pro",
+    "unityModel": "L6",
+    "platform": "2",
+    "seats": 5
+  },
+  "100171676864120632": {
+    "desc": "W02UItra车型",
+    "unityModel": "W02",
+    "platform": "2",
+    "seats": 6
+  },
+  "100174236664108736": {
+    "desc": "L9Max车型",
+    "unityModel": "L9",
+    "platform": "2",
+    "seats": 6
+  },
+  "100174700520992513": {
+    "desc": "L8Pro24",
+    "unityModel": "L8B",
+    "platform": "2",
+    "seats": 6
+  },
+  "100174700520992517": {
+    "desc": "L7Max24",
+    "unityModel": "L7B",
+    "platform": "2",
+    "seats": 5
+  },
+  "100204301435085761": {
+    "desc": "M01B车型",
+    "unityModel": "M01B",
+    "platform": "1",
+    "seats": 6
+  },
+  "100225432674362064": {
+    "desc": "L7Max车型",
+    "unityModel": "L7",
+    "platform": "2",
+    "seats": 5
+  },
+  "100366152983142465": {
+    "desc": "L9Pro24",
+    "unityModel": "L9B",
+    "platform": "2",
+    "seats": 6
+  },
+  "100366152983142466": {
+    "desc": "L8Max24",
+    "unityModel": "L8B",
+    "platform": "2",
+    "seats": 6
+  },
+  "100366341961662465": {
+    "desc": "L9Max24",
+    "unityModel": "L9B",
+    "platform": "2",
+    "seats": 6
+  },
+  "100366341961662469": {
+    "desc": "L8Air24",
+    "unityModel": "L8B",
+    "platform": "2",
+    "seats": 6
+  },
+  "100366341961662532": {
+    "desc": "L7Air24",
+    "unityModel": "L7B",
+    "platform": "2",
+    "seats": 5
+  },
+  "100368420725891077": {
+    "desc": "L7Pro24",
+    "unityModel": "L7B",
+    "platform": "2",
+    "seats": 5
+  },
+  "100371014886744771": {
+    "desc": "W04Max_26",
+    "unityModel": "W04_26",
+    "platform": "2",
+    "seats": 5
+  },
+  "100371014886744772": {
+    "desc": "W02Max车型",
+    "unityModel": "W02",
+    "platform": "2",
+    "seats": 6
+  },
+  "100497819500913921": {
+    "desc": "W04Max",
+    "unityModel": "W04",
+    "platform": "2",
+    "seats": 5
+  },
+  "100497991299638466": {
+    "desc": "W04Pro",
+    "unityModel": "W04",
+    "platform": "2",
+    "seats": 5
+  },
+  "100497991299638593": {
+    "desc": "W04MaxAWD",
+    "unityModel": "W04",
+    "platform": "2",
+    "seats": 5
+  },
+  "100502131647776385": {
+    "desc": "L6Max",
+    "unityModel": "L6",
+    "platform": "2",
+    "seats": 5
+  },
+  "100618542440964163": {
+    "desc": "L8Pro车型",
+    "unityModel": "L8",
+    "platform": "2",
+    "seats": 6
+  },
+  "100618542440964164": {
+    "desc": "M01Ring车型",
+    "unityModel": "M01B",
+    "platform": "1",
+    "seats": 6
+  },
+  "100843976685323863": {
+    "desc": "W02Max车型",
+    "unityModel": "W02",
+    "platform": "2",
+    "seats": 6
+  },
+  "100860555258667588": {
+    "desc": "L8Pro25",
+    "unityModel": "L8C",
+    "platform": "2",
+    "seats": 6
+  },
+  "100860555258667593": {
+    "desc": "L7Max25",
+    "unityModel": "L7C",
+    "platform": "2",
+    "seats": 5
+  },
+  "100860555258667598": {
+    "desc": "L7Pro25",
+    "unityModel": "L7C",
+    "platform": "2",
+    "seats": 5
+  },
+  "100860555258667603": {
+    "desc": "L6Max25",
+    "unityModel": "L6B",
+    "platform": "2",
+    "seats": 5
+  },
+  "100875312766289409": {
+    "desc": "L9UItra25",
+    "unityModel": "L9C",
+    "platform": "2",
+    "seats": 6
+  },
+  "100875312766289413": {
+    "desc": "L9Pro25",
+    "unityModel": "L9C",
+    "platform": "2",
+    "seats": 6
+  },
+  "100875312766289416": {
+    "desc": "W01_25_UItra",
+    "unityModel": "W01B",
+    "platform": "2",
+    "seats": 6
+  },
+  "100980659723641805": {
+    "desc": "L7Pro车型",
+    "unityModel": "L7",
+    "platform": "2",
+    "seats": 5
+  },
+  "100980659723641806": {
+    "desc": "L8Pro车型",
+    "unityModel": "L8",
+    "platform": "2",
+    "seats": 6
+  },
+  "101044379859296578": {
+    "desc": "L6Pro25",
+    "unityModel": "L6B",
+    "platform": "2",
+    "seats": 5
+  },
+  "101045015514439873": {
+    "desc": "L7Ultra25",
+    "unityModel": "L7C",
+    "platform": "2",
+    "seats": 5
+  },
+  "101045015514439874": {
+    "desc": "L6Max25",
+    "unityModel": "L6B",
+    "platform": "2",
+    "seats": 5
+  },
+  "101045238852747265": {
+    "desc": "L9UItra25",
+    "unityModel": "L9C",
+    "platform": "2",
+    "seats": 6
+  },
+  "101049980496666881": {
+    "desc": "L9UItra26",
+    "unityModel": "L9C",
+    "platform": "2",
+    "seats": 6
+  },
+  "101049980496666885": {
+    "desc": "L9Pro26",
+    "unityModel": "L9C",
+    "platform": "2",
+    "seats": 6
+  },
+  "101425807314452545": {
+    "desc": "W05车型",
+    "unityModel": "W05_26",
+    "platform": "2",
+    "seats": 6
+  },
+  "101425807314452673": {
+    "desc": "W05车型",
+    "unityModel": "W05_26",
+    "platform": "2",
+    "seats": 6
+  },
+  "101467468497690881": {
+    "desc": "W10_26_Livis",
+    "unityModel": "W10B",
+    "platform": "2",
+    "seats": 6
+  },
+  "101472931696083777": {
+    "desc": "W05车型",
+    "unityModel": "W05_26",
+    "platform": "2",
+    "seats": 6
+  },
+  "101475646115039105": {
+    "desc": "L8Ultra25",
+    "unityModel": "L8C",
+    "platform": "2",
+    "seats": 6
+  },
+  "101475646115039112": {
+    "desc": "L7Ultra25",
+    "unityModel": "L7C",
+    "platform": "2",
+    "seats": 5
+  },
+  "101475646115039115": {
+    "desc": "L6Pro25",
+    "unityModel": "L6B",
+    "platform": "2",
+    "seats": 5
+  },
+  "101475663294906497": {
+    "desc": "L8Max25",
+    "unityModel": "L8C",
+    "platform": "2",
+    "seats": 6
+  },
+  "101481143673585921": {
+    "desc": "L7Livis26",
+    "unityModel": "L7C",
+    "platform": "2",
+    "seats": 5
+  },
+  "101481504450831425": {
+    "desc": "L7Ultra26",
+    "unityModel": "L7C",
+    "platform": "2",
+    "seats": 5
+  },
+  "101492138788971191": {
+    "desc": "L8Max车型",
+    "unityModel": "L8",
+    "platform": "2",
+    "seats": 6
+  },
+  "101520932250567813": {
+    "desc": "L9Standard26",
+    "unityModel": "L9C",
+    "platform": "2",
+    "seats": 6
+  },
+  "101520932250567815": {
+    "desc": "W05车型",
+    "unityModel": "W05_26",
+    "platform": "2",
+    "seats": 6
+  },
+  "101520949430485953": {
+    "desc": "L6Entry26",
+    "unityModel": "L6B",
+    "platform": "2",
+    "seats": 5
+  },
+  "101520949430485954": {
+    "desc": "L9Launch26",
+    "unityModel": "L9C",
+    "platform": "2",
+    "seats": 6
+  },
+  "101520949430485966": {
+    "desc": "W01_25_home",
+    "unityModel": "W01B",
+    "platform": "2",
+    "seats": 6
+  },
+  "101639335908991043": {
+    "desc": "L6Livis26",
+    "unityModel": "L6B",
+    "platform": "2",
+    "seats": 5
+  },
+  "101639335908991050": {
+    "desc": "L6Max25",
+    "unityModel": "L6B",
+    "platform": "2",
+    "seats": 5
+  },
+  "101639335908991055": {
+    "desc": "W04Max",
+    "unityModel": "W04",
+    "platform": "2",
+    "seats": 5
+  }
+}

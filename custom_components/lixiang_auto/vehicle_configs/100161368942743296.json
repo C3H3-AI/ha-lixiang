@@ -1,0 +1,418 @@
+{
+    "desc": "W01_25_home",
+    "unityModel": "W01B",
+    "platform": "2",
+    "batteryType": "1",
+    "unityIOS": {
+        "7.0.0": {
+            "url": "https://p.ampmake.com/fed//tmp/egg-multipart-tmp/fed-server-api/2025/04/09/20/f286637a-81c5-40d5-abc4-3f731975d5f0.zip",
+            "crc": "7d966b54dd7784130e04748ef907a34c",
+            "scene": "LXAPP_W01_B",
+            "active": "LXAPP_APIcontrol"
+        }
+    },
+    "unityAndroid": {
+        "7.0.0": {
+            "url": "https://p.ampmake.com/fed//tmp/egg-multipart-tmp/fed-server-api/2025/03/20/13/287582a9-d89f-44d9-be00-95b17c87bdc6.zip",
+            "md5": "dd848bdf4846407c9581fa09415288a7",
+            "scene": "LXAPP_W01_B"
+        }
+    },
+    "unityHarmony": {
+        "7.0.0": {
+            "url": "https://p.ampmake.com/fed//tmp/egg-multipart-tmp/fed-server-api/2025/04/10/19/38adb50e-b8e6-474f-b84a-8eb420a33f0c.zip",
+            "md5": "6f85828fde93505aaf38e5edc9d948de",
+            "scene": "LXAPP_W01_B",
+            "active": "LXAPP_APIcontrol"
+        }
+    },
+    "text": {
+        "bleUpgrade": "携带手机靠近车辆，车辆自动解锁启动，远离自动上锁。",
+        "openBleTip": "无需实体钥匙，打开“理想汽车”，\n即可实现靠近车辆自动解锁启动、远离车辆自动上锁。"
+    },
+    "image": {
+        "vehicle": "img_l9_vertical_car",
+        "health": "ic_healthy_car_w",
+        "trail": "mega",
+        "lisaACBg": "ic_lisa_home_ac_w",
+        "lisaACSeatVentBg": "ic_lisa_home_ac_seat_vent",
+        "lisaACSeatHeatBg": "ic_lisa_home_ac_seat_heat",
+        "bleDoorknobIcon": "ble_doorknob_full_hidden_ico"
+    },
+    "endurance": {
+        "WLTC": 650,
+        "CLTC": 710
+    },
+    "temp": {
+        "desc": "车型远程温控",
+        "bgImage": "icTemperatureBgW01BH",
+        "config": [
+            {
+                "key": "strgWhlHeatSw",
+                "desc": "方向盘加热",
+                "value": "4"
+            },
+            {
+                "key": "flSeatSw",
+                "value": "3",
+                "desc": "主驾座椅能力"
+            },
+            {
+                "key": "frSeatSw",
+                "value": "3",
+                "desc": "副驾座椅能力"
+            },
+            {
+                "key": "secLSeatSw",
+                "value": "3",
+                "desc": "第二排左座椅能力"
+            },
+            {
+                "key": "secRSeatSw",
+                "value": "3",
+                "desc": "第二排右座椅能力"
+            },
+            {
+                "key": "thirdLSeatSw",
+                "value": "4",
+                "desc": "第三排左座椅能力"
+            },
+            {
+                "key": "thirdMSeatHeatSw",
+                "value": "4",
+                "desc": "第三排中座椅能力"
+            },
+            {
+                "key": "thirdRSeatSw",
+                "value": "4",
+                "desc": "第三排右座椅能力"
+            }
+        ],
+        "other": {
+            "minTemp": 16,
+            "maxTemp": 28,
+            "vehicleSeat": 6
+        }
+    },
+    "config": {
+        "desc": "车型基础数据",
+        "bleWalletImage": "https://p.ampmake.com/ois/bluetooth/20220713-143026.png",
+        "vivoTypeCode": "W01_25_home",
+        "dyeing": {
+            "key": "carMG",
+            "value": ""
+        },
+        "energy": {
+            "power": [
+                "1"
+            ]
+        },
+        "parameter": {
+            "ControlSetProOrMax": "0"
+        },
+        "pedal": [
+            {
+                "key": "have",
+                "value": "pedal_have_1_LXVC_L9"
+            },
+            {
+                "key": "notHave",
+                "value": "pedal_have_0_LXVC_L9"
+            }
+        ],
+        "wheel": [
+            {
+                "key": "BWE",
+                "value": "wheels_20inch_1_LXVC_L9"
+            }
+        ],
+        "color": [
+            {
+                "key": "FAK",
+                "value": "ex_color_1_LXVC_L9"
+            },
+            {
+                "key": "FAM",
+                "value": "ex_color_2_LXVC_L9"
+            },
+            {
+                "key": "FAO",
+                "value": "ex_color_3_LXVC_L9"
+            },
+            {
+                "key": "FAQ",
+                "value": "ex_color_4_LXVC_L9"
+            },
+            {
+                "key": "FAN",
+                "value": "ex_color_5_LXVC_L9"
+            }
+        ],
+        "interior": [
+            {
+                "key": "DZP",
+                "value": "in_color_3_LXVC_L9"
+            },
+            {
+                "key": "DZ7",
+                "value": "in_color_2_LXVC_L9"
+            }
+        ],
+        "minIcon": [
+            {
+                "key": "FAM",
+                "value": "https://p.ampmake.com/fed/image/png/f68f5e897a35cef61858205a1b678072.png"
+            },
+            {
+                "key": "FAN",
+                "value": "https://p.ampmake.com/fed/image/png/c898b5d2e9044ff9a1456226eb31d62d.png"
+            },
+            {
+                "key": "FAQ",
+                "value": "https://p.ampmake.com/fed//tmp/egg-multipart-tmp/fed-server-api/2025/03/26/19/997bc389-af4d-4565-b008-2ba07e5cd7c4.png"
+            },
+            {
+                "key": "FAK",
+                "value": "https://p.ampmake.com/fed/image/png/704f35e49d4b32428592365e291c466f.png"
+            },
+            {
+                "key": "FAO",
+                "value": "https://p.ampmake.com/fed/image/png/3dfd2460c032655aca6c7c74a0fafa1e.png"
+            }
+        ],
+        "vertical": [
+            {
+                "key": "FAK",
+                "value": "https://p.ampmake.com/fed//tmp/egg-multipart-tmp/fed-server-api/2025/03/26/19/648d22d5-eb51-4009-b58d-105a47c25034.png"
+            },
+            {
+                "key": "FAM",
+                "value": "https://p.ampmake.com/fed//tmp/egg-multipart-tmp/fed-server-api/2025/03/26/19/788a3301-1be4-4559-a168-46ee458c5fc5.png"
+            },
+            {
+                "key": "FAO",
+                "value": "https://p.ampmake.com/fed//tmp/egg-multipart-tmp/fed-server-api/2025/03/26/19/d7459eb4-0997-4525-98ed-2942b26b937b.png"
+            },
+            {
+                "key": "FAQ",
+                "value": "https://p.ampmake.com/fed//tmp/egg-multipart-tmp/fed-server-api/2025/03/26/19/cd868f48-ee0c-4fa9-83b0-b786d6867770.png"
+            },
+            {
+                "key": "FAN",
+                "value": "https://p.ampmake.com/fed//tmp/egg-multipart-tmp/fed-server-api/2025/03/26/19/dfd6f9c6-720c-4a13-bad6-cfa47c95d807.png"
+            }
+        ],
+        "control": [
+            {
+                "key": "slidingDoor",
+                "value": true
+            }
+        ],
+        "activationMiniApp": "wactivation"
+    },
+    "version": {
+        "electricDoorModeSetting": {
+            "desc": "新车门电动模式设置项，w10/w05及之后车型，不区分左前右前",
+            "isSupport": false
+        },
+        "rotatableSeatLockLinkage": {
+            "desc": "w05旋转座椅闭锁联动",
+            "isSupport": false
+        },
+        "remoteParkingOut": {
+            "desc": "遥控泊出 仅ad max/Ultra",
+            "isSupport": true,
+            "supportVersion": "8.5.0"
+        },
+        "adFailSafe": {
+            "desc": "AD Fail Safe",
+            "isSupport": true,
+            "supportVersion": "8.6.0"
+        },
+        "multiSlotChargingReservation": {
+            "desc": "多时段预约充电",
+            "isSupport": true,
+            "supportVersion": "8.6.0"
+        },
+        "realtimevideoAudio": {
+            "desc": "舱内影像语音",
+            "isSupport": true,
+            "supportVersion": "8.6.0"
+        },
+        "maintainConfig": {
+            "desc": "保养配置项获取",
+            "isSupport": true,
+            "supportVersion": "8.5.0"
+        },
+        "petModeQuitAndLock": {
+            "desc": "宠物模式退出并闭锁",
+            "isSupport": true,
+            "supportVersion": "99.99.99"
+        },
+        "remoteLockOnReady": {
+            "desc": "ready远程下电闭锁",
+            "isSupport": true,
+            "supportVersion": "8.3.0"
+        },
+        "remoteBatteryPreconditioning": {
+            "desc": "电池远程预冷预热",
+            "isSupport": true,
+            "supportVersion": "8.3.0"
+        },
+        "remoteInteriorVideo": {
+            "desc": "远程舱内影像",
+            "isSupport": true,
+            "supportVersion": "8.2.0"
+        },
+        "remoteSceneMode": {
+            "desc": "远程情景模式",
+            "isSupport": true,
+            "supportVersion": "8.2.0"
+        },
+        "vlaSummon": {
+            "desc": "vla召唤",
+            "isSupport": true,
+            "supportVersion": "8.1.0"
+        },
+        "sentry": {
+            "desc": "哨兵模式",
+            "isSupport": true,
+            "supportVersion": "4.4.0"
+        },
+        "fridge": {
+            "desc": "远程冰箱",
+            "isSupport": true,
+            "supportVersion": "4.5.0"
+        },
+        "taskMaster": {
+            "desc": "任务大师",
+            "isSupport": true,
+            "supportVersion": "4.6.0"
+        },
+        "parking": {
+            "desc": "直线召唤",
+            "isSupport": true,
+            "supportVersion": "4.0.2"
+        },
+        "bleBackGroundMode": {
+            "desc": "蓝牙后台请求不断开",
+            "isSupport": true,
+            "supportVersion": "4.6.0"
+        },
+        "bleMultiConnection": {
+            "desc": "蓝牙钥匙多连接",
+            "isSupport": false
+        },
+        "family": {
+            "desc": "家人共享",
+            "isSupport": true,
+            "supportVersion": "4.3.0"
+        },
+        "chargingMode": {
+            "desc": "充电模式",
+            "isSupport": true,
+            "supportVersion": "4.4.0"
+        },
+        "speedCool": {
+            "desc": "极速制冷",
+            "isSupport": true,
+            "supportVersion": "4.5.3"
+        },
+        "superCharging": {
+            "desc": "5C超充",
+            "isSupport": true
+        },
+        "oppoWatch": {
+            "desc": "Oppo手表",
+            "isSupport": true,
+            "supportVersion": "0.0.0"
+        },
+        "oppoCard": {
+            "desc": "Oppo负一屏",
+            "isSupport": true
+        },
+        "vivoCard": {
+            "desc": "vivo负一屏",
+            "isSupport": true
+        },
+        "honorCard": {
+            "desc": "荣耀负一屏",
+            "isSupport": false
+        },
+        "btAiKey": {
+            "supportVersion": "5.3.0",
+            "desc": "智能蓝牙钥匙beta",
+            "isSupport": false
+        },
+        "oppoCardV2": {
+            "desc": "Oppo负一屏",
+            "isSupport": true,
+            "appVersion": "1.0.0"
+        },
+        "vivoCardV2": {
+            "desc": "vivo负一屏",
+            "isSupport": true,
+            "appVersion": "1.0.0"
+        },
+        "scene": {
+            "desc": "小溪模式",
+            "isSupport": true,
+            "appVersion": "5.1.0"
+        },
+        "speedHeat": {
+            "desc": "",
+            "isSupport": true,
+            "appVersion": "5.0.0"
+        },
+        "familyShare": {
+            "desc": "家人共享",
+            "isSupport": true,
+            "appVersion": "4.3.0"
+        },
+        "chargingJobVersion": {
+            "desc": "充电切job",
+            "isSupport": true,
+            "appVersion": "5.2.0"
+        },
+        "sideDoor": {
+            "desc": "侧滑门支持",
+            "isSupport": true,
+            "appVersion": "5.1.2"
+        },
+        "electricFrontDoor": {
+            "desc": "前电动门",
+            "isSupport": true,
+            "appVersion": "5.1.2",
+            "supportVersion": "5.1.2"
+        },
+        "ogcType": {
+            "desc": "充电",
+            "isSupport": true,
+            "appVersion": "5.1.2"
+        },
+        "autoWakeUp": {
+            "isSupport": true,
+            "appVersion": "0.0.0"
+        },
+        "chargeRecord": {
+            "desc": "充电记录",
+            "isSupport": true,
+            "supportVersion": "4.4.0"
+        },
+        "departOnTime": {
+            "desc": "按时出发",
+            "isSupport": true,
+            "supportVersion": "7.1.0"
+        },
+        "sentryVideo": {
+            "desc": "哨兵视频",
+            "isSupport": true,
+            "supportVersion": "7.2.0"
+        },
+        "coolingLiquid": {
+            "desc": "冷却液",
+            "isSupport": true,
+            "supportVersion": "0.0.0"
+        }
+    }
+}

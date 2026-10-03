@@ -1,0 +1,156 @@
+{
+  "_comment": "实体名对齐表 —— 名字取自官方 App（APK 的 I18N / res/values/strings.xml），保证与 App 叫法一致。",
+  "_sources": {
+    "VehicleHomeControl.*": "assets/index.vehicle.js 的 I18N 组（车控页按钮）",
+    "ChargingLimit.title": "assets/index.vehicle.js（充电上限）",
+    "ChargeRecord.title": "assets/index.vehicle.js（充电记录）",
+    "ControlButton.*": "assets/index.vehicle.js（充电按钮）",
+    "res/values/strings.xml": "Android 原生资源（小组件/车控文案）",
+    "seat(manual)": "手工整理（App 用图标+位置表示座椅，无独立文案）"
+  },
+  "lock": {
+    "zh": "车锁",
+    "en": "Lock",
+    "source": "vehicle_control_car_lock"
+  },
+  "unlock": {
+    "zh": "解锁",
+    "en": "Unlock",
+    "source": "widget_button_unlock"
+  },
+  "window": {
+    "zh": "车窗",
+    "en": "Windows",
+    "source": "VehicleHomeControl.window"
+  },
+  "door_trunk": {
+    "zh": "尾门",
+    "en": "Tailgate",
+    "source": "VehicleHomeControl.trunk"
+  },
+  "driving_auth": {
+    "zh": "授权驾驶",
+    "en": "Access",
+    "source": "VehicleHomeControl.authorization"
+  },
+  "find_car": {
+    "zh": "寻车",
+    "en": "Honk",
+    "source": "VehicleHomeControl.search"
+  },
+  "front_trunk": {
+    "zh": "前备箱",
+    "en": "Frunk",
+    "source": "VehicleHomeControl.frontTrunk"
+  },
+  "side_door": {
+    "zh": "侧门",
+    "en": "Door",
+    "source": "VehicleHomeControl.sideDoor"
+  },
+  "flash": {
+    "zh": "闪灯",
+    "en": "Flash",
+    "source": "float.Flashlight"
+  },
+  "horn": {
+    "zh": "鸣笛",
+    "en": "Whistle",
+    "source": "float.Whistle"
+  },
+  "charge_limit": {
+    "zh": "充电上限",
+    "en": "Charging upper limit",
+    "source": "ChargingLimit.title"
+  },
+  "charge_record": {
+    "zh": "充电记录",
+    "en": "Charging Record",
+    "source": "ChargeRecord.title"
+  },
+  "start_charge": {
+    "zh": "开始充电",
+    "en": "Start charging",
+    "source": "ControlButton.startCharge"
+  },
+  "stop_charge": {
+    "zh": "停止充电",
+    "en": "Stop charging",
+    "source": "ControlButton.stopCharge"
+  },
+  "fast_cool": {
+    "zh": "快速制冷",
+    "en": "Fast cooling",
+    "source": "res/values/strings.xml fast_cold"
+  },
+  "fast_hot": {
+    "zh": "快速制热",
+    "en": "Fast heating",
+    "source": "res/values/strings.xml fast_hot"
+  },
+  "deicing": {
+    "zh": "除雪除冰",
+    "en": "Snow and ice removal",
+    "source": "res/values/strings.xml snow_and_ice_removal"
+  },
+  "seat_fl_heat": {
+    "zh": "主驾座椅加热",
+    "en": "Driver seat heating",
+    "source": "seat(manual)"
+  },
+  "seat_fr_heat": {
+    "zh": "副驾座椅加热",
+    "en": "Passenger seat heating",
+    "source": "seat(manual)"
+  },
+  "seat_sl_heat": {
+    "zh": "二排左座椅加热",
+    "en": "Second row left seat heating",
+    "source": "seat(manual)"
+  },
+  "seat_sm_heat": {
+    "zh": "二排中座椅加热",
+    "en": "Second row middle seat heating",
+    "source": "seat(manual)"
+  },
+  "seat_sr_heat": {
+    "zh": "二排右座椅加热",
+    "en": "Second row right seat heating",
+    "source": "seat(manual)"
+  },
+  "seat_tl_heat": {
+    "zh": "三排左座椅加热",
+    "en": "Third row left seat heating",
+    "source": "seat(manual)"
+  },
+  "seat_tm_heat": {
+    "zh": "三排中座椅加热",
+    "en": "Third row middle seat heating",
+    "source": "seat(manual)"
+  },
+  "seat_tr_heat": {
+    "zh": "三排右座椅加热",
+    "en": "Third row right seat heating",
+    "source": "seat(manual)"
+  },
+  "seat_fl_vent": {
+    "zh": "主驾座椅通风",
+    "en": "Driver seat ventilation",
+    "source": "seat(manual)"
+  },
+  "seat_fr_vent": {
+    "zh": "副驾座椅通风",
+    "en": "Passenger seat ventilation",
+    "source": "seat(manual)"
+  },
+  "seat_sl_vent": {
+    "zh": "二排左座椅通风",
+    "en": "Second row left seat ventilation",
+    "source": "seat(manual)"
+  },
+  "seat_sr_vent": {
+    "zh": "二排右座椅通风",
+    "en": "Second row right seat ventilation",
+    "source": "seat(manual)"
+  }
+}

@@ -1,0 +1,806 @@
+{
+  "account_is_locked": {
+    "zh": "账号被锁定",
+    "en": "Account locked"
+  },
+  "battery_insulation": {
+    "zh": "电池保温",
+    "en": "Warm battery"
+  },
+  "battery_insulation_hint": {
+    "zh": "开启后，在充电完成时，电池将继续保温，保证驾驶体验，同时可能会产生少量的费用。",
+    "en": "When enabled, the system will keep the battery warm after charging is completed to ensure a smooth driving experience while a small amount of cost may be incurred."
+  },
+  "battery_is_keeping_warm": {
+    "zh": "电池保温中",
+    "en": "Keeping battery warm"
+  },
+  "ble_normal_upgrade_default_lock_background_title": {
+    "zh": "4.锁定“后台运行”",
+    "en": "4.Lock Background Running"
+  },
+  "ble_normal_upgrade_hw_lock_background_title": {
+    "zh": "3.锁定“后台运行”",
+    "en": "3.Lock Background Running"
+  },
+  "ble_normal_upgrade_mi_lock_background_title": {
+    "zh": "4.锁定“后台运行”",
+    "en": "4.Lock Background Running"
+  },
+  "ble_normal_upgrade_sansung_lock_background_title": {
+    "zh": "3.锁定“后台运行”",
+    "en": "3.Lock Background Running"
+  },
+  "ble_silence_lock_tip_widget_content": {
+    "zh": "车辆未开启离车自动落锁，请前往车机端开启",
+    "en": ""
+  },
+  "ble_silence_lock_tip_widget_title": {
+    "zh": "无感解锁状态异常",
+    "en": ""
+  },
+  "ble_silence_unlock_tip_widget_content": {
+    "zh": "车辆未开启靠近自动解锁，请前往车机端开启",
+    "en": ""
+  },
+  "ble_unlock_limit_tip_widget_content": {
+    "zh": "门把手仅在首次无感解锁时弹出",
+    "en": ""
+  },
+  "ble_unlock_limit_tip_widget_title": {
+    "zh": "触摸门把手解锁车辆",
+    "en": ""
+  },
+  "ble_unlock_tip_checkbox": {
+    "zh": "不再提示",
+    "en": ""
+  },
+  "ble_unlock_tip_nev": {
+    "zh": "仅解锁",
+    "en": ""
+  },
+  "ble_unlock_tip_pos": {
+    "zh": "开启手机钥匙",
+    "en": ""
+  },
+  "ble_unlock_tip_title": {
+    "zh": "解锁车辆",
+    "en": ""
+  },
+  "ble_upgrade_battery_action_text": {
+    "zh": "去开启",
+    "en": "Set"
+  },
+  "ble_upgrade_battery_action_text_done": {
+    "zh": "已开启",
+    "en": "Done"
+  },
+  "ble_upgrade_battery_title": {
+    "zh": "3.开启应用后台运行权限",
+    "en": "3.Enable background running permissions"
+  },
+  "car_battery_tips_five": {
+    "zh": "电池租用购车",
+    "en": "Battery rental purchase"
+  },
+  "car_battery_tips_four": {
+    "zh": "购车价格:",
+    "en": "Price:"
+  },
+  "car_battery_tips_one": {
+    "zh": "电池租用购车",
+    "en": "Battery rental purchase"
+  },
+  "car_lock_info": {
+    "zh": "无法锁定车辆，有车门处于打开状态",
+    "en": "You cannot lock the vehicle with open doors."
+  },
+  "car_lock_no": {
+    "zh": "车辆已启动，不能进行远程控制",
+    "en": "You cannot perform remote control on a started vehicle."
+  },
+  "car_lock_title": {
+    "zh": "检测到车内有钥匙，确认锁车吗？",
+    "en": "Key detected in the vehicle. Lock anyway?"
+  },
+  "charge_battery_info": {
+    "zh": "电池保温提示说明“开启后，在充电完成时，电池将继续保温，保证驾驶体验，同时可能会产生少量的电量。”",
+    "en": "The warm battery prompts \\\"When enabled, the system will keep the battery warm after charging is completed to ensure a smooth driving experience while an additional small amount of electricity consumption may be incurred.\\\""
+  },
+  "charge_battery_titie": {
+    "zh": "电池保温说明",
+    "en": "About warm battery"
+  },
+  "charging": {
+    "zh": "充电",
+    "en": "Charging"
+  },
+  "charging_cable_is_plugged_in": {
+    "zh": "充电枪已插入",
+    "en": "Charging handle plugged"
+  },
+  "charging_efficiency": {
+    "zh": "效率",
+    "en": "Efficiency"
+  },
+  "charging_failure": {
+    "zh": "充电故障",
+    "en": "Charging fault"
+  },
+  "charging_is_over_please_pull_out_the_charging_gun": {
+    "zh": "充电结束，请拔出充电枪",
+    "en": "Charging completed. Pull out the charging handle."
+  },
+  "charging_order_tips_one": {
+    "zh": "正在开启",
+    "en": "Enabling"
+  },
+  "charging_pile_info_tips_four": {
+    "zh": "实际支付",
+    "en": "Actual payment"
+  },
+  "charging_pile_info_tips_one": {
+    "zh": "申请售后",
+    "en": "Request for after-sales"
+  },
+  "charging_pile_info_tips_three": {
+    "zh": "运费",
+    "en": "Freight"
+  },
+  "charging_pile_info_tips_two": {
+    "zh": "商品总额",
+    "en": "Total price"
+  },
+  "charging_pile_ing": {
+    "zh": "正在识别充电桩",
+    "en": "Identifying charging pile..."
+  },
+  "charging_power": {
+    "zh": "充电电量",
+    "en": "Electricity consumed from beginning"
+  },
+  "charging_reservation_time": {
+    "zh": "将在%1$s自动开始充电",
+    "en": "Auto charging at %1$s"
+  },
+  "charging_service_fee": {
+    "zh": "充电服务费",
+    "en": ""
+  },
+  "charging_setting": {
+    "zh": "充电设置",
+    "en": "Charging settings"
+  },
+  "confirm_lock": {
+    "zh": "确定锁单",
+    "en": "Lock the order"
+  },
+  "current_battery": {
+    "zh": "当前电量",
+    "en": "Battery"
+  },
+  "dialog_tip_lock": {
+    "zh": "您的订单将立即锁定，锁定后订单将无法修改或取消，定金不可退。",
+    "en": "Your order will be immediately locked. After locking, the order cannot be modified or cancelled, and the deposit is non-refundable."
+  },
+  "end_when_the_charging_limit_is_reached": {
+    "zh": "到达充电上限时结束",
+    "en": "Keep charging until charge limit is reached"
+  },
+  "family_acc_window_not_support": {
+    "zh": "车辆解锁后不支持手机操作车窗",
+    "en": ""
+  },
+  "finish_charging": {
+    "zh": "结束供电",
+    "en": "End charging"
+  },
+  "finished_charging": {
+    "zh": "充电完成",
+    "en": "Charging completed"
+  },
+  "layout_battery_info_text_0": {
+    "zh": "--",
+    "en": "--"
+  },
+  "layout_battery_info_text_1": {
+    "zh": "%",
+    "en": "%"
+  },
+  "leave_parking_has_bean_lock_parking": {
+    "zh": "当前在关门泊入中",
+    "en": "Remote Parking in progress"
+  },
+  "leave_parking_lock_exit_confirm_nav": {
+    "zh": "取消",
+    "en": "Cancel"
+  },
+  "leave_parking_lock_exit_confirm_pos": {
+    "zh": "确定",
+    "en": "OK"
+  },
+  "leave_parking_lock_exit_confirm_title": {
+    "zh": "泊车尚未完成，确认退出？",
+    "en": "Parking is not yet completed. Are you sure to exit?"
+  },
+  "leave_parking_lock_home_widget_exit": {
+    "zh": "退出",
+    "en": "Cancel"
+  },
+  "leave_parking_lock_home_widget_known": {
+    "zh": "知道了",
+    "en": "Got it."
+  },
+  "leave_parking_lock_home_widget_pause": {
+    "zh": "暂停",
+    "en": "Pause"
+  },
+  "leave_parking_lock_home_widget_recoverable_title": {
+    "zh": "泊入中断，请重新尝试",
+    "en": "Remote Parking is interrupted. Please try again."
+  },
+  "leave_parking_lock_home_widget_resume": {
+    "zh": "继续",
+    "en": "Continue"
+  },
+  "leave_parking_lock_home_widget_retry": {
+    "zh": "重试",
+    "en": "Try again"
+  },
+  "leave_parking_lock_home_widget_title_pause": {
+    "zh": "关门泊入已暂停",
+    "en": "Remote Parking paused"
+  },
+  "leave_parking_lock_home_widget_title_running": {
+    "zh": "关门泊入进行中",
+    "en": "Remote Parking in progress"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_0": {
+    "zh": "车辆异常，功能无法使用",
+    "en": "Vehicle malfunction. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_10": {
+    "zh": "车辆异常，功能无法使用",
+    "en": "Vehicle malfunction. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_11": {
+    "zh": "车辆异常，功能无法使用",
+    "en": "Vehicle malfunction. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_12": {
+    "zh": "车辆异常，功能无法使用",
+    "en": "Vehicle malfunction. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_13": {
+    "zh": "车辆异常，功能无法使用",
+    "en": "Vehicle malfunction. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_14": {
+    "zh": "坡度较大无法泊车，请手动泊车",
+    "en": "The slope is too steep to park the vehicle. Please park manually."
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_15": {
+    "zh": "车辆异常，功能无法使用",
+    "en": "Vehicle malfunction. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_16": {
+    "zh": "车辆异常，功能无法使用",
+    "en": "Vehicle malfunction. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_17": {
+    "zh": "车辆异常，功能无法使用",
+    "en": "Vehicle malfunction. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_18": {
+    "zh": "车内有人，请乘客离开车辆并关闭车门",
+    "en": "Someone is inside the vehicle. Ask the passenger(s) to leave the vehicle and close the door."
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_19": {
+    "zh": "车内有人，请乘客离开车辆并关闭车门",
+    "en": "Someone is inside the vehicle. Ask the passenger(s) to leave the vehicle and close the door."
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_2": {
+    "zh": "车辆异常，功能无法使用",
+    "en": "Vehicle malfunction. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_20": {
+    "zh": "车内有人，请乘客离开车辆并关闭车门",
+    "en": "Someone is inside the vehicle. Ask the passenger(s) to leave the vehicle and close the door."
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_21": {
+    "zh": "车内有人，请乘客离开车辆并关闭车门",
+    "en": "Someone is inside the vehicle. Ask the passenger(s) to leave the vehicle and close the door."
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_22": {
+    "zh": "车辆异常，功能无法使用",
+    "en": "Vehicle malfunction. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_23": {
+    "zh": "车辆异常，功能无法使用",
+    "en": "Vehicle malfunction. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_24": {
+    "zh": "无可用钥匙，功能无法使用",
+    "en": "No key available. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_25": {
+    "zh": "车辆异常，功能无法使用",
+    "en": "Vehicle malfunction. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_26": {
+    "zh": "空间过小，功能无法使用",
+    "en": "Space too tight. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_27": {
+    "zh": "空间过小，功能无法使用",
+    "en": "Space too tight. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_28": {
+    "zh": "有悬空障碍物，功能无法使用",
+    "en": "Suspended obstacle detected. Function unavailable"
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_3": {
+    "zh": "有车门开启，功能无法使用",
+    "en": "A door is open. The function is unavailable."
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_4": {
+    "zh": "有车门开启，功能无法使用",
+    "en": "A door is open. The function is unavailable."
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_5": {
+    "zh": "有车门开启，功能无法使用",
+    "en": "A door is open. The function is unavailable."
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_6": {
+    "zh": "有车门开启，功能无法使用",
+    "en": "A door is open. The function is unavailable."
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_7": {
+    "zh": "机舱盖开启，功能无法使用",
+    "en": "The engine compartment cover is open. The function is unavailable."
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_8": {
+    "zh": "尾门开启，功能无法使用",
+    "en": "The tailgate is open. The function is unavailable."
+  },
+  "leave_parking_lock_interrupt_msg_apao_info_18_9": {
+    "zh": "后视镜折叠，功能无法使用",
+    "en": "The rear view mirror is folded. The function is unavailable."
+  },
+  "lock_dialog_info": {
+    "zh": "锁定订单须知",
+    "en": "Instructions for order locking"
+  },
+  "lock_order_immediately": {
+    "zh": "立即锁定",
+    "en": "Lock now"
+  },
+  "lock_order_success_tip": {
+    "zh": "恭喜您定购成功",
+    "en": "Congratulations! Your order has been placed."
+  },
+  "locked_count": {
+    "zh": "安全密码输入错误次数过多，请重置安全密码或等待%1$s分钟后重试",
+    "en": "You have entered the wrong passwords too many times. Reset the password or try again after %1$s minutes"
+  },
+  "locking": {
+    "zh": "失败次数过多，请稍后重试",
+    "en": "Touch ID verification failed. Try again later."
+  },
+  "material_clock_display_divider": {
+    "zh": ":",
+    "en": ""
+  },
+  "material_clock_toggle_content_description": {
+    "zh": "Select AM or PM",
+    "en": ""
+  },
+  "material_timepicker_clock_mode_description": {
+    "zh": "Switch to clock mode for the time input.",
+    "en": ""
+  },
+  "no_charging": {
+    "zh": "未充电",
+    "en": "Need charging"
+  },
+  "notification_action_lock": {
+    "zh": "闭锁",
+    "en": "Lock"
+  },
+  "notification_action_unlock": {
+    "zh": "解锁",
+    "en": "Unlock"
+  },
+  "order_list_order_statue_wait_lock": {
+    "zh": "锁定订单",
+    "en": "Lock order"
+  },
+  "order_lock_tips_one": {
+    "zh": "锁定订单须知",
+    "en": "Instructions for order locking"
+  },
+  "parking_error_start_vehicle_lock": {
+    "zh": "车辆闭锁，召唤已退出",
+    "en": ""
+  },
+  "pile_charging_tips_five": {
+    "zh": "功率",
+    "en": "Power"
+  },
+  "pile_charging_tips_four": {
+    "zh": "电流",
+    "en": "Current"
+  },
+  "pile_charging_tips_three": {
+    "zh": "度",
+    "en": "kWh"
+  },
+  "pile_charging_tips_two": {
+    "zh": "充电电量",
+    "en": "Electricity consumed from beginning"
+  },
+  "pile_charging_unknow_car_tips_one": {
+    "zh": "度",
+    "en": "kWh"
+  },
+  "pile_charging_unknow_car_tips_three": {
+    "zh": "功率",
+    "en": "Power"
+  },
+  "pile_charging_unknow_car_tips_two": {
+    "zh": "电流",
+    "en": "Current"
+  },
+  "please_insert_charging_gun": {
+    "zh": "请插入充电枪",
+    "en": "Insert the charge handle"
+  },
+  "please_operate_charging_pile_is_idle": {
+    "zh": "请在充电桩空闲状态下操作",
+    "en": "Operate when the charging pile is idle."
+  },
+  "prompt_lock_leave_parking_text": {
+    "zh": "关门泊入进行中，点击可立即停止。",
+    "en": ""
+  },
+  "punch_feed_clock": {
+    "zh": "打卡动态",
+    "en": "Check-in status"
+  },
+  "punch_this_clock": {
+    "zh": "已打卡",
+    "en": "Checked in at"
+  },
+  "remaining_battery": {
+    "zh": "剩余电量",
+    "en": "Battery"
+  },
+  "reservation_charging": {
+    "zh": "预约充电",
+    "en": "Scheduled charging"
+  },
+  "sentry_download_cancel": {
+    "zh": "下载已取消",
+    "en": "Download canceled."
+  },
+  "sentry_download_failed": {
+    "zh": "下载失败",
+    "en": "Download failed."
+  },
+  "sentry_download_success": {
+    "zh": "下载完成，已保存至系统相册",
+    "en": "Download completed and saved to the system album"
+  },
+  "service_charging": {
+    "zh": "我的充电桩",
+    "en": "My charging pile"
+  },
+  "setting_battery_insulation": {
+    "zh": "电池保温",
+    "en": "Warm battery"
+  },
+  "setting_charging": {
+    "zh": "充电设置",
+    "en": "Setting Charging"
+  },
+  "shortcut_lock_long_label": {
+    "zh": "远程车锁",
+    "en": ""
+  },
+  "shortcut_lock_short_label": {
+    "zh": "远程车锁",
+    "en": ""
+  },
+  "shortcut_window_long_label": {
+    "zh": "远程车窗",
+    "en": ""
+  },
+  "shortcut_window_short_label": {
+    "zh": "远程车窗",
+    "en": ""
+  },
+  "start_charging": {
+    "zh": "开始充电时间",
+    "en": "Start charging at"
+  },
+  "start_charging_bottom": {
+    "zh": "开始充电",
+    "en": "Start charging"
+  },
+  "vehicle_charge_widget_low_battery": {
+    "zh": "电量低",
+    "en": ""
+  },
+  "vehicle_charging_bottom": {
+    "zh": "开始充电",
+    "en": ""
+  },
+  "vehicle_charging_low": {
+    "zh": "电量低",
+    "en": ""
+  },
+  "vehicle_charging_title": {
+    "zh": "充电中",
+    "en": ""
+  },
+  "vehicle_charging_wait_title": {
+    "zh": "等待充电",
+    "en": ""
+  },
+  "vehicle_control_away_from_you": {
+    "zh": "距您 %s",
+    "en": "%s away from you"
+  },
+  "vehicle_control_car_lock": {
+    "zh": "车锁",
+    "en": "Locks"
+  },
+  "vehicle_control_car_remote": {
+    "zh": "授权驾驶",
+    "en": "Auth"
+  },
+  "vehicle_control_car_search": {
+    "zh": "寻车",
+    "en": "Honk"
+  },
+  "vehicle_control_car_tailgate": {
+    "zh": "尾门",
+    "en": "Tailgate"
+  },
+  "vehicle_control_car_window": {
+    "zh": "车窗",
+    "en": "Windows"
+  },
+  "vehicle_control_close_tailgate_hint": {
+    "zh": "请确认尾门周边安全，是否关闭？",
+    "en": "Make sure it is safe around the tailgate. Close now?"
+  },
+  "vehicle_control_close_window_hint": {
+    "zh": "车窗将全部关闭，是否关闭？",
+    "en": "All windows will be closed. Close now?"
+  },
+  "vehicle_control_confirm": {
+    "zh": "确认",
+    "en": ""
+  },
+  "vehicle_control_execute_success": {
+    "zh": "执行成功",
+    "en": "Succeeded"
+  },
+  "vehicle_control_fingerprint_verification_faild": {
+    "zh": "指纹校验失败",
+    "en": "Fingerprint verification failed."
+  },
+  "vehicle_control_frequent": {
+    "zh": "车控操作频繁",
+    "en": "Frequent vehicle control operation"
+  },
+  "vehicle_control_lock_title": {
+    "zh": "闭锁将同步关闭侧滑门，请注意周边安全",
+    "en": ""
+  },
+  "vehicle_control_member_maturity": {
+    "zh": "%s 到期",
+    "en": "%s from expiring"
+  },
+  "vehicle_control_need_safety_certification": {
+    "zh": "该指令需要安全认证",
+    "en": "This command requires security authentication"
+  },
+  "vehicle_control_remote": {
+    "zh": "授权驾驶",
+    "en": ""
+  },
+  "vehicle_control_remote_start_permissions": {
+    "zh": "授权驾驶",
+    "en": "Keyless"
+  },
+  "vehicle_control_remote_start_permissions_got": {
+    "zh": "已授权",
+    "en": "Authorized"
+  },
+  "vehicle_control_remote_start_permissions_start": {
+    "zh": "已启动",
+    "en": "Started"
+  },
+  "vehicle_control_slid_left": {
+    "zh": "左侧滑门",
+    "en": ""
+  },
+  "vehicle_control_slid_right": {
+    "zh": "右侧滑门",
+    "en": ""
+  },
+  "vehicle_control_success": {
+    "zh": "成功",
+    "en": "Successful"
+  },
+  "vehicle_control_title1": {
+    "zh": "请在2分钟内上车并踩下刹车踏板，下车后请注意锁车。",
+    "en": ""
+  },
+  "vehicle_control_title10": {
+    "zh": "当前二排座椅处于旋转中，闭锁将在座椅旋转调整后同步关闭侧滑门，请注意周边安全。",
+    "en": ""
+  },
+  "vehicle_control_title11": {
+    "zh": "当前二排座椅处于旋转中，闭锁将同步关闭前门，并在座椅旋转调整后关闭侧滑门，请注意周边安全。",
+    "en": ""
+  },
+  "vehicle_control_title12": {
+    "zh": "当前二排座椅处于旋转中，关闭侧滑门将先调整座椅，确认是否关闭？",
+    "en": ""
+  },
+  "vehicle_control_title13": {
+    "zh": "当前二排座椅处于旋转座椅，闭锁将在座椅旋转复位后同步关闭侧滑门。为了安全，请确保该侧乘客已下车。请注意周边安全。",
+    "en": ""
+  },
+  "vehicle_control_title14": {
+    "zh": "当前二排座椅处于旋转座椅，闭锁将同步关闭前门，并在座椅旋转复位后关闭侧滑门。为了安全，请确保该侧乘客已下车。请注意周边安全。",
+    "en": ""
+  },
+  "vehicle_control_title15": {
+    "zh": "当前二排正处于旋转座椅，关闭侧滑门将先复位座椅。为了安全，请确保该侧乘客已下车。确认是否关闭？",
+    "en": ""
+  },
+  "vehicle_control_title16": {
+    "zh": "当前前门为手动模式，请手动关闭车门后闭锁",
+    "en": ""
+  },
+  "vehicle_control_title2": {
+    "zh": "驾驶结束并锁车后失效",
+    "en": ""
+  },
+  "vehicle_control_title3": {
+    "zh": "授权驾驶中",
+    "en": ""
+  },
+  "vehicle_control_title4": {
+    "zh": "开启尾门前请确保周边安全。",
+    "en": ""
+  },
+  "vehicle_control_title5": {
+    "zh": "关闭尾门前请确保周边安全。",
+    "en": ""
+  },
+  "vehicle_control_title6": {
+    "zh": "打开侧滑门前请确认周边安全。",
+    "en": ""
+  },
+  "vehicle_control_title7": {
+    "zh": "关闭侧滑门前请确认周边安全。",
+    "en": ""
+  },
+  "vehicle_control_title8": {
+    "zh": "闭锁将同步关闭前门及侧滑门，请注意周边安全。",
+    "en": ""
+  },
+  "vehicle_control_title9": {
+    "zh": "闭锁将同步关闭前门，请注意周边安全。",
+    "en": ""
+  },
+  "vehicle_sentry_actived": {
+    "zh": "已激活",
+    "en": ""
+  },
+  "vehicle_sentry_desc1": {
+    "zh": "监测驻车状态下的可疑行为，仅当次驻车有效",
+    "en": ""
+  },
+  "vehicle_sentry_desc2": {
+    "zh": "已激活",
+    "en": ""
+  },
+  "vehicle_sentry_desc3": {
+    "zh": "未识别到U盘，仅可告警无法录制视频",
+    "en": ""
+  },
+  "vehicle_sentry_desc4": {
+    "zh": "U盘空间不足，仅可告警无法录制视频",
+    "en": ""
+  },
+  "vehicle_sentry_desc5": {
+    "zh": "正在识别U盘...",
+    "en": ""
+  },
+  "vehicle_sentry_high_risk_count": {
+    "zh": "个高风险",
+    "en": ""
+  },
+  "vehicle_sentry_not_active": {
+    "zh": "未激活",
+    "en": ""
+  },
+  "vehicle_sentry_photo": {
+    "zh": "继续拍照",
+    "en": ""
+  },
+  "vehicle_sentry_title": {
+    "zh": "哨兵模式",
+    "en": ""
+  },
+  "vehicle_sentry_title1": {
+    "zh": "哨兵模式已激活，重新拍照将暂停哨兵模式，拍照完成后自动恢复哨兵模式工作状态。",
+    "en": ""
+  },
+  "vehicle_sentry_title2": {
+    "zh": "驻车期间监控车辆周围的可疑行为并录制视频到U盘中。如遇碰撞、剐蹭等，还会通过手机进行提示。",
+    "en": ""
+  },
+  "vehicle_service_charging_network": {
+    "zh": "充电",
+    "en": ""
+  },
+  "vehicle_warning_door_unlocked": {
+    "zh": "车门未锁",
+    "en": "DR UL"
+  },
+  "vehicle_warning_tailgate_unclosed": {
+    "zh": "尾门未关",
+    "en": "Tailgate open"
+  },
+  "vehicle_warning_window_unclosed": {
+    "zh": "车窗未关",
+    "en": "WDW OPN"
+  },
+  "wait_charging": {
+    "zh": "等待充电",
+    "en": "Waiting"
+  },
+  "waiting_for_charging": {
+    "zh": "等待充电",
+    "en": "Waiting"
+  },
+  "widget_button_lock": {
+    "zh": "车锁",
+    "en": ""
+  },
+  "widget_button_trunk": {
+    "zh": "尾门",
+    "en": ""
+  },
+  "widget_button_unlock": {
+    "zh": "解锁",
+    "en": ""
+  },
+  "widget_button_window": {
+    "zh": "车窗",
+    "en": ""
+  },
+  "widget_status_battery": {
+    "zh": "电量: %d%%",
+    "en": ""
+  },
+  "widget_toast_ac_toggling": {
+    "zh": "正在切换空调…",
+    "en": ""
+  },
+  "widget_toast_locking": {
+    "zh": "正在锁车…",
+    "en": ""
+  },
+  "widget_toast_unlocking": {
+    "zh": "正在解锁…",
+    "en": ""
+  }
+}

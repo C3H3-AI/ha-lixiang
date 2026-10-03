@@ -1,0 +1,517 @@
+{
+    "desc": "L7Customized26",
+    "unityModel": "L7C",
+    "platform": "2",
+    "batteryType": "1",
+    "unityIOS": {
+        "7.0.0": {
+            "url": "https://p.ampmake.com/v1/cfe_cloudPai/content/files/lixiang-liauto/LXAPPX13.pkg_20260813161832.zip",
+            "crc": "410acec7ee9cd11ae2d4ef990c239efb",
+            "scene": "LXAPP_X13",
+            "active": "LXAPP_APIcontrol"
+        }
+    },
+    "unityAndroid": {
+        "7.0.0": {
+            "url": "https://p.ampmake.com/v1/cfe_cloudPai/content/files/lixiang-liauto/LXAPP_X13.pkg_20260630095935.zip",
+            "md5": "716c98d9611457d7ef2cbf095597a9ef",
+            "scene": "LXAPP_X13"
+        }
+    },
+    "unityHarmony": {
+        "7.0.0": {
+            "url": "https://p.ampmake.com/v1/cfe_cloudPai/content/files/lixiang-liauto/LXAPP_X13.pkg_20260630104428.zip",
+            "md5": "7d41b535f56988800cb2fe1a73dbc554",
+            "scene": "LXAPP_X13",
+            "active": "LXAPP_APIcontrol"
+        }
+    },
+    "text": {
+        "bleUpgrade": "携带手机靠近车辆，车辆自动解锁启动，远离自动上锁。",
+        "openBleTip": "无需实体钥匙，打开“理想汽车”，\n即可实现靠近车辆自动解锁启动、远离车辆自动上锁。"
+    },
+    "image": {
+        "vehicle": "img_l9_vertical_car",
+        "lisaACBg": "ic_lisa_home_ac_w",
+        "lisaACSeatVentBg": "ic_lisa_home_ac_seat_vent",
+        "lisaACSeatHeatBg": "ic_lisa_home_ac_seat_heat",
+        "bleDoorknobIcon": "ble_doorknob_half_hidden_ico"
+    },
+    "temp": {
+        "desc": "车型远程温控",
+        "config": [
+            {
+                "desc": "方向盘加热",
+                "key": "strgWhlHeatSw",
+                "value": "4"
+            },
+            {
+                "key": "flSeatSw",
+                "value": "3",
+                "desc": "主驾座椅能力"
+            },
+            {
+                "key": "frSeatSw",
+                "value": "3",
+                "desc": "副驾座椅能力"
+            },
+            {
+                "key": "secLSeatSw",
+                "value": "3",
+                "desc": "第二排左座椅能力"
+            },
+            {
+                "key": "secMSeatSw",
+                "value": "4",
+                "desc": "第二排中座椅能力"
+            },
+            {
+                "key": "secRSeatSw",
+                "value": "3",
+                "desc": "第二排右座椅能力"
+            },
+            {
+                "key": "thirdLSeatSw",
+                "value": "1",
+                "desc": "第三排左座椅能力"
+            },
+            {
+                "key": "thirdRSeatSw",
+                "value": "1",
+                "desc": "第三排右座椅能力"
+            }
+        ],
+        "other": {
+            "minTemp": 16,
+            "maxTemp": 30,
+            "vehicleSeat": 5
+        }
+    },
+    "config": {
+        "desc": "车型基础数据",
+        "energy": {
+            "power": [
+                "1",
+                "2"
+            ]
+        },
+        "bleWalletImage": "https://p.ampmake.com/ois/bluetooth/20220713-143026.png",
+        "vivoTypeCode": "L7Customized26",
+        "parameter": {
+            "ControlHighOrLowModel": "1"
+        },
+        "pedal": [
+            {
+                "key": "have",
+                "value": "pedal_have_1_LXVC_L9"
+            },
+            {
+                "key": "notHave",
+                "value": "pedal_have_0_LXVC_L9"
+            }
+        ],
+        "wheel": [
+            {
+                "key": "BWJ",
+                "value": "wheels_22inch_0_LXVC_L9"
+            },
+            {
+                "key": "BWY",
+                "value": "wheels_22inch_1_LXVC_L9"
+            },
+            {
+                "key": "BWK",
+                "value": "wheels_22inch_2_LXVC_L9"
+            },
+            {
+                "key": "BW14",
+                "value": "wheels_21inch_3_LXVC_L9"
+            },
+            {
+                "key": "BW17",
+                "value": "wheels_21inch_4_LXVC_L9"
+            }
+        ],
+        "color": [
+            {
+                "key": "FAX",
+                "value": "ex_color_0_L9"
+            },
+            {
+                "key": "FA3",
+                "value": "ex_color_1_L9"
+            },
+            {
+                "key": "FA9",
+                "value": "ex_color_2_L9"
+            },
+            {
+                "key": "FAE",
+                "value": "ex_color_3_L9"
+            },
+            {
+                "key": "FA17",
+                "value": "ex_color_4_L9"
+            },
+            {
+                "key": "FA19",
+                "value": "ex_color_5_L9"
+            },
+            {
+                "key": "FA24",
+                "value": "ex_color_6_L9"
+            },
+            {
+                "key": "FA30",
+                "value": "ex_color_7_L9"
+            },
+            {
+                "key": "FA31",
+                "value": "ex_color_8_L9"
+            },
+            {
+                "key": "FA32",
+                "value": "ex_color_9_L9"
+            },
+            {
+                "key": "FA33",
+                "value": "ex_color_10_L9"
+            },
+            {
+                "key": "FA8",
+                "value": "ex_color_11_L9"
+            }
+        ],
+        "interior": [
+            {
+                "key": "DZV",
+                "value": "in_color_1_LXVC_L9"
+            },
+            {
+                "key": "DZX",
+                "value": "in_color_0_LXVC_L9"
+            },
+            {
+                "key": "DZW",
+                "value": "in_color_2_LXVC_L9"
+            },
+            {
+                "key": "DZY",
+                "value": "in_color_3_LXVC_L9"
+            }
+        ],
+        "minIcon": [
+            {
+                "key": "FA3",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/黑色_20260511172734.png"
+            },
+            {
+                "key": "FA8",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/绿色_20260511172741.png"
+            },
+            {
+                "key": "FA24",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/绿色_20260511172741.png"
+            },
+            {
+                "key": "FA17",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/松露金_20260511172749.png"
+            },
+            {
+                "key": "FA27",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/WMS/钛金_20260520105959.png"
+            },
+            {
+                "key": "FA32",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/WMS/钛金+暗夜紫_20260520110021.png"
+            },
+            {
+                "key": "FA33",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/WMS/钛金+黑色_20260520110056.png"
+            },
+            {
+                "key": "FA31",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/WMS/钛金+绿色_20260520110107.png"
+            },
+            {
+                "key": "FA30",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/WMS/钛金+松露金_20260520110132.png"
+            },
+            {
+                "key": "FA9",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/新白色_20260511172833.png"
+            },
+            {
+                "key": "FAE",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/fed-web-source/img_v3_0212a_981f7b0f-5117-479b-9e5a-44919ab0e08g_20260603164904.png"
+            },
+            {
+                "key": "FAX",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/极地灰_20260512151056.png"
+            },
+            {
+                "key": "FA19",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/紫色_20260511172846.png"
+            }
+        ],
+        "vertical": [
+            {
+                "key": "FA3",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/黑色_20260511171751.png"
+            },
+            {
+                "key": "FA8",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/绿色_20260511171811.png"
+            },
+            {
+                "key": "FA24",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/绿色_20260511171811.png"
+            },
+            {
+                "key": "FA17",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/松露金_20260511171821.png"
+            },
+            {
+                "key": "FA27",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/钛金_20260511171832.png"
+            },
+            {
+                "key": "FA32",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/钛金+暗夜紫_20260511171840.png"
+            },
+            {
+                "key": "FA33",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/钛金+黑色_20260511171848.png"
+            },
+            {
+                "key": "FA31",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/钛金+绿色_20260511171856.png"
+            },
+            {
+                "key": "FA30",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/钛金+松露金_20260511171906.png"
+            },
+            {
+                "key": "FA9",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/新白色_20260511171915.png"
+            },
+            {
+                "key": "FAE",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/fed-web-source/钛金_20260603165253.png"
+            },
+            {
+                "key": "FAX",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/极地灰_20260512151422.png"
+            },
+            {
+                "key": "FA19",
+                "value": "https://p.ampmake.com/v1/cfe_cloudPai/content/images/sdm/紫色_20260511171931.png"
+            }
+        ]
+    },
+    "version": {
+        "electricDoorModeSetting": {
+            "desc": "新车门电动模式设置项，w10/w05及之后车型，不区分左前右前",
+            "isSupport": false
+        },
+        "rotatableSeatLockLinkage": {
+            "desc": "w05旋转座椅闭锁联动",
+            "isSupport": false
+        },
+        "remoteParkingOut": {
+            "desc": "遥控泊出 仅ad max/Ultra",
+            "isSupport": true,
+            "supportVersion": "0.0.1"
+        },
+        "adFailSafe": {
+            "desc": "AD Fail Safe",
+            "isSupport": true,
+            "supportVersion": "8.6.0"
+        },
+        "multiSlotChargingReservation": {
+            "desc": "多时段预约充电",
+            "isSupport": true,
+            "supportVersion": "0.0.1"
+        },
+        "realtimevideoAudio": {
+            "desc": "舱内影像语音",
+            "isSupport": true,
+            "supportVersion": "8.6.0"
+        },
+        "maintainConfig": {
+            "desc": "保养配置项获取",
+            "isSupport": true,
+            "supportVersion": "0.0.1"
+        },
+        "petModeQuitAndLock": {
+            "desc": "宠物模式退出并闭锁",
+            "isSupport": true,
+            "supportVersion": "99.99.99"
+        },
+        "remoteLockOnReady": {
+            "desc": "ready远程下电闭锁",
+            "isSupport": true,
+            "supportVersion": "8.3.0"
+        },
+        "remoteBatteryPreconditioning": {
+            "desc": "电池远程预冷预热",
+            "isSupport": false
+        },
+        "remoteInteriorVideo": {
+            "desc": "远程舱内影像",
+            "isSupport": true,
+            "supportVersion": "8.2.0"
+        },
+        "remoteSceneMode": {
+            "desc": "远程情景模式",
+            "isSupport": true,
+            "supportVersion": "8.2.0"
+        },
+        "vlaSummon": {
+            "desc": "vla召唤",
+            "isSupport": true,
+            "supportVersion": "8.1.0"
+        },
+        "etc": {
+            "desc": "ETC",
+            "isSupport": true,
+            "supportVersion": "0.0.0"
+        },
+        "sentry": {
+            "desc": "哨兵模式",
+            "isSupport": true,
+            "supportVersion": "4.4.0"
+        },
+        "fridge": {
+            "desc": "远程冰箱",
+            "isSupport": true,
+            "supportVersion": "4.5.0"
+        },
+        "taskMaster": {
+            "desc": "任务大师",
+            "isSupport": true,
+            "supportVersion": "4.6.0"
+        },
+        "parking": {
+            "desc": "直线召唤",
+            "isSupport": true,
+            "supportVersion": "4.0.2"
+        },
+        "bleBackGroundMode": {
+            "desc": "蓝牙后台请求不断开",
+            "isSupport": true,
+            "supportVersion": "4.6.0"
+        },
+        "bleMultiConnection": {
+            "desc": "蓝牙钥匙多连接",
+            "isSupport": false
+        },
+        "family": {
+            "desc": "家人共享",
+            "isSupport": true,
+            "supportVersion": "4.3.0"
+        },
+        "chargingMode": {
+            "desc": "充电模式",
+            "isSupport": true,
+            "supportVersion": "4.4.0"
+        },
+        "speedCool": {
+            "desc": "极速制冷",
+            "isSupport": true,
+            "supportVersion": "4.5.3"
+        },
+        "oppoWatch": {
+            "desc": "Oppo手表",
+            "isSupport": true,
+            "supportVersion": "3.2.0"
+        },
+        "oppoCard": {
+            "desc": "Oppo负一屏",
+            "isSupport": true
+        },
+        "vivoCard": {
+            "desc": "vivo负一屏",
+            "isSupport": true
+        },
+        "honorCard": {
+            "desc": "荣耀负一屏",
+            "isSupport": false
+        },
+        "btAiKey": {
+            "supportVersion": "99.99.99",
+            "desc": "智能蓝牙钥匙beta",
+            "isSupport": false
+        },
+        "oppoCardV2": {
+            "desc": "Oppo负一屏",
+            "isSupport": true,
+            "appVersion": "1.0.0"
+        },
+        "vivoCardV2": {
+            "desc": "vivo负一屏",
+            "isSupport": true,
+            "appVersion": "1.0.0"
+        },
+        "scene": {
+            "desc": "小溪模式",
+            "isSupport": true,
+            "appVersion": "5.1.0"
+        },
+        "speedHeat": {
+            "desc": "",
+            "isSupport": true,
+            "appVersion": "5.0.0"
+        },
+        "familyShare": {
+            "desc": "家人共享",
+            "isSupport": true,
+            "appVersion": "4.3.0"
+        },
+        "chargingJobVersion": {
+            "desc": "充电切job",
+            "isSupport": true,
+            "appVersion": "5.2.0"
+        },
+        "sideDoor": {
+            "desc": "侧滑门支持",
+            "isSupport": false,
+            "appVersion": "5.1.2"
+        },
+        "ogcType": {
+            "desc": "充电",
+            "isSupport": true,
+            "appVersion": "5.1.2"
+        },
+        "autoWakeUp": {
+            "isSupport": true,
+            "appVersion": "0.0.0"
+        },
+        "chargeRecord": {
+            "desc": "充电记录",
+            "isSupport": true,
+            "supportVersion": "4.4.0"
+        },
+        "departOnTime": {
+            "desc": "按时出发",
+            "isSupport": true,
+            "supportVersion": "7.1.0"
+        },
+        "sentryVideo": {
+            "desc": "哨兵视频",
+            "isSupport": true,
+            "supportVersion": "7.2.0"
+        },
+        "NFCPhysicalCard": {
+            "desc": "NFC实体卡",
+            "isSupport": true,
+            "supportVersion": "",
+            "appVersion": ""
+        },
+        "coolingLiquid": {
+            "desc": "冷却液",
+            "isSupport": false,
+            "supportVersion": "0.0.0"
+        }
+    }
+}

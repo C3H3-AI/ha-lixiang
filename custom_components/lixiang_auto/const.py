@@ -1,0 +1,198 @@
+"""Constants for Li Auto (Ideal Car) integration.
+
+核心常量来源：对理想汽车 App (com.chehejia.oc.m01) 的逆向分析。
+"""
+
+DOMAIN = "lixiang_auto"
+
+# ---------- 理想 IDaaS 登录 (OAuth 设备码 / 验证码) ----------
+# 来源: 抓包 account/id.lixiang.com 登录流程 + livis 组件
+IDAAS_BASE = "https://id.lixiang.com/api"
+ACCOUNT_BASE = "https://account.lixiang.com"
+
+# App OAuth 客户端（来自抓包 /api/auth）
+CLIENT_ID = "2AQClOaegaA7XecMSFx1p"
+AUDIENCE = "5iIapSfVJlln0vU0OzUCH9"
+SCOPE = "iam:client:type:app offline_access"
+
+# livis 侧门客户端（已验证可用，设备码流程）
+LIVIS_CLIENT_ID = "6qxd1MLZhAtdWipnmXe1dd"
+LIVIS_AUDIENCE = "rZgT0SETDNueMVAhfRN10"
+LIVIS_SCOPE = "super offline_access"
+
+# ---------- 车辆 API 域名 ----------
+API_APP = "https://api-app.lixiang.com"   # 车辆主网关（强制 x-chj-sign）
+
+# ---------- API 端点 ----------
+EP_KEY_SUITE = "/aisp-app-api/v1-0/keySuite"          # 密钥套件（登录后获取）
+EP_VEHICLES = "/aisp-account-api/v1-0/vehicles"       # 车辆列表（X-CHJ-TOKEN 已过期，240225）
+# ★ 可用的车辆列表端点（2026-09-23 实测成功）
+#   audience=7gbeHMwBPMZA5SU1b2awIo, scope=login
+#   返回: {"data":[{vin, modelName, seriesName, vehicleType, vehicleRoleId, ...}]}
+AUD_SAOS_VEHICLE = "7gbeHMwBPMZA5SU1b2awIo"
+SCOPE_SAOS_VEHICLE = "login"
+EP_SAOS_VEHICLES = (
+    "/saos-vehicle-api/v2-0/vehicles/basics"
+    "?types=owned,transferring,authorized,inviting"
+    "&roleIds=1,10,11,13,15&vehicleInfo=true"
+)
+EP_VEHICLE = "/aisp-account-api/v1-0/vehicles/{vin}"  # 车辆详情
+EP_VEHICLE_BASICS = "/saos-vehicle-api/v2-0/vehicles/basics"  # 车辆基础
+EP_PROFILE = "/aisp-account-api/v1-0/profile"         # 用户资料
+
+# 车辆控制（逆向自抓包）
+EP_WAKEUP = "/iot-connect-manager-service/v2/wakeup"          # 远程唤醒
+EP_KMS_JWT = "/bcs-kms-jwt/jwt/iot2/v1-0/"                    # KMS JWT（控制通道）
+EP_ICN_GNS = "/icn-gns/gns/app/service/vin/{vin}"            # 控制通道
+
+# ---------- 签名常量 ----------
+# 11 参数分隔符 = '\n'（liblxnetwork.so 0xa1768 证实）
+SIGN_SEP = "\n"
+# 空 body 的 Content-MD5
+EMPTY_MD5 = "1B2M2Y8AsgTpgAmY7PhCfg=="
+
+# ---------- 请求头固定值 ----------
+# 注: iOS app 实证值（来自抓取的实际请求头）
+DEFAULT_ACCEPT = "*/*"                 # iOS 捕获实际为 */*
+DEFAULT_CONTENT_TYPE = "application/json"
+DEFAULT_CONTENT_LANG = "zh-Hans-CN"    # iOS 捕获
+ENV = "prod"
+DEVICE_TYPE = "2"                       # iOS
+MODEL_NAME = "IOS"
+DEVICE_MODEL = "9.7-INCH IPAD"
+
+# 别名（兼容 client 直接引用短名）
+CONTENT_TYPE = DEFAULT_CONTENT_TYPE
+CONTENT_LANG = DEFAULT_CONTENT_LANG
+DEVICE_MODEL_NAME = DEVICE_MODEL
+
+# ---------- 配置项 ----------
+CONF_PHONE = "phone"
+CONF_PASSWORD = "password"        # PAKE 登录密码 (sso_token 会话13天过期后自动重登)
+CONF_REFRESH_TOKEN = "refresh_token"
+CONF_ACCESS_TOKEN = "access_token"
+CONF_APP_TOKEN = "app_token"      # X-CHJ-TOKEN (APP-xxx), frida从app抓取
+CONF_HAC_KEY = "hac_key"          # x-chj-sign 的 HMAC 密钥（k11）
+CONF_KEY_ID = "key_id"            # x-chj-key
+CONF_DEVICE_ID = "device_id"      # 登录身份 device_id (受信任的可跳短信风控)
+CONF_XDEV = "x_chj_deviceid"      # x-chj 签名身份 deviceid (与 hac_key 绑定)
+CONF_VIN = "vin"
+# 主Bearer(登录后签发的JWT, client=2AQ...). 任意车主登录一次可得, 用它换各scope token
+CONF_MAIN_BEARER = "main_bearer"
+
+# ---------- x-chj 签名身份默认值 (自有车辆 iPad 捕获, 密码登录流程直接复用;
+# 手动凭据流程可覆盖) ----------
+#
+# ★ 2026-09-24 说明：
+#   这些是【API 签名常量】（非用户私有凭据），随集成一起分发以便开箱即用。
+#   优先级：config entry 里的用户值 > 这里的默认值。
+#
+#   如果不想用内置值，可在 HA 里通过「手动凭据」入口填写自己的；
+#   或创建 .secrets.json（优先级低于 config entry，高于这里的默认值）。
+try:
+    from .secrets import (  # noqa: E402
+        DEFAULT_APP_TOKEN as _S_APP_TOKEN,
+        DEFAULT_HAC_KEY as _S_HAC_KEY,
+        DEFAULT_KEY_ID as _S_KEY_ID,
+        DEFAULT_XDEV as _S_XDEV,
+    )
+except ImportError:  # pragma: no cover
+    _S_APP_TOKEN = _S_HAC_KEY = _S_KEY_ID = _S_XDEV = ""
+
+DEFAULT_HAC_KEY = _S_HAC_KEY or "2020a7738b35f7d253741a88963ea2902b770ac508d89a78ae9036ee8aeb5d8a"
+DEFAULT_KEY_ID = _S_KEY_ID or "22004e67c0f7a60a1561980000b7440f"
+DEFAULT_XDEV = _S_XDEV or "13BFCE38F5774D0DBE21B625AA179AE0"
+DEFAULT_APP_TOKEN = _S_APP_TOKEN or "APP-50dbc95ceba84c05ac159ea96f2e6ffe"
+# ★ 默认登录 device_id（留空 = 由 identity store 自动生成/复用）
+#   说明：不要硬编码他人的 device_id —— 那会把所有用户绑到同一设备身份。
+#   首次登录时【辅助页面】会让用户的 device_id 受信任，之后免 MFA。
+DEFAULT_DEVICE_ID = ""
+
+# ---------- VSS 实时信号路径 (实体key → VSS path, 见 docs/VSS信号映射_HA实体.md) ----------
+# ★ 2026-09-24 架构方案 2.8：VSS_PATHS 已迁移到 signals.py
+#   （消除重复 —— 原先这里有 127 条，signals.py 里也有一份）
+#   这里保留别名，避免破坏外部引用；新代码请用 signals.SIGNALS
+from .signals import VSS_PATHS_COMPAT as VSS_PATHS  # noqa: E402
+
+# ---------- 各服务 audience / scope（鸿蒙逆向 /api/auth 实证） ----------
+# 用主Bearer POST /api/auth, body{scope, audience, response_type:"token"} 换该服务token
+# client_id 统一为 2AQClOaegaA7XecMSFx1p (App主客户端), device_id 用登录时的
+REDIRECT_URI = "https://app.lixiang.com/login/subidaas/callback"
+
+# service-card(首页状态): login scope
+AUD_SERVICE_CARD = "26FehzsHlrllCSaqI9bFYG"
+SCOPE_SERVICE_CARD = "login"
+# vss/get-batch + 车控结果 + wakeup: 
+AUD_VEHICLE_VSS = "1j0vgTqagJUHuT6nLmbTGx"
+SCOPE_VEHICLE_VSS = (
+    "remote-wakeup:wakeup veh-ctrl:cmd-result-get veh-ctrl:cmd-send "
+    "vss:get-batch task-master"
+)
+# 车控(锁车/空调等, scope里VIN后缀)
+AUD_VEHICLE_CTRL = "1j0vgTqagJUHuT6nLmbTGx"
+def veh_ctrl_scope(vin):  # 车控scope含VIN, 运行时动态构造
+    scopes = [
+        f"remoteVehFrgControl:{vin}",
+        f"remoteVehAuth:{vin}",
+        f"remoteVehLockControl:{vin}",
+        f"remoteVehPlgControl:{vin}",
+        f"remoteVehSearch:{vin}",
+        f"remoteVehWdwControl:{vin}",
+        f"remoteVehACSmartControl:{vin}",
+        f"remoteVehACFirstControl:{vin}",
+        f"ssCtrl:{vin}",
+        f"rmCtrl:{vin}",
+        f"cpCtrl:{vin}",
+    ]
+    return " ".join(scopes)
+# 充电状态 bsp-vcp-message/vehicle/charge
+AUD_CHARGE = "1j0vgTqagJUHuT6nLmbTGx"  # 待实证, 预留
+
+# ★ 2026-10-01 实测确认：lcp-bff-app-api 通道
+#   来源：App 的 subTokenData（服务端下发，见 mmkv/m01_sp）
+#   {"type":"lcp-bff-app-api","audience":"3N1l45XSeMOaid2RgDLiLA",
+#    "disableIAM":1,"scope":["login"],"urls":["/lcp-bff-app-api"]}
+#   ★ 该条白名单是【全前缀放行】，故 /lcp-bff-app-api/** 均可用
+#   实测已通：plate-number/v1/list、user-settings/v1/user-pnc-switch/list、
+#             serve-page/v1/station-stats、travel-planning/v1/simulate/energy/cost
+AUD_LCP_BFF = "3N1l45XSeMOaid2RgDLiLA"
+SCOPE_LCP_BFF = "login"
+EP_LCP_PNC_LIST = "/lcp-bff-app-api/user-settings/v1/user-pnc-switch/list"
+
+# 换token请求路径
+EP_AUTH = "/api/auth"
+
+# ---------- 状态 ----------
+ATTR_STATUS = "status"
+ATTR_BATTERY = "battery_level"
+ATTR_RANGE = "range"
+ATTR_ODOMETER = "odometer"
+ATTR_LOCKED = "locked"
+ATTR_CHARGING = "charging"
+ATTR_TEMP = "temperature"
+
+# 扫描周期（借鉴 huawei-auto-cloud 的可配置设计）
+#   华为: DEFAULT=30s, MIN=10s
+#   我们: DEFAULT=60s, MIN=30s（理想服务端压力较大，保守取 60s）
+CONF_SCAN_INTERVAL = "scan_interval"
+# 安全开关：关闭后所有车控实体变只读（防误操作）
+CONF_ENABLE_CONTROL = "enable_control"
+DEFAULT_ENABLE_CONTROL = True
+DEFAULT_SCAN_INTERVAL_SECONDS = 60
+MIN_SCAN_INTERVAL_SECONDS = 30
+MAX_SCAN_INTERVAL_SECONDS = 3600
+
+SCAN_INTERVAL_SECONDS = DEFAULT_SCAN_INTERVAL_SECONDS
+
+
+def scan_interval_seconds(options=None) -> int:
+    """从集成选项读取轮询间隔（秒），带范围钳制。"""
+    try:
+        sec = int((options or {}).get(CONF_SCAN_INTERVAL,
+                                      DEFAULT_SCAN_INTERVAL_SECONDS))
+    except (TypeError, ValueError):
+        return DEFAULT_SCAN_INTERVAL_SECONDS
+    return max(MIN_SCAN_INTERVAL_SECONDS, min(MAX_SCAN_INTERVAL_SECONDS, sec))
+
+# 日志
+LOGGER_NAME = "lixiang_auto"

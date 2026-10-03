@@ -1,0 +1,161 @@
+name: Auto Release Draft
+
+# manifest 版本号变了 → 自动建【草稿】Release
+# 完全对齐 hacs-vision：gh release create --generate-notes 按 label 分组。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'custom_components/lixiang_auto/manifest.json'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-draft:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version Increment Check
+        id: check
+        run: |
+          NEW_VERSION=$(python3 -c "import json; print(json.load(open('custom_components/lixiang_auto/manifest.json'))['version'])")
+          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
+          if [ -z "$LATEST_TAG" ]; then LATEST_TAG="v0.0.0"; fi
+          OLD_VERSION=${LATEST_TAG#v}
+          echo "新版本: $NEW_VERSION (tag: v${NEW_VERSION})"
+          echo "旧版本: $OLD_VERSION (tag: $LATEST_TAG)"
+          pip install -q packaging
+          IS_INCREASED=$(python3 -c "from packaging import version; print(version.parse('$NEW_VERSION') > version.parse('$OLD_VERSION'))")
+          if [ "$IS_INCREASED" != "True" ]; then
+            echo "::error::新版本 $NEW_VERSION 不大于旧版本 $OLD_VERSION — 跳过"
+            echo "compare_result=skip" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "compare_result=success" >> $GITHUB_OUTPUT
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "commit_title=$(git log -1 --pretty=format:'%s')" >> $GITHUB_OUTPUT
+          if [[ $NEW_VERSION =~ (beta|rc|alpha) ]]; then
+            echo "is_prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "is_prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create ZIP
+        if: steps.check.outputs.compare_result == 'success'
+        run: |
+          cd custom_components/lixiang_auto
+          zip -r ../../lixiang_auto.zip .
+
+      # ── 先建轻量 tag ★（GitHub 草稿不会自动建 tag！）─────────────────────
+      - name: Create and push tag
+        if: steps.check.outputs.compare_result == 'success'
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.check.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG 已存在，跳过"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "已创建并推送 $TAG"
+          fi
+
+      # ── 建草稿 Release ──────────────────────────────────────────────────
+      # ★ 2026-09-29 实测教训：去掉 --target，加上 --verify-tag。
+      #   v1.2.4 实际踩过：带 --target 建草稿时，Release 的 tag_name 变成
+      #   untagged-5e013c01a5276823767b 占位符（不是 v1.2.4）—— 草稿建出来了、
+      #   ZIP 也传上去了，但绑定是坏的。HACS 靠 release.tag_name 解析版本，
+      #   绑错 = 用户收不到更新（且不报错，纯静默）。
+      #   · 去掉 --target：tag 已在上一 IP 步显式创建，release 只需引用它
+      #   · 加 --verify-tag：tag 远程不可见时直接失败，而不是静默建坏草稿
+      - name: Create draft release
+        if: steps.check.outputs.compare_result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.check.outputs.version }}
+          COMMIT_TITLE: ${{ steps.check.outputs.commit_title }}
+          IS_PRERELEASE: ${{ steps.check.outputs.is_prerelease }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          PRERELEASE_FLAG=""
+          if [[ "${IS_PRERELEASE}" == "true" ]]; then PRERELEASE_FLAG="--prerelease"; fi
+          gh release create "${TAG}" \
+            --draft \
+            --verify-tag \
+            --title "${TAG} - ${COMMIT_TITLE}" \
+            --generate-notes \
+            ${PRERELEASE_FLAG} \
+            "lixiang_auto.zip"
+          echo "草稿 Release ${TAG} 已建"
+
+      # ── 校验① tag 存在 ─────────────────────────────────────────────────
+      - name: Verify tag exists
+        if: steps.check.outputs.compare_result == 'success'
+        run: |
+          TAG="v${{ steps.check.outputs.version }}"
+          if ! git ls-remote --tags origin | grep -q "refs/tags/${TAG}$"; then
+            echo "::error::Tag ${TAG} 不存在 — Release 对 HACS 不可见"
+            exit 1
+          fi
+          echo "Tag ${TAG} 确认存在"
+
+      # ── 校验② Release 真的绑在这个 tag 上（不能是 untagged-<hash>）─────
+      #   tag 存在 ≠ Release 绑定正确。两道校验缺一不可 —— 这正是
+      #   v1.2.4 漏过的：tag v1.2.4 存在，但 Release 绑的是 untagged-…。
+      #
+      #   ★ 两个 API 陷阱（都实测过）：
+      #     1. GET /releases/tags/{tag} 对【草稿】返回 404 ——
+      #        草稿不参与 tag 索引。用它校验会永远误判"未绑定"。
+      #     2. GET /releases 列表是最终一致性的，刚建完可能查不到
+      #        （实测 3 次里有 1 次丢失）—— 必须重试。
+      - name: Verify release bound to tag
+        if: steps.check.outputs.compare_result == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+          REPO="${{ github.repository }}"
+          LIST="repos/${REPO}/releases?per_page=50"
+
+          # 在列表里找绑定 / 未绑定的 release id，带重试（列表有抖动）
+          find_id() {
+            local jq_filter="$1" out=""
+            for _ in 1 2 3 4 5; do
+              out="$(gh api "$LIST" --jq "$jq_filter" 2>/dev/null || true)"
+              if [ -n "$out" ] && [ "$out" != "null" ]; then echo "$out"; return 0; fi
+              sleep 3
+            done
+            echo ""
+          }
+
+          REL_ID="$(find_id "[.[] | select(.tag_name == \"${TAG}\")][0].id")"
+          if [ -n "$REL_ID" ]; then
+            echo "Release 已正确绑定 $TAG (id=${REL_ID})"
+            exit 0
+          fi
+
+          echo "::warning::找不到绑定 $TAG 的 Release — 尝试修复"
+          REL_ID="$(find_id '[.[] | select(.tag_name | startswith("untagged-"))][0].id')"
+          if [ -z "$REL_ID" ]; then
+            echo "::error::既没有绑定 $TAG 的 Release，也没有 untagged 草稿 — 无法修复"
+            exit 1
+          fi
+
+          gh api -X PATCH "repos/${REPO}/releases/${REL_ID}" -f tag_name="$TAG" >/dev/null
+          sleep 3
+          REL_ID="$(find_id "[.[] | select(.tag_name == \"${TAG}\")][0].id")"
+          if [ -z "$REL_ID" ]; then
+            echo "::error::修复失败 — 仍找不到绑定 $TAG 的 Release"
+            exit 1
+          fi
+          echo "已修复并确认绑定 $TAG (id=${REL_ID})"

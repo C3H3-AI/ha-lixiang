@@ -1,0 +1,716 @@
+# 更新日志
+
+本项目遵循[语义化版本](https://semver.org/lang/zh-CN/)。
+
+---
+
+## [1.3.0] — 2026-10-03
+
+> 本版本新增 **13 个 Lovelace 卡片**（对齐理想 App 界面）与**实体自动发现**，
+> 并修复保养实体被隐藏的问题。无需额外配置 —— 装完即可用卡片。
+
+### Added — 13 个 Lovelace 卡片
+
+UI 逐页对齐官方 App，随集成发布（静态路径 `/lixiang_auto/lixiang-cards/`）：
+
+| 卡片 | 内容 |
+|---|---|
+| `lixiang-app-home` | 车控首页：8 圆按钮 + 双态 3D + 空调/位置/里程/电量/哨兵 + 9 个入口 |
+| `lixiang-energy-page` | 里程能耗：环形图（陪伴里程 + 电/油占比）+ 智驾占比 + 年/月/日折叠 |
+| `lixiang-charge-page` | 充电：实时状态 + 年月记录 + 单次明细 |
+| `lixiang-health-page` | 车辆健康：胎压图（bar + 胎温）+ 车辆保养计划 |
+| `lixiang-setting-page` | 车辆设置：空调/充电/安全/远程操作 |
+| `lixiang-scene-page` | 情景模式：宠物/露营/擦车/离车不下电 |
+| `lixiang-ad-page` | 智驾统计：NOA/LCC/ACC 里程与占比 |
+| `lixiang-climate-page` | 空调控制：温度 + 4 种模式 + 空气质量 |
+| `lixiang-seat-page` | 座椅控制：座椅俯视图（主/副驾 + 二排三座 + 方向盘加热）|
+| `lixiang-location-page` | 车辆位置：坐标/地图 + 距离 + 闪灯/鸣笛 + 驻车照片 |
+| `lixiang-vehicle-info-page` | 车辆信息：昵称/车牌/型号/车架号/配置等级 |
+| `lixiang-task-page` | 任务大师（HA 版）：用 App 的交互创建 HA 自动化 |
+| `lixiang-bindings-card` | 实体自动发现诊断 |
+
+卡片特性：键盘可达（167 个元素）· 屏幕阅读器友好 · 深色模式 ·
+尊重 `prefers-reduced-motion` · 资源缺失优雅降级 · 下拉刷新 · 错误重试。
+
+### Added — 实体自动发现（无需手填实体 ID）
+
+卡片按**中文名**自动匹配实体（非实体 ID 字符串，避免拼音变动影响）：
+
+```yaml
+type: custom:lixiang-app-home
+# 就这样，其他全自动
+```
+
+- 77 个字段映射，实测匹配率 **98.7%**
+- 用 `device_id` 归属校验（多车不串）
+- 优先级：手填配置 > 自动发现 > 空
+- `lixiang-bindings-card` 可查看绑定详情并一键复制反馈
+
+### Added — 任务大师（用 HA 自动化替代云端规则）
+
+App 的「任务大师」是云端规则引擎（集成无 API）。本卡片用**同样的交互**
+（如果 / 就执行）创建 **HA 自动化**：
+
+- 本地执行（更快、不依赖网络）
+- 可联动所有 HA 设备、支持通知与脚本
+- 内置 6 个车控模板，一键创建
+- 写入 `POST /api/config/automation/config/{id}`（HA 校验合法性）
+
+### Added — 车型信息暴露给前端
+
+所有实体附加属性，供卡片按车型适配：
+
+```python
+"车型"     = "理想L6 Pro"     # 从设备注册表读
+"车系"     = "L6"
+"车型能力" = {15 项运行时探测能力}
+```
+
+### Fixed — 保养实体被当作诊断项默认禁用
+
+**现象**：集成已正确生成 6 个保养实体（增程器小/大保养、火花塞、
+空调滤芯、油液、冷却液），但用户看不到。
+
+**根因**：被归入 `_DIAGNOSTIC_KEYS` → `entity_registry_enabled_default=False`。
+而 App 把「车辆保养」放在车辆健康页显眼位置，属主要功能，不应默认隐藏。
+
+**修复**：`signals.py` 新增 `MAINTAIN_KEYS` 白名单，保养项默认启用
+（仍归诊断类以便在设备页折叠）。
+
+> ⚠️ 注意：实体描述表实际由 `signals.py` 的 `specs_for("sensor")` 动态生成，
+> `sensor.py` 的 `_mk()` 是已废弃路径。已在两处加注释指路。
+
+### Added — 防真实数据泄露扫描
+
+新增 `tests/test_no_real_data_leak.py`（13 项），**本地即可运行**（不依赖
+CI Secret），按**形态规则**识别 VIN / 车牌 / 手机号 / 未知密钥 / 具体里程，
+覆盖 `custom_components/` · `tests/` · `README.md` · `docs/` · `.github/`。
+
+### Changed — 车辆位置页
+
+原 `location` 视图改为 `lixiang-location-page` 一比一页面。
+
+### 说明
+
+- 本版本同时是**仓库重建后的首个版本**（原仓库因历史中含车主真实数据
+  —— 车牌与保养里程的注释/测试样本 —— 已删除重建，新仓库无此问题）
+- 测试：**1068 passed, 3 skipped**
+
+---
+
+## [1.2.4] — 2026-09-30
+
+> 两个用户反馈的问题：i6 没有总续航，前备箱开关方向反了。
+
+### Fixed — i6 等纯电车型看不到「总续航」实体
+
+**现象**：i6 用户说集成里没有总续航这个 sensor。
+
+**根因**：App 反编译（LiMeshPathHelper.smali）证实 ——
+**服务端不返回**  路径！
+App 自己在 XEnduranceDataHandle 里把 PureElec + Fuel 加起来。
+我们此前直接订阅 EnduranceMil，服务端对纯电车型（或部分车型）
+返回 null → 实体不存在。
+
+**修复**：总续航改成 **compute 派生信号**
+（不在 signals.py 里请求 VSS，而是 poll 完后自己算）：
+
+
+
+- 纯电车型：只取 PureElecEnduranceMileInd（fuel=0）
+- 增程车型：PureElec + Fuel
+- 覆盖全部车型 ✓
+
+### Fixed — 前备箱开/关方向反了
+
+**现象**：i6 用户点「打开」→ 车实际关了。
+
+**根因**：App smali 表面看 ，
+但实测方向相反。DoorLockStatus.FrontTrunkDoor 的编码
+也不是我们注释里的 1=关/2=开（那是 DoorSwitchStatus 的编码）。
+
+**修复**：命令方向翻过来
+-  = 开（不是 "0"）
+-  = 关（不是 "1"）
+
+同时更新 DoorLockStatus 编码注释：
+- 0 = 上锁/关（车门正常锁着 MainDoor=0）
+- 1 = 解锁/开（FrontTrunkDoor 实测为 1）
+
+---
+
+## [1.2.3] — 2026-09-29
+
+> 回应车主反馈：「App 车控左上角的续航数，和集成显示的不一样」。
+> 顺带修掉「该车型不上报的信号显示成 unknown」这个误导性表现。
+
+### Added — 「总续航」实体（App 车控左上角显示的就是它）
+
+**现象**：车主反馈 App 里的续航数与集成不一致。
+
+**根因**：App 车控头部（`headerControl.enduranceTag`）订阅的是
+`LXVehicleInfoKeyEndurance`，其中：
+
+| 字段 | 含义 | 我们此前 |
+|---|---|---|
+| `Cabin.{CLTC,WLTC}.PureElecEnduranceMileInd` | 纯电续航 | ✅ 有 |
+| `Cabin.{CLTC,WLTC}.FuelEnduranceMileInd` | 燃油续航 | ✅ 有 |
+| **`Cabin.{CLTC,WLTC}.EnduranceMil`** | **总续航** ← App 显示的是它 | ❌ 缺 |
+
+**我们只有分项，App 显示的是总续航** —— 数字自然对不上。
+
+新增两个实体：
+
+```
+sensor.…_zong_xu_hang_cltc   总续航(CLTC)   Vehicle.Cabin.CLTC.EnduranceMil
+sensor.…_zong_xu_hang_wltc   总续航(WLTC)   Vehicle.Cabin.WLTC.EnduranceMil
+```
+
+### Added — 「续航显示工况」实体
+
+App 里 CLTC/WLTC 是**可切换的**，取决于账号偏好：
+
+```
+Vehicle.{{AccountId}}.CarSettings.Preference.CLTCWLTC
+  description = "续航显示工况"
+  datatype    = string,  default = "1",  type = actuator
+```
+
+新增 `sensor.…_xu_hang_xian_shi_gong_kuang`。
+
+> ⚠️ 路径带 `{{AccountId}}` 模板 —— App 用
+> `LXVssDelegate.resolveTemplateAccountId()` 替换成车主账号
+> （账号取自 `Vehicle.Account.Cloud.VehicleAccounts`）。
+> 不带模板去查是查不到的。
+
+### Fixed — 「该车型不上报的信号」不再显示成 unknown
+
+**现象**：L6 上的总续航实体显示 `unknown`，看起来像「再等等就有」。
+
+**实测**：连续 **112 次轮询**都拿不到数据，而同批次的纯电/燃油续航
+（172 / 147 / 139 / 115）都有值 —— 说明不是车辆休眠。
+
+**根因**：这类信号有**两种**缺席形态，而且**服务端都不报 400**：
+
+| 信号 | 服务端行为 |
+|---|---|
+| `range_total_*` | 返回路径，但 **ts 恒空** |
+| `range_display_mode` | **不在响应里** |
+
+原有的「路径无效就跳过」机制（bisect）抓不到它们。
+
+**改法**：新增**数据驱动的车型门控** ——
+
+```
+连续 30 轮（≈2.5 小时）满足「本批整体有数据、但该 key 始终缺席」
+  → 判定该车型不支持 → 实体报 unavailable
+```
+
+★ **为什么不按车型名硬编码**：App 的 VSS 路径清单是**按车型下发**的，
+我们**没有**「哪些车型有该字段」的证据，硬编码就是猜。
+数据驱动不需要先验知识 —— **支持的车型有数据，实体就自动出现**。
+
+**防误判**（车辆休眠时整批为空，不设防会把所有实体误判）：
+- 只在「本批至少拿到 5 条」时才计数
+- 虚拟信号（path 为空，如 `online_status`）跳过
+- 信号重新出现时清除计数并解除判定
+
+同时修正一处语义 bug：原代码注释写「从未上报 → unavailable」，
+实际 `return None` → HA 显示 **unknown**。两者含义不同
+（`unknown` = 再等等，`unavailable` = 本车没有），已加 `available` 属性修正。
+
+### Changed — 胎压 / 胎温降频（HIGH → MID）
+
+**背景**：日志出现 `Updating state ... took 0.5~10 seconds`，
+数据库涨到 512 MB。
+
+**实测**：胎压/胎温的写入有约 **900:1 的重复率**：
+
+| 实体 | 写入行数 | 不同值 |
+|---|---|---|
+| `…tai_ya_zuo_qian` | 9,978 | **11** |
+| `…tai_wen_zuo_qian` | 9,046 | **17** |
+
+而且值只在 **2.75 kPa 的整数倍**档位间抖动
+（250.25 / 253.0 / 255.75 / 258.5）—— 是**传感器分辨率**造成的跳变，
+不是真实压力变化。
+
+胎压/胎温从 `HIGH`(5 分钟) 降到 `MID`(1 小时) → **轮询请求量降 92%**。
+
+> ★ 胎压**告警**（`tire_xx_warning`）**保持 HIGH** —— 爆胎/扎钉要第一时间发现。
+
+### 升级注意
+
+- 已存在的实体**不会消失**，只是轮询频率变化
+- 若你的车型不上报总续航，那两个新实体会显示**不可用**（这是正确表现）
+- 胎压/胎温的**实时值不受影响**，只是刷新间隔从 5 分钟变为 1 小时
+
+## [1.2.2] — 2026-09-29
+
+> 修掉「用信号存在推断硬件」这一类缺陷的最后一处，并更正一处误导性的车型标注。
+
+### Fixed — L6 出现滑门 / 前备箱实体（用户报告「L6没有滑门」）
+
+**现象**：L6（五座，无滑门无前备箱）上出现了 4 个滑门实体，其中两个还是**可控**的：
+
+```
+cover.li_xiang_l6_zuo_hua_men / _you_hua_men            ← 可控！
+binary_sensor.li_xiang_l6_pro_zuo_hua_men / _you_hua_men
+```
+
+**根因**：`cover.py` 用「信号在不在 vss 里」推断硬件，而这个条件**恒为真**：
+
+```python
+for k in ("door_slide_left", "door_slide_right",
+          "Vehicle.Body.SeatLDoor.InterferenceSts", ...):
+    if k in vss:
+        slide_ok = True
+```
+
+两处错，而且第一处掩盖了第二处：
+
+1. `vss` 的键是**信号 key**，不是 VSS 路径 → 那两个路径**永远不在** vss 里（恒为假）
+2. `door_slide_left` 只要**被轮询**就在 vss 里，而轮询路径来自 `signals.by_freq()`、
+   **不按车型过滤** → **每一辆车**都被判定有滑门
+
+L6 实测三项证据全说「没有」，却仍建了两个可控实体：
+
+| 证据 | L6 实测 |
+|---|---|
+| App `version.sideDoor.isSupport` | `false` |
+| `features_detected["侧滑门"]` | `false` |
+| Hpcm `hc_psd` / `hc_automatic_door` | `"0"` / `"0"` |
+
+**修法**：滑门是**可控**能力，按「宁可少做，也不给出虚假的可控能力」→
+必须有**肯定证据**才建：① `features["侧滑门"]`（App 能力表）② Hpcm `hc_psd`/`hc_automatic_door`。
+并删除两条错误推断：`in vss`（恒真）与 `seat_count >= 6`
+（L8/L9 是 6 座但**没有**滑门 —— App 里 `sideDoor` 只在 W01/W01B/W10B 为真）。
+
+**同一处代码里还修掉了第三次同类错误**（前备箱）：
+`frunk_ok = any(k in vss for k in ("door_front_trunk",))` 同样恒真 ——
+L6 上没暴露只因 Hpcm 走了另一条分支，**Hpcm 一旦不可用就会给每辆车建前备箱**。
+
+> 升级后如需清理：删掉这些实体即可。删除的是**本不该存在**的实体，
+> 不影响任何真实能力。若自动化引用过它们，请一并删除。
+
+### Fixed — `KNOWN_FEATURES` 的车型键：`M01` → `X04`
+
+原键名依据「我们车的 App 委托类叫 `LXM01StateDelegate` → 我们车属于 M01 平台」——
+**该推理不成立**。服务端实测我们车 `seriesNo = 'X04'`、`bleModuleCode = 'XTA2B6'`；
+App 自己把 M 与 X 当**不同车系**（`isM()` 判 `platform === '1'`，
+而 M01B 正是 68 个配置里唯一 `platform='1'`）。
+
+**无功能变化**（该表只在拿不到车型能力表时才用，且内容一直是实车验证过的），
+仅修正键名与此前会被证伪的注释。
+
+### Changed — 测试与文档
+
+- 新增 `tests/test_model_config_anomalies.py`：记录 **M01B 是配置异常体**
+  （17 个标签只在它上面为假，`version` 块仅 34 个标签而其他车型 40–43），
+  并加守卫禁止**新增**依赖它的门控
+- 新增滑门判定、`KNOWN_FEATURES` 键名等回归测试
+
+---
+
+## [1.2.1] — 2026-09-28
+
+> 用户实测反馈的第二批修复，并解决 Issue #6（方向盘加热无法使用）。
+
+### Fixed — 方向盘加热无法使用（Issue #6）
+
+**现象**：在 HA 里点「方向盘加热」没反应，车辆不加热、状态也不变。
+
+**根因**：v1.2.0 把它挂在 **fan 平台**，`fan._custom()` 无条件下发
+`LEVEL{n}`，而协议白名单 `_AC_ONOFF_TYPES` 里 `strgWhlHeatSw` 属
+**ON/OFF 类** → 下发 `LEVEL3` 服务端不接受。
+
+| 场景 | v1.2.0 实际下发 | 协议要求 | 结果 |
+|---|---|---|---|
+| 打开 | `LEVEL3` | `ON` | ❌ 无效值 |
+| 关闭 | `OFF` | `OFF` | ✅ |
+
+**修复**：fan → switch，直接复用已有的 ON/OFF 白名单 → 折成 `"ON"/"OFF"`。
+方向盘的协议能力**本来就是开/关，没有档位**。
+
+> ⚠️ 实体 ID 随之变化：`fan.…` → `switch.…`，升级注意见 README。
+> 顺带修掉：该实体此前因 `fan.py` 的 5 元组取值失败而**完全不受车型门控**。
+
+### Fixed — 纯电车型出现增程专属实体（用户报告 i6）
+
+**现象**：i6（i 系列纯电，W 系）显示「燃油续航」「油量」等 L 系才有的传感器。
+
+**根因**：功能门控靠一张**独立的**、只登记了 21/156 个信号的映射表；
+没登记的默认「所有车型都创建」。燃油系列从未登记。
+
+**修复**：逐字照搬 App 的车型判定 —— 先找到 App 的原始函数：
+
+```javascript
+u.isBev = function() {
+    var u = (VehicleTool.getVehicleDetails()?.config?.energy?.power) || [];
+    return !(u.length !== 1 || !u.includes('1'));
+}
+```
+
+即用车型配置的 `config.energy.power`（实测 68 个车型完美分离：
+`["1"]` 21 个全是 W 系纯电；`["1","2"]` 47 个全是增程）。
+
+一并补齐同类遗漏：**油箱盖 / 机油 / 火花塞**（纯电车同样不该有）。
+
+### Fixed — 前备箱 / 滑门状态（服务端 invalid_path）
+
+**现象**：前备箱、左右滑门状态永远不对。
+
+**根因**：两条路径在 App 里**根本不存在**，服务端直接拒绝：
+```
+HTTP 400 invalid_path|desc:Vehicle.Body.DoorSwitchStatus.FrontTrunkDoor
+HTTP 400 invalid_path|desc:Vehicle.Body.SeatLDoor.DoorStatus
+```
+⚠️ 危害不止于显示：**轮询路径不按车型过滤**，无效路径每一轮都让整批
+VSS 失败 → 触发二分重试 → 长期白耗请求。
+
+**修复**：
+- 前备箱 → `DoorLockStatus.FrontTrunkDoor`（smali 中唯一存在的路径）
+- 滑门 → `DoorPosition.BackLeftDoor/BackRightDoor`（spec 描述为
+  「W二排左侧/右侧侧滑门开度值」）
+
+**效果**：151 条路径的请求数由 **22 次降到 4 次**，无效路径 2 → 0。
+
+新增可复用审计工具 `tools/audit_vss_paths.py`。
+
+### Fixed — 冰箱模式状态
+
+`Fridge.ModeState` 被映射成 `{0:关闭, 1:开启}`，但它其实是
+**「冰箱制冷/制热模式」**。依 App `getCurrentMode()`
+（`1→COOL`、`2→HEAT`、默认`→CLOSE`）改为 `{0:关闭, 1:制冷, 2:制热}`，
+并补上按两段键 `Fridge.ModeState`（避免误伤 `SceneMode.ModeState`）。
+
+### Fixed — L8/L9 的「幽灵二排中座椅」
+
+`seat_sm_heat` 使用**复合**功能「二排座椅」（secL **或** secM **或** secR），
+而 L8/L9（6座）有二排左/右、**没有二排中** → 被错误创建。
+
+改为逐座位标签（`secMSeatSw` / `thirdLSeatSw` / …）。
+
+### Added — 车型能力声明化（156 个信号逐个表态）
+
+`SignalSpec` 新增 `requires` / `universal`：
+```python
+requires="version:fridge"        # App version 标签
+requires="ability:thirdLSeatSw"  # App temp.config 硬件等级
+requires="feature:前备箱"          # 我们自己的 VSS 探测
+requires="combustion" / "bev"    # 能量类型（同 App isBev）
+universal=True                   # 所有车型都有（也必须显式写）
+```
+
+**156/156 全部声明**，并由测试强制「不允许留空」——
+「忘记分类」在结构上不再可能。
+
+### Added — 系统性守卫（多条）
+
+- **穷尽性**：任何信号没声明车型需求 → 测试失败
+- **标签存在性**：`version:`/`ability:` 引用的标签必须真的存在于 68 个车型配置（抓拼写错误）
+- **已知无效路径**：服务端拒绝过的路径不得再被使用
+- **增程关键词守卫**：名字像增程专属却没有门控的新信号 → 测试失败
+- **测试必须能失败**：CONTRIBUTING 记录并强制变异测试
+
+### Changed
+
+- `SENSITIVE_PATTERNS` 接入 CI（此前两个扫描步骤都是**空操作** ——
+  Secret 从未映射成环境变量，是真实 VIN 泄漏的直接原因）
+- 新增**提交消息**敏感扫描（原扫描只看文件内容）
+- 修复浅克隆导致的扫描静默失效 + fail-closed
+
+### Docs
+
+- 新增审计工具 `tools/audit_vss_paths.py`
+- README 新增「升级注意（实体 ID 变更）」
+
+---
+
+## [1.2.0] — 2026-09-28
+
+> 一批用户实测发现的**显示错误**修复 + 账号角色区分 + 信号语义全量审计。
+
+### Fixed — 显示错误（用户报告）
+
+- **充电状态显示 `—`** —— 车未充电时 `Battery.ChargeStatus=15`，本应显示「未充电」。
+  根因：`rendering.py` 的 charge_status 分支对未匹配值直接 `return "—"`，
+  而该分支在 `translate()` 调用**之前**就返回，导致 `translations.py` 的
+  `ChargeStatus` 映射表永远轮不到。现改为「兜底先查映射表」，
+  App 的 8 个状态分支（3/5/7/2/4/预约）**一字未动**。
+- **「充电位置」语义错误** —— 该信号（`ChargeHere`）是
+  **「此地执行预约状态」**（App spec 原文），表示是否启用
+  「仅在固定地点执行预约充电」，**与车的位置无关**。
+  实测车不在充电位却显示「在充电位」。现更名为**「仅在此地预约」**，
+  翻译改为 `{0:未启用, 1:仅在此地预约}`（不改 key，避免孤儿实体）。
+- **「总里程」语义错误** —— `Cabin.CLTC.MileageFinalResult` 的官方描述是
+  **「动态续航，预测续航」**，是续航预测而非累计里程。现更名为「续航预测」。
+- **「按时出发」显示「已开启」但实际未开启** —— 旧逻辑只看 `mainSwitch`
+  （功能模板层总开关），忽略了该条计划自身的 `subSwitch` 与每天的
+  `weekOfDayStates`。实测 `mainSwitch=true` + `subSwitch=false` + 七天全 `DISABLE`，
+  用户看到「未打开」却被显示为「已开启 · 07:00 空调22°C」。
+
+### Fixed — 充电类实体诚实化
+
+- 6 个充电实体（充电上限 / 充电模式 / 预约充电 / 电池保温 / 充电起止时间）
+  是**可写平台**，但命令必然失败（走 LiNdn 通道返回 `2009`）且无解释 ——
+  看起来像集成坏了。现在：
+  - 属性里暴露 `只读原因`，说明为什么不能控制
+  - **写入前**立即抛出明确错误（不再白跑一次网络往返）
+  - 修正 `number.py` 的失实注释（原文称「只读展示」，实际一直可写）
+
+### Fixed — 其他
+
+- `to_binary_description()` 静默忽略 `spec.diagnostic`（只有 sensor 版处理），
+  导致二元传感器无法默认禁用。已补齐。
+- 删除死代码 `routing.py`（70 行，0 引用）。
+
+### Added — 账号角色区分
+
+- 新增 `vehicle_role.py`，复刻 App 的 `setupVehicleUserRelation()`：
+  由 `(vehicleType, vehicleRoleId)` 推导 `relationType`（车主 / 家人共享 / 试驾）。
+- **实测结论**：App 对家人账号的「限制」大部分是 **UI 隐藏而非权限拦截** ——
+  车控 30 项、位置、保养、里程均**照常可用**；仅 OTA 与行程查询是服务端真拦。
+  因此集成**不按角色禁用任何车控**（有回归测试锁定）。
+
+### Added — 5 个 VSS 信号（默认禁用）
+
+对比 App 的 `LxMeshVssConstant.smali`（197 条）与我们的声明，得 30 条缺失，
+**逐条实测**后仅 11 条有数据。本次新增 5 个（全部 `diagnostic=True` 默认隐藏）：
+
+- 左/右后视镜加热（`binary_sensor`）
+- 主驾有人（`binary_sensor`，隐私敏感）
+- 前/后遮阳帘位置（`sensor`）
+
+### Docs
+
+- 新增 17 篇 App 逆向分析文档（功能清单 / 接口参数 / 账号权限 / 语义审计 / 架构）
+- `CONTRIBUTING.md` 新增「测试必须真的能失败」+ 变异测试要求
+  （源于一次真实教训：测试全绿但删掉保护后仍全过）
+
+### 信号语义审计（方法）
+
+把 App 的 `spec_X01-VSS-Path_148.json`（children 嵌套树）展平成
+**1563 条完整路径**，与我们的 150 个信号按**完整路径**逐一对照。
+结果：142 个语义正确、2 个我们错（已修）、2 个 **spec 自身标注有误**。
+
+> ⚠️ 审计必须按完整路径匹配 —— 只看字段末段会产生大量假阳性
+> （`Switch`/`Status` 等在不同路径下重名）。
+
+---
+
+## [1.1.1] — 2026-09-27
+
+> 补齐 v1.1.0 tag 之后遗留在 main 上、但从未进入任何 release 的 2 个提交。
+> 同时修复 CI —— 此前工作流因 YAML 语法错误从未真正执行过。
+
+### Added — 前备箱 / 左右滑门 + 整车配置表（Hpcm）驱动
+
+来源：App 反编译（8.16.1 的 `index.vehicle.js` + 8.27.0 的 smali）
+
+- **新增 3 个 cover 实体**
+  - **前备箱** `cmdKey="fTkC"`（★ 不是 `remoteVehXxx`），`cmdData={"lockSw":"0"/"1"}`
+  - **左滑门** `cmdKey="remoteVehPlgControl"`（与尾门共用），`lSlidingDoor="100"/"0"`
+    - ★ 开值是 `"100"` 而非 `"1"` —— App 源码实测
+  - **右滑门** 同上，`rSlidingDoor="100"/"0"`
+  - ⚠️ L6/L7 无这些硬件 → 按能力表条件创建
+- **新增 `vehicle_hpcm.py`** —— 整车配置表（`Vehicle.HU.Diag.Hpcm`）
+  - 解析 120+ 字段的整车配置 JSON
+  - `is_ss4()` 复刻 App 的 `shouldUseSS4`（`hmi_platform == "1"`）
+  - `has(field)` 硬件判断（`hc_frunk` / `hc_psd` / `hc_car_refrigeratory` …）
+  - `supported_features()` / `unsupported_features()` / `dump()`
+
+### Security — 移除 CI 脚本中的敏感信息占位符
+
+- `.github/pre-commit.sh` 与 `.github/workflows/validate.yml` 曾硬编码手机号/密码/VIN
+- 已从全历史清除（`git-filter-branch` + force push）
+- 彻底改为**空数组 + `SENSITIVE_PATTERNS` 环境变量**注入，不留任何占位符模式
+  - 想启用扫描：在 GitHub Secrets 设 `SENSITIVE_PATTERNS`，格式 `{"手机号":"139xxx","VIN":"LSVXXX"}`
+
+### Fixed — CI 从未真正运行（YAML 语法错误）
+
+- **现象**：每次 CI 都是 failure 且 **jobs 数为 0** —— 工作流根本没启动（main 同样失败）
+- **根因 ①**：「敏感信息扫描」步骤内嵌 `python3 -c "` 多行字符串，但 Python 代码从第 1 列开始，
+  提前终止了 YAML 块标量 → 整份 `validate.yml` 无法解析
+  （`ScannerError: while scanning a simple key, line 88, column 1`）
+- **根因 ②**：`echo "$JSON" | python3 - <<'PY'` 中 heredoc 覆盖管道，
+  `json.load(sys.stdin)` 读到脚本自身而非 JSON → `JSONDecodeError`
+- **修法**：改用 `python3 - <<'PY' ... PY`（与「manifest 必填字段」步骤写法一致）；
+  JSON 改从环境变量读取，不走 stdin；`sys.exit(fail)` 显式退出码
+- **修复后**：hassfest / HACS validate / lint & security 三个 job 全部执行并通过
+
+### Notes
+
+- 测试：`518 passed, 3 skipped`
+- 实机验证：`./li-verify.sh` 7/7（HA 测试机）
+- 方向盘加热三档（fan 实体）与型号字段修复见后续版本（PR #5 合并后发布）
+
+---
+
+## [1.1.0] — 2026-09-26
+
+### Added — 🎯 车型能力表 / 配置表 / 多车支持（2026-09-26 大批量改进）
+
+#### 车型能力表（数据驱动）
+- **`vehicle_configs/`**（68 个车型 JSON）—— 从官方 APK 提取
+  - `temp.config` → 9 种座椅/温控能力（`value`: 1=无，>=2=有）
+  - `version` → 45 种功能开关（`isSupport` + `supportVersion`）
+- **`vehicle_ability.py`** —— 复刻 App 的 `VehicleDetails` 机制
+  - `ability_level()` / `vehicle_seat()` / `is_supported()` / `app_name()`
+- **L8/L9 三排座椅自动支持**（L6 五座自动不建三排）
+
+#### App 配置表（权威来源）
+- **`app_config/sub_token_data.json`**（40 个 token 配置）
+  - 每个接口的 type/audience/scope/urls
+- **`app_config.py`** —— `audience_for(path)` 等反查 API
+
+#### 多车账号支持
+- **config entry title** = 账号级（`Li Auto (1820)`）
+- **device name** = 车辆级（`理想L6 Pro`）
+  - 用户自定义昵称优先
+  - 同款多辆时加车牌 / VIN 尾号区分
+- **按 VIN 精确匹配**（不再盲取第一辆）
+
+#### 诊断
+- **`lixiang_auto.dump_ability`** 服务（导出车型能力表 JSON）
+
+### Fixed
+- **设备名硬编码「理想 L6」** —— L8/L9 用户会看到错误车型（严重）
+- **低频信号首次不拉取** —— 23 个实体长期 unknown
+  （`need_low = (now - 0.0) > 24h` 在进程启动 <24h 时恒 False）
+- **VAT scope 多请求导致整批降级** —— 14 个自拼 → 只给 8 个
+  （改为 App 的精确 12 个 → 全给）
+- **L6 被误判为「有三排座椅」** —— VSS 探测无法区分，改由能力表权威确定
+- **充电控制静默失败** —— 现在给出明确提示（LiNdn 通道限制）
+- **实体名对齐 App** —— 「车门锁」→「车锁」
+
+### Tests
+- 从 **221** 增至 **461** 个测试
+- 新增：`test_vehicle_ability.py` / `test_device_names.py` /
+  `test_app_config.py` / `test_charge_channel.py` /
+  `test_no_hardcoded.py` / `test_freq_first_poll.py`
+
+## [1.0.0] — 2026-09-25
+
+**首个稳定版。** 从 0.1.0 起的完整功能集：信号读取、车控、首次登录、
+错误处理、离线优化，200 个单元测试全绿。
+
+### 新增
+
+- **座椅控制**（`fan` 域，9 个实体）
+  主/副驾 + 二排左中右的加热与通风，HA 原生「关闭/低/中/高」档位 UI
+- **可开合实体**（`cover` 域，2 个实体）
+  尾门 / 全车窗，支持开合 + 位置读回（车窗可拖到任意开度）
+- **哨兵开关**（`switch`），带状态读回
+- **首次登录：浏览器直连方案**
+  HA 配置页直接给出理想官方登录链接（含 `device_id`），
+  用户在新窗口完成「滑块 + 短信」验证即可，无需中间页面
+- **车控命令**（`button` 5 个）
+  寻车 / 授权驾驶 / 闪灯 / 鸣笛 / 远程拍照
+- **乐观更新 + TTL**
+  下发命令后立即显示目标状态，避免"刚点开就显示关闭"
+- **离线跳过**
+  车辆离线时只探测 2 个连接字段，跳过全量轮询（省流量、降低风控风险）
+- **三档轮询分频**
+  HIGH（每轮）/ MID（1 小时）/ LOW（24 小时），可在选项里调主间隔（30~3600 秒）
+
+### 修复
+
+- `_LazySecret` 导致 VIN 获取失败（hac_key/key_id/xdev 被当成空字符串）
+- `async_turn_on` 签名与 HA 基类不兼容（`preset_mode` 缺失）→ 座椅完全不可用
+- 乐观值被旧 VSS 值立即覆盖 → 切换档位后显示"关闭"
+- 二排座椅被误归到 MID 频率（1 小时）→ 控制后长时间显示旧状态
+- `maint_engine_level2` 被 `maint_` 前缀逻辑误判为"正常"
+- `ota_short` 的 `diagnostic` 与实际注册状态不一致
+- 登录页文案含 HTML `<details>` 触发 formatjs `MISSING_VALUE`
+- 翻译占位符校验失败（废弃的 sms 步骤残留 `{url}` / `{device}`）
+- device_id 为空时未生成随机值 → 首次登录永远"提交不上去"
+
+### 移除
+
+- **充电启停开关**：实测服务端返回 `resultCode=2009`，
+  Android 版 App 亦未实现该页面。充电状态仍由 sensor 展示。
+- **泊车状态 / 泊车启动进度**：改为诊断类（默认禁用）
+  原因：`ParkStatus` 服务端从不返回（永远 unknown）；
+  `FSDBootProgress` 值恒为 0 且时间戳停留不动。
+  泊车状态在 App 里走【实时事件通道】，VSS 轮询拿不到。
+- **冗余按钮 4 个**：开/关尾门、开/关车窗（已由 `cover` 提供）
+- **冗余哨兵按钮 2 个**：开启/关闭哨兵（已由 `switch` 提供）
+- **重复实体**：`binary_sensor` 哨兵开关（与 `switch` 状态源相同）
+
+### 变更
+
+- `远程启动` → `授权驾驶`（命令 `remoteVehAuth` 的语义更贴切）
+- 13 个信号补充中文名与单位（`charge_current_ac` 等）
+- 二排中座椅加热补充（`SMSeatHeatState` 存在；无通风信号）
+
+### 已知问题
+
+- 部分信号语义仍在核实（`charge_gun_ac` 等）
+- 车控命令下发后车辆状态可能有几十秒延迟（已用乐观更新缓解）
+- 多车场景未实现
+
+### ⚠️ 待实车验证
+
+以下 `controlType` 在 App 反编译中未找到，依据同族命名推测：
+
+| 实体 | 推测值 | 依据 |
+|---|---|---|
+| 二排中座椅加热 | `secMSeatHeatSw` | 状态信号存在 |
+| 二排左座椅通风 | `secLSeatVentSw` | 状态信号新鲜 |
+| 二排右座椅通风 | `secRSeatVentSw` | 同上 |
+
+---
+
+## [0.11.0] — 2026-09-24
+
+### 新增
+
+- 车型功能探测（15 项能力，按探测结果动态裁剪实体）
+- 诊断实体（OTA / 保养 / 激活流程，默认禁用）
+- `docs/实体清单.md`、`VERIFY.md`、`ROADMAP.md`
+
+### 修复
+
+- 多平台实体因功能探测失败被全部跳过
+
+---
+
+## [0.10.0] — 2026-09-23
+
+### 新增
+
+- 车窗 `cover`（位置控制）
+- 尾门 `cover`
+- 座椅 `fan`（主/副驾）
+
+### 修复
+
+- 首次登录流程不再死锁（`require=SMS_CODE` 时进入浏览器辅助）
+
+---
+
+## [0.9.0] — 2026-09-23
+
+### 新增
+
+- 三档轮询分频（HIGH / MID / LOW）
+- 信号新鲜度（数据年龄 + 未上报判定）
+- 分级错误处理 + HA 持久通知
+
+---
+
+## [0.8.0] — 2026-09-22
+
+### 新增
+
+- 车控通道打通（`x-chj` 签名 + VAT token）
+- `button` 平台（寻车 / 远程启动 / 闪灯 / 鸣笛 / 哨兵 / 拍照）
+
+---
+
+## [0.1.0] — 2026-09-21
+
+### 新增
+
+- 初始版本：手机号 + 密码登录、VSS 信号读取、sensor / binary_sensor

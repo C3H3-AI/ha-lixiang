@@ -1,0 +1,120 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "理想汽车",
+        "description": "输入理想账号的手机号和密码。\n\n**接下来会发生什么？**\n\n1. 集成会用你的账号密码登录理想服务器\n2. 如果你是**首次**在这台设备上登录，理想会要求**短信验证**（带有滑动验证，需要你在浏览器里自己完成）\n3. 集成会引导你打开一个辅助页面完成验证\n4. 验证成功后，这台设备会被标记为**受信任**，之后无需再验证\n\n> ⚠️ 登录会使理想 App 的会话失效（需要时请重新登录 App）。",
+        "data": {
+          "phone": "手机号",
+          "password": "密码"
+        }
+      },
+      "password_login": {
+        "title": "理想汽车登录",
+        "description": "输入理想账号的手机号和密码。\n\n**首次登录**需要短信验证（含滑动验证），集成会引导你在浏览器里完成。验证成功后本设备受信任，之后免验证。\n\n> ⚠️ 登录会使理想 App 的会话失效。",
+        "data": {
+          "phone": "手机号",
+          "password": "密码"
+        }
+      },
+      "sms": {
+        "title": "理想汽车 · 首次登录验证",
+        "description": "请在浏览器里完成登录（自己滑滑块 + 收短信），完成后点【提交】继续。",
+        "data": {
+          "sms_code": "（此步骤已改为浏览器验证，可留空）"
+        }
+      },
+      "manual": {
+        "title": "手动凭据",
+        "description": "高级：直接填写 hac_key / key_id 等凭据（从理想 App 提取）",
+        "data": {
+          "vin": "VIN",
+          "phone": "手机号（用于自动重登）",
+          "password": "密码",
+          "hac_key": "hac_key（x-chj 签名密钥）",
+          "key_id": "key_id（x-chj-key）",
+          "x_chj_deviceid": "X-CHJ-Deviceid",
+          "app_token": "X-CHJ-TOKEN（APP-xxx）"
+        }
+      },
+      "reauth": {
+        "title": "重新认证",
+        "description": "会话已过期，请输入账号 ****{phone} 的密码",
+        "data": {
+          "password": "密码"
+        }
+      },
+      "reauth_confirm": {
+        "title": "重新认证",
+        "description": "会话已过期，请输入账号 ****{phone} 的密码",
+        "data": {
+          "password": "密码"
+        }
+      },
+      "browser": {
+        "title": "理想汽车 · 首次登录验证",
+        "description": "请在理想登录页完成短信验证。\n\n## 👉 [点这里打开理想登录页]({login_url})\n\n---\n\n**①** 输入手机号，勾选条款\n\n**②** 点「获取验证码」→ 拖动滑块\n\n**③** 输入收到的短信验证码 → 点「登录/注册」\n\n**④** 回来点【提交】（等 30 秒后能够成功配置）\n\n---\n\n> 💡 提交后 HA 会用同一台设备身份登录。\n> 成功后此设备被标记为受信任，以后不再需要短信验证。",
+        "data": {
+          "recheck": "我已登录，提交"
+        }
+      },
+      "vin": {
+        "title": "填写车辆 VIN",
+        "description": "集成已尝试**自动读取你账号下的车辆**，但没成功。\n\n{hint}\n\n### 什么情况需要手动填？\n\n- 账号下有多辆车，需要指定其中一辆\n- 使用家人账号（非车主），自动获取不到\n- 自动获取接口临时失败\n\n### 在哪找 VIN？\n\n理想 App → **我的 → 车辆 → 车辆信息**，车架号（VIN）是 **17 位**字母数字组合。\n\n> 留空直接提交 = 跳过（将没有实时状态和车控功能）。",
+        "data": {
+          "vin": "VIN（车架号，17 位）"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "无法连接理想服务器（网络问题或服务端维护）",
+      "invalid_auth": "手机号或密码错误",
+      "sms_required": "该设备未受信任，需要短信验证",
+      "sms_code_required": "请在浏览器里完成登录后再点提交",
+      "sms_use_trusted_device": "请在浏览器辅助页面完成登录",
+      "unknown": "未知错误，请查看 HA 日志（设置→系统→日志，搜索 lixiang_auto）获取详情",
+      "invalid_phone": "手机号格式不正确（应为 11 位中国大陆手机号）",
+      "password_too_short": "密码太短（至少 6 位）",
+      "password_too_long": "密码太长（最多 64 位）",
+      "invalid_vin": "VIN 格式不正确（应为 17 位，不含字母 I / O / Q）"
+    },
+    "abort": {
+      "already_configured": "该账号已配置（如需多账号请用不同手机号）",
+      "reauth_successful": "重新认证成功",
+      "reauth_entry_not_found": "找不到要重新认证的配置条目，请删除后重新添加",
+      "vin_already_configured": "这辆车（VIN {vin}）已通过账号 ****{phone} 接入 HA，无需重复添加。\n\n如果你想切换账号：请先删除原有配置（设置 → 设备与服务 → 理想汽车 → 删除），然后再添加。",
+      "missing_credentials": "缺少签名凭据：{fields}\n\n这些凭据每台设备独有，无法内置。请用「手动填写凭据」入口填入，提取方法见仓库的 docs/credential-guide.md。"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Li Auto 选项",
+        "description": "调整轮询间隔（默认 60 秒，最小 30 秒）。间隔过小可能触发服务端风控。",
+        "data": {
+          "scan_interval": "轮询间隔（秒）",
+          "enable_control": "允许远程控制（关闭后所有车控实体变只读）"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery_level": {
+        "name": "电池电量"
+      },
+      "range_elec_wltc": {
+        "name": "纯电续航(WLTC)"
+      },
+      "range_fuel_wltc": {
+        "name": "燃油续航(WLTC)"
+      },
+      "inside_temp": {
+        "name": "车内温度"
+      },
+      "charge_status": {
+        "name": "充电状态"
+      }
+    }
+  }
+}

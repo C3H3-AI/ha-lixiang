@@ -1,0 +1,2 @@
+# 车型配置 JSON 是数据文件，不做 diff（68 个 × 14 KB）
+custom_components/lixiang_auto/vehicle_configs/*.json -diff linguist-generated

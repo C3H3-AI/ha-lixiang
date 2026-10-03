@@ -1,0 +1,591 @@
+{
+  "_comment": "App 的 token 配置权威表（从 APK 内置 assets/m01config.json 提取）",
+  "_source": "APK assets/m01config.json → configList[code=app] → subTokenData",
+  "_usage": "换 token 时按 type 查 audience/scope/urls，不要自己编 scope 名",
+  "_warning": "多请求 App 没有的 scope 会导致服务端【整批降级】（实测：14 个 → 只给 8 个）",
+  "tokens": {
+    "Anonymous": {
+      "client": "",
+      "audience": "3N1l45XSeMOaid2RgDLiLA",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/lcp-bff-app-api/travel-planning/v1/simulate/energy/cost",
+        "/lcp-bff-app-api/charge-map/v1/potential/",
+        "/lcp-bff-app-api/charge-map/v1/find-connector-info",
+        "/lcp-bff-app-api/charge-map/v1/query-station-occupy-info",
+        "/lcp-bff-app-api/charge-map/v1/find-connector-info",
+        "/lcp-bff-app-api/serve-page/v1/station-stats",
+        "/lcp-bff-app-api/charge-map/v1/get-direct-all-stations-cdn-list",
+        "/lcp-bff-app-api/amap/v1/potential",
+        "/lcp-bff-app-api/amap/v1/fetch-route-result"
+      ]
+    },
+    "httpLiMeshServiceV2": {
+      "client": "",
+      "audience": "1j0vgTqagJUHuT6nLmbTGx",
+      "scope": [
+        "remote-wakeup:wakeup",
+        "veh-ctrl:cmd-result-get",
+        "veh-ctrl:cmd-send",
+        "vss:get-batch",
+        "task-master"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/ssp-vehicle-control-service/ssp-vehicle-control/cmd/send",
+        "/ssp-vehicle-control-service/ssp-vehicle-control/cmd-result",
+        "/ssp-cloud-vss-service/mobile/vss/get-batch",
+        "/iot-connect-manager-service/wakeup4App",
+        "/iot-connect-manager-service/v2/wakeup",
+        "/ssp-task-master-service"
+      ]
+    },
+    "httpLiMeshService": {
+      "client": "",
+      "audience": "1j0vgTqagJUHuT6nLmbTGx",
+      "scope": [
+        "remote-wakeup:wakeup",
+        "veh-ctrl:cmd-result-get",
+        "veh-ctrl:cmd-send",
+        "vss:get-batch"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/ssp-vehicle-control-service/ssp-vehicle-control/cmd/send",
+        "/ssp-vehicle-control-service/ssp-vehicle-control/cmd-result",
+        "/ssp-cloud-vss-service/mobile/vss/get-batch",
+        "/iot-connect-manager-service/wakeup4App"
+      ]
+    },
+    "CRM": {
+      "client": "KHHSEDP7EgRPe2fr7EEIv",
+      "audience": "j5XagcZJ489oSLhkeQCyF",
+      "scope": [
+        "read:legid",
+        "openid"
+      ],
+      "responseType": [
+        "id_token",
+        "token"
+      ],
+      "urls": [
+        "https://app.lixiang.com/login/subidaas/crm"
+      ]
+    },
+    "IM": {
+      "client": "KHHSEDP7EgRPe2fr7EEIv",
+      "audience": "5PMvaHP2YbU6Mhg9Ug3zOH",
+      "scope": [
+        "fetch:im:id:my",
+        "openid"
+      ],
+      "responseType": [
+        "id_token",
+        "token"
+      ],
+      "urls": [
+        "https://app.lixiang.com/login/subidaas/im"
+      ]
+    },
+    "VAT": {
+      "client": "2AQClOaegaA7XecMSFx1p",
+      "audience": "5Tc7yDrnMzALwc9Rytl9sp",
+      "scope": [
+        "remoteVehACSmartControl",
+        "remoteVehFrgControl",
+        "remoteVehAuth",
+        "remoteVehLockControl",
+        "remoteVehPlgControl",
+        "remoteVehSearch",
+        "remoteVehWdwControl",
+        "remoteVehACFirstControl",
+        "remoteADCtrl",
+        "remoteADInit"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "https://app.lixiang.com/login/subidaas/vat"
+      ]
+    },
+    "VAT_1": {
+      "client": "2AQClOaegaA7XecMSFx1p",
+      "audience": "5Tc7yDrnMzALwc9Rytl9sp",
+      "scope": [
+        "remoteVehACSmartControl",
+        "remoteVehFrgControl",
+        "remoteVehAuth",
+        "remoteVehLockControl",
+        "remoteVehPlgControl",
+        "remoteVehSearch",
+        "remoteVehWdwControl",
+        "remoteVehACFirstControl",
+        "remoteADCtrl",
+        "remoteADInit",
+        "fTkC",
+        "rmCtrl"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "https://app.lixiang.com/login/subidaas/v2_vat"
+      ]
+    },
+    "VSS": {
+      "client": "2AQClOaegaA7XecMSFx1p",
+      "audience": "3WNA2URKRZ6W11qQKo5YJj",
+      "scope": [
+        "create_port_stream"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "https://app.lixiang.com/login/subidaas/vss"
+      ]
+    },
+    "aisp-community-api": {
+      "client": "",
+      "audience": "37RbuyE1hxqmMiKNUdrpLR",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-community-api"
+      ]
+    },
+    "aisp-comment-api": {
+      "client": "",
+      "audience": "7ZFBORdr76RU97nXrbjVqs",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-comment-api"
+      ]
+    },
+    "aisp-activity-api": {
+      "client": "",
+      "audience": "3OPvS3yuQztYngdz5eKtE7",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-activity-api"
+      ]
+    },
+    "aisp-mission-service": {
+      "client": "",
+      "audience": "4hEvGkpPSc8t2SVCz5I9UY",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-mission-service"
+      ]
+    },
+    "aisp-app-api": {
+      "client": "",
+      "audience": "2Tsm3Qn0OsnLxl2cGwxx3U",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-app-api"
+      ]
+    },
+    "aisp-angelia-api": {
+      "client": "",
+      "audience": "7iPRLhS409FyRoauWOwgB1",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-angelia-api",
+        "/aisp-chitchat-service"
+      ]
+    },
+    "aisp-osp-service": {
+      "client": "",
+      "audience": "2xRb0U6JWm4bZ9TA0OhnEC",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-osp-service"
+      ]
+    },
+    "aisp-kama-api": {
+      "client": "",
+      "audience": "5aHw2CCbjVBqMze47ZPgLs",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-kama-api"
+      ]
+    },
+    "aisp-shop-api": {
+      "client": "",
+      "audience": "2mPsolN4r5tBYVorYIlQWs",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-shop-api"
+      ]
+    },
+    "FAMILY": {
+      "client": "",
+      "audience": "33AcCvpP7cria8lXhkgpJS",
+      "scope": [
+        "offline_access",
+        "get",
+        "initiate",
+        "cancel",
+        "delete",
+        "reject",
+        "receive",
+        "sign",
+        "openid"
+      ],
+      "responseType": [
+        "token",
+        "id_token"
+      ],
+      "urls": [
+        "/aisp-account-api/v2-",
+        "https://app.lixiang.com/login/subidaas/family"
+      ]
+    },
+    "BLEV2": {
+      "client": "",
+      "audience": "5NQSSFlPahlyEos4t0c33N",
+      "scope": [
+        "open:ble",
+        "*"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-ble-api/v1-4/bles",
+        "/iam-dk-api"
+      ]
+    },
+    "BLE": {
+      "client": "",
+      "audience": "5NQSSFlPahlyEos4t0c33N",
+      "scope": [
+        "open:ble",
+        "*"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-ble-api/v1-4/bles",
+        "/iam-dk-api"
+      ]
+    },
+    "mall-cart-api": {
+      "client": "",
+      "audience": "6iU8kIfejEVmhSf5fvQdk",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/mall-cart-api"
+      ]
+    },
+    "aisp-secbuy-api": {
+      "client": "",
+      "audience": "6XscmT4rHH9zYvELIfE1lT",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-secbuy-api"
+      ]
+    },
+    "saos-mall-api": {
+      "client": "",
+      "audience": "0TeWTx4989y4XaoOoQRHD",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/mall-api"
+      ]
+    },
+    "saos-vehicle-web": {
+      "client": "",
+      "audience": "56QrhFKRe8U1Cmw3QTYqEC",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/vehicle-api"
+      ]
+    },
+    "saos-vehicle-api": {
+      "client": "",
+      "audience": "7gbeHMwBPMZA5SU1b2awIo",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/saos-vehicle-api"
+      ]
+    },
+    "mall-unit-api": {
+      "client": "",
+      "audience": "5DP5nfVb7bC79W79PS2a3o",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/mall-unit-api"
+      ]
+    },
+    "saos-fib-api": {
+      "client": "",
+      "audience": "58aMfgzoruuaYATByjuNX0",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/saos-fib-api"
+      ]
+    },
+    "aisp-ownerservice-api": {
+      "client": "",
+      "audience": "1GW8ZpXg5yMfTi3Fi6xkhk",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-ownerservice-api"
+      ]
+    },
+    "platform-dyeing-api": {
+      "client": "",
+      "audience": "6Z7QEqTF55bh07MFEoJLuP",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/platform-dyeing-api"
+      ]
+    },
+    "saos-db-link/rights": {
+      "client": "",
+      "audience": "3AQWdVMiOI7Jgf0vzI69qp",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/saos-db-link-api/saos-db-link/rights"
+      ]
+    },
+    "ACCOUNT": {
+      "client": "",
+      "audience": "1UNJeWfiWrm49qUI7EKh9k",
+      "scope": [
+        "default:user:scope"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/aisp-account-api/v1-"
+      ]
+    },
+    "lcp-bff-app-api": {
+      "client": "",
+      "audience": "3N1l45XSeMOaid2RgDLiLA",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/lcp-bff-app-api"
+      ]
+    },
+    "pubkeys": {
+      "client": "",
+      "audience": "33AcCvpP7cria8lXhkgpJS",
+      "scope": [
+        "offline_access get initiate cancel delete reject receive read update "
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/iam-vehicle-api/api/",
+        "https://app.lixiang.com/login/subidaas/pubkeys"
+      ]
+    },
+    "DVR": {
+      "client": "",
+      "audience": "2oQnKj06YuAFiHx6n3knR1",
+      "scope": [
+        "dvr-all-permission"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "https://app.lixiang.com/login/subidaas/dvr"
+      ]
+    },
+    "dk-agreement-api": {
+      "client": "",
+      "audience": "1GDY9heeywMdHEEwDneHfx",
+      "scope": [
+        "grant:imp"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/api/imp/to/app"
+      ]
+    },
+    "mms-api": {
+      "client": "",
+      "audience": "5a1X5rZcWZNeEOYlyRigUs",
+      "scope": [
+        "ALL"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/mms-api/"
+      ]
+    },
+    "lcp-bff-mini-web": {
+      "client": "",
+      "audience": "5ML4PlPOocNUuQ4KhiSZE0",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/lcp-bff-mini-web"
+      ]
+    },
+    "maintaince": {
+      "client": "",
+      "audience": "26FehzsHlrllCSaqI9bFYG",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/saos-agg-api"
+      ]
+    },
+    "bsp-vcp-pile": {
+      "client": "",
+      "audience": "6ToHmoCjzg1UsIb2hf7ox6",
+      "scope": [
+        "vcp:pile:app"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/bsp-vcp-pile/v1/app/pile"
+      ]
+    },
+    "saos-agent-bridge-service": {
+      "client": "",
+      "audience": "3AqcIM82yApyw73NwJxZTZ",
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "/saos-agent-bridge-service"
+      ]
+    }
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Li Auto",
+        "description": "Enter your Li Auto account phone number and password.\n\n**What happens next?**\n\n1. The integration signs in to Li Auto's servers with your credentials\n2. If this is the **first time** signing in from this device, Li Auto will require **SMS verification** (with a slider captcha you must complete in your browser)\n3. The integration opens a helper page where you complete the verification\n4. Once verified, this device is marked **trusted** and no further verification is needed\n\n> ⚠️ Signing in invalidates the Li Auto App session (sign in again in the App if needed).",
+        "data": {
+          "phone": "Phone number",
+          "password": "Password"
+        }
+      },
+      "password_login": {
+        "title": "Li Auto login",
+        "description": "Enter your Li Auto account phone number and password.\n\n**First login** requires SMS verification (including a slider captcha); the integration will guide you through it in your browser. Once verified, this device is trusted and no further verification is needed.\n\n> ⚠️ Signing in invalidates the Li Auto App session.",
+        "data": {
+          "phone": "Phone number",
+          "password": "Password"
+        }
+      },
+      "browser": {
+        "title": "Li Auto · First-time login verification",
+        "description": "Complete the SMS verification on the Li Auto login page.\n\n## 👉 [Open the Li Auto login page]({login_url})\n\n---\n\n**①** Enter your phone number and accept the terms\n\n**②** Tap \"get code\" → drag the slider\n\n**③** Enter the SMS code → tap \"log in / register\"\n\n**④** Come back and press Submit (wait ~30 seconds for it to succeed)\n\n---\n\n> 💡 After you submit, Home Assistant signs in with the same device identity.\n> Once that succeeds, this device is marked as trusted and no longer needs SMS\n> verification.",
+        "data": {
+          "recheck": "I have logged in — submit"
+        }
+      },
+      "sms": {
+        "title": "SMS verification",
+        "description": "Complete the login in your browser (slider captcha + SMS code), then press Submit.",
+        "data": {
+          "sms_code": "(This step now uses browser verification — can be left empty)"
+        }
+      },
+      "vin": {
+        "title": "Vehicle VIN",
+        "description": "The integration tried to read the vehicles on your account automatically but did not succeed.\n\n{hint}\n\n### When do I need to enter VIN manually?\n\n- Your account has more than one vehicle\n- You use a family (non-owner) account\n- The automatic lookup failed temporarily\n\n### Where do I find the VIN?\n\nLi Auto App → **Me → Vehicle → Vehicle info**. The VIN is a **17-character** alphanumeric code.\n\n> Submitting empty = skip (no realtime status or remote control).",
+        "data": {
+          "vin": "VIN (17 characters)"
+        }
+      },
+      "manual": {
+        "title": "Manual credentials",
+        "description": "Fill in credentials extracted from the Li Auto App manually.",
+        "data": {
+          "vin": "VIN",
+          "phone": "Phone number",
+          "password": "Password",
+          "hac_key": "hac_key",
+          "key_id": "key_id",
+          "x_chj_deviceid": "Device ID (X-CHJ)",
+          "app_token": "App token"
+        }
+      },
+      "reauth": {
+        "title": "Re-authenticate",
+        "description": "The session for {phone} has expired. Enter your password to sign in again.",
+        "data": {
+          "password": "Password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate",
+        "description": "Enter the password for {phone}.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the Li Auto servers (network issue or server maintenance)",
+      "invalid_auth": "Wrong phone number or password",
+      "sms_required": "This device is not trusted and requires SMS verification",
+      "sms_code_required": "Please complete the login in your browser first",
+      "sms_use_trusted_device": "Please complete the login on the helper page",
+      "unknown": "Unknown error — check the Home Assistant log (Settings → System → Logs, search for lixiang_auto)",
+      "invalid_phone": "Invalid phone number (expected an 11-digit mainland China number)",
+      "password_too_short": "Password too short (at least 6 characters)",
+      "password_too_long": "Password too long (at most 64 characters)",
+      "invalid_vin": "Invalid VIN (must be 17 characters, excluding I / O / Q)"
+    },
+    "abort": {
+      "already_configured": "This account is already configured (use a different phone number for a second account)",
+      "reauth_successful": "Re-authentication successful",
+      "reauth_entry_not_found": "Could not find the config entry to re-authenticate. Delete it and add it again.",
+      "vin_already_configured": "This vehicle (VIN {vin}) is already configured with account ****{phone}.\n\nTo switch accounts: delete the existing entry first (Settings → Devices & Services → Li Auto → Delete), then add it again.",
+      "missing_credentials": "Missing signing credentials: {fields}\n\nThese credentials are unique to each device and cannot be bundled. Use the \"Manual credentials\" entry to fill them in."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Li Auto options",
+        "description": "Adjust polling and control behaviour.",
+        "data": {
+          "scan_interval": "Polling interval (seconds)",
+          "enable_control": "Enable remote control"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery_level": {
+        "name": "Battery level"
+      },
+      "range_elec_wltc": {
+        "name": "Electric range (WLTC)"
+      },
+      "range_fuel_wltc": {
+        "name": "Fuel range (WLTC)"
+      },
+      "inside_temp": {
+        "name": "Cabin temperature"
+      },
+      "charge_status": {
+        "name": "Charging status"
+      }
+    }
+  }
+}

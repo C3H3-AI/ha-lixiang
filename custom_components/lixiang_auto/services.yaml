@@ -1,0 +1,108 @@
+wakeup:
+  name: 唤醒车辆
+  description: 唤醒处于休眠状态的车辆（远程唤醒，耗电较低）。
+  fields:
+    vin:
+      name: VIN
+      description: 目标车辆 VIN（可选，默认使用配置的车辆）
+      required: false
+      selector:
+        text:
+
+refresh:
+  name: 立即刷新
+  description: 立即拉取一次车辆最新状态（不等下一个轮询周期）。
+  fields:
+    vin:
+      name: VIN
+      description: 目标车辆 VIN（可选，默认使用配置的车辆）
+      required: false
+      selector:
+        text:
+
+dump_ability:
+  name: 导出车型能力表
+  description: >-
+    把当前车型的能力表（来自官方 App 内置的配置，含座椅/温控能力与 45 项功能开关）
+    导出为 JSON 文件，用于排查实体缺失或反馈新车型支持。
+    文件路径：<config>/lixiang_ability_<modelId>.json
+  fields:
+    vin:
+      name: VIN
+      description: 目标车辆 VIN（可选，默认使用配置的车辆）
+      required: false
+      selector:
+        text:
+
+get_travel:
+  name: 查询行程/陪伴里程
+  description: >-
+    查询车辆的行程里程数据（逆向自官方 App 的 travel 接口）。
+    三种用法（三选一）：
+      · 不传参数 → 各月里程汇总
+      · year + month → 单月详情（含每日明细）
+      · start_date + end_date → 时间段汇总
+  fields:
+    vin:
+      name: VIN
+      description: 目标车辆 VIN（可选，默认使用配置的车辆）
+      required: false
+      selector:
+        text:
+    year:
+      name: 年
+      description: 单月查询的年份（如 2026），需与 month 一起使用
+      required: false
+      selector:
+        number:
+          min: 2019
+          max: 2100
+    month:
+      name: 月
+      description: 单月查询的月份（1-12），需与 year 一起使用
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 12
+    start_date:
+      name: 开始日期
+      description: 时间段查询的开始日期（YYYY-MM-DD），需与 end_date 一起使用
+      required: false
+      selector:
+        text:
+    end_date:
+      name: 结束日期
+      description: 时间段查询的结束日期（YYYY-MM-DD），需与 start_date 一起使用
+      required: false
+      selector:
+        text:
+
+get_charge:
+  name: 查询充电记录
+  description: >-
+    查询车辆的充电记录（逆向自官方 App 的 bsp-vcp-message 接口）。
+    两种用法：
+      · 不传参数 → 按月统计（充电次数 + 总电量）
+      · dt ("年-月") + charging_type → 某月明细
+  fields:
+    vin:
+      name: VIN
+      description: 目标车辆 VIN（可选，默认使用配置的车辆）
+      required: false
+      selector:
+        text:
+    dt:
+      name: 年月
+      description: 查询的年月，格式 "2026-9"（年-月）
+      required: false
+      selector:
+        text:
+    charging_type:
+      name: 充电类型
+      description: 1=直流(DC)，2=交流(AC)；默认 1
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 4
