@@ -138,6 +138,16 @@ const STYLE = `
   .loc .map { flex:1; border-radius:12px; background:#E8EEF4; overflow:hidden;
               position:relative; min-height:82px; }
   .loc .map iframe { width:100%; height:100%; border:0; }
+  /* ── 自建地图（高德瓦片，免 key/免登录）── */
+  .loc .map .tiles { position:absolute; inset:0; overflow:hidden; cursor:pointer; }
+  .loc .map .tiles img { position:absolute; width:256px; height:256px;
+                         user-select:none; pointer-events:none; }
+  /* 车标：小车图形（对齐 App），小尺寸表达"车辆位置" */
+  .loc .map .puck { position:absolute; width:18px; height:18px; margin:-9px 0 0 -9px;
+                    display:flex; align-items:center; justify-content:center;
+                    pointer-events:none; z-index:3; }
+  .loc .map .puck img { width:18px; height:18px;
+                        filter:drop-shadow(0 1px 3px rgba(0,0,0,.4)); }
   .loc .map .ph { position:absolute; inset:0; display:flex; flex-direction:column;
                   align-items:center; justify-content:center; text-align:center;
                   font-size:11px; color:var(--lx-t3); line-height:1.5; padding:0 12px; }
@@ -453,7 +463,11 @@ class LixiangAppHome extends HTMLElement {
             <div class="fan" id="fan"><img src="${__iconBase}/ic_home_fan_on.webp" alt=""></div>
           </div>
           <div class="card loc" id="c-loc" role="button" tabindex="0">
-            <div class="map" id="map"><span class="ph">位置地图<br><small style="opacity:.7">（可在配置中指定地图 URL）</small></span></div>
+            <div class="map" id="map">
+              <div class="tiles" id="hm-tiles"></div>
+              <div class="puck" id="hm-puck" style="display:none">
+                <img src="${__iconBase}/icon_car_loc.webp" alt="车辆位置"></div>
+            </div>
             <div class="addr"><img src="${__iconBase}/icon_vehicle_my_location.webp" alt="" onerror="this.style.display='none'">
               <span id="v-addr">定位获取中…</span></div>
           </div>
@@ -835,11 +849,11 @@ class LixiangAppHome extends HTMLElement {
       addr = (sv && !/^\d+$/.test(String(sv))) ? sv : "暂无定位";
     }
     q("#v-addr").textContent = addr;
-    const mapBox = q("#map");
-    if (c.map_iframe && !mapBox.dataset.done) {
-      mapBox.innerHTML = `<iframe src="${c.map_iframe}" title="地图" loading="lazy"></iframe>`;
-      mapBox.dataset.done = "1";
-    }
+    // ★ 2026-10-03：自建地图（高德瓦片，免 key/免登录）。
+    //   原 iframe（uri.amap.com/marker）在 iframe 里会弹登录页。
+    this._drawHomeMap(
+      dt && dt.attributes ? dt.attributes.latitude : null,
+      dt && dt.attributes ? dt.attributes.longitude : null);
 
     q("#v-mile").textContent = (mk => mk == null ? "—" : mk)(this._num(this._eid("month_km")));
     q("#v-batt").textContent = soc == null ? "—" : soc;
@@ -878,6 +892,88 @@ class LixiangAppHome extends HTMLElement {
     } catch (e) { /* 折线图非关键路径，静默 */ }
     finally { this._fetchingDaily = false; }
   }
+  // ── 自建地图（高德瓦片）────────────────────────────────────────────
+  /** WGS84 → GCJ-02（大陆偏移 300~600m）。 */
+  _wgs2gcj(lat, lon) {
+    const a = 6378245.0, ee = 0.00669342162296594323;
+    if (lon < 72.004 || lon > 137.8347 || lat < 0.8293 || lat > 55.8271) return [lat, lon];
+    const tfLat = (x, y) => {
+      let r = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x));
+      r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+      r += (20*Math.sin(y*Math.PI) + 40*Math.sin(y/3*Math.PI)) * 2/3;
+      r += (160*Math.sin(y/12*Math.PI) + 320*Math.sin(y*Math.PI/30)) * 2/3;
+      return r;
+    };
+    const tfLon = (x, y) => {
+      let r = 300 + x + 2*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x));
+      r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+      r += (20*Math.sin(x*Math.PI) + 40*Math.sin(x/3*Math.PI)) * 2/3;
+      r += (150*Math.sin(x/12*Math.PI) + 300*Math.sin(x/30*Math.PI)) * 2/3;
+      return r;
+    };
+    const dLat0 = tfLat(lon - 105, lat - 35), dLon0 = tfLon(lon - 105, lat - 35);
+    const radLat = lat / 180 * Math.PI;
+    let magic = Math.sin(radLat); magic = 1 - ee*magic*magic;
+    const sm = Math.sqrt(magic);
+    const dLat = (dLat0 * 180) / ((a * (1 - ee)) / (magic * sm) * Math.PI);
+    const dLon = (dLon0 * 180) / (a / sm * Math.cos(radLat) * Math.PI);
+    return [lat + dLat, lon + dLon];
+  }
+
+  _llToTile(lat, lon, z) {
+    const n = 2 ** z;
+    return [(lon + 180) / 360 * n,
+            (1 - Math.log(Math.tan(lat*Math.PI/180) + 1/Math.cos(lat*Math.PI/180)) / Math.PI) / 2 * n];
+  }
+
+  /** 首页迷你地图：车辆居中，铺满容器。 */
+  _drawHomeMap(la, lo) {
+    const box = this.querySelector("#hm-tiles");
+    const wrap = this.querySelector("#map");
+    const puck = this.querySelector("#hm-puck");
+    if (!box || !wrap) return;
+    // ★ 车标位置【每次都更新】—— 不能放在"位置没变就 return"之后，
+    //   否则第二次渲染就直接 return，车标永远停在 display:none。
+    if (la == null || lo == null) {
+      if (puck) puck.style.display = "none";
+      return;
+    }
+    const [glat, glon] = this._wgs2gcj(Number(la), Number(lo));
+    const key = `${glat.toFixed(6)},${glon.toFixed(6)}`;
+    const _W0 = wrap.clientWidth || 180, _H0 = wrap.clientHeight || 90;
+    if (puck) {
+      puck.style.display = "";
+      puck.style.left = _W0 / 2 + "px";
+      puck.style.top = _H0 / 2 + "px";
+    }
+    if (box.dataset.pt === key) return;          // 瓦片不重绘（仅更新车标）
+    box.dataset.pt = key;
+    const z = 15;                                 // 首页小图：看大致位置
+    const W = wrap.clientWidth || 180, H = wrap.clientHeight || 90;
+    const [cxE, cyE] = this._llToTile(glat, glon, z);
+    const cxI = Math.floor(cxE), cyI = Math.floor(cyE);
+    const offX = (cxE - cxI) * 256, offY = (cyE - cyI) * 256;
+    const cpx = W / 2, cpy = H / 2;
+    const x0 = cxI - Math.ceil((cpx - offX) / 256);
+    const x1 = cxI + Math.ceil((W - cpx + offX) / 256);
+    const y0 = cyI - Math.ceil((cpy - offY) / 256);
+    const y1 = cyI + Math.ceil((H - cpy + offY) / 256);
+    const n = 2 ** z;
+    const frag = [];
+    for (let tx = x0; tx <= x1; tx++) {
+      for (let ty = y0; ty <= y1; ty++) {
+        if (tx < 0 || ty < 0 || tx >= n || ty >= n) continue;
+        const left = cpx - offX + (tx - cxI) * 256;
+        const top = cpy - offY + (ty - cyI) * 256;
+        const s2 = (tx + ty) % 4 + 1;
+        frag.push(`<img src="https://webrd0${s2}.is.autonavi.com/appmaptile`
+                + `?lang=zh_cn&size=1&scale=1&style=8&x=${tx}&y=${ty}&z=${z}"`
+                + ` style="left:${Math.round(left)}px;top:${Math.round(top)}px" alt="">`);
+      }
+    }
+    box.innerHTML = frag.join("");
+  }
+
 }
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangAppHome);
