@@ -342,8 +342,11 @@ class LixiangLocationPage extends HTMLElement {
       if (!cell) return;
       const hit = list.find(([k]) => k && k.includes(`picIn${key}.jpg`));
       if (hit) {
+        // ★ 图片可能已过期（实测 5 个月前的照片在 OSS 已 404，
+        //   而签名 URL 本身仍有效）—— 加载失败要如实说明，不静默空白。
         cell.innerHTML = `<img src="${hit[1]}" alt="${lbl}视图" loading="lazy"
-             style="width:100%;height:100%;object-fit:cover;border-radius:8px">
+             style="width:100%;height:100%;object-fit:cover;border-radius:8px"
+             onerror="this.parentNode.innerHTML='<div class=&quot;none&quot;>${lbl}视图<br>（图片已过期）</div><div class=&quot;lbl&quot;>${lbl}</div>'">
            <div class="lbl">${lbl}</div>`;
       } else {
         const why = err ? "获取失败" : (list.length ? "该方位无图" : "尚未拍照");
