@@ -91,6 +91,32 @@ const STYLE = `
   .ph img { width:100%; height:100%; object-fit:cover; }
   .ph .lbl { position:absolute; left:8px; top:8px; font-size:11px; color:#fff;
              background:rgba(0,0,0,.45); padding:2px 7px; border-radius:6px; }
+  .ph { cursor:pointer; }
+  .ph:active { transform:scale(.97); }
+  .ph .zoom { position:absolute; right:6px; bottom:6px; width:20px; height:20px;
+              border-radius:50%; background:rgba(0,0,0,.5); color:#fff;
+              display:flex; align-items:center; justify-content:center;
+              font-size:12px; line-height:1; }
+  /* ── 照片大图查看（点缩略图打开）── */
+  .lightbox { position:fixed; inset:0; background:rgba(0,0,0,.92); z-index:9999;
+              display:none; flex-direction:column; }
+  .lightbox.on { display:flex; }
+  .lightbox .lbhd { display:flex; align-items:center; gap:10px;
+                    padding:14px 18px; color:#fff; font-size:15px; }
+  .lightbox .lbx { margin-left:auto; font-size:22px; cursor:pointer;
+                   width:32px; height:32px; display:flex; align-items:center;
+                   justify-content:center; border-radius:50%;
+                   background:rgba(255,255,255,.14); }
+  .lightbox .lbbody { flex:1; display:flex; align-items:center;
+                      justify-content:center; padding:0 14px 22px; }
+  .lightbox img { max-width:100%; max-height:100%; object-fit:contain;
+                  border-radius:10px; }
+  .lightbox .lbnav { display:flex; gap:8px; justify-content:center;
+                     padding:0 0 18px; }
+  .lightbox .lbnav span { padding:7px 15px; border-radius:18px;
+                          background:rgba(255,255,255,.14); color:#fff;
+                          font-size:13px; cursor:pointer; }
+  .lightbox .lbnav span.on { background:var(--lx-blue); }
   .ph .none { position:absolute; inset:0; display:flex; align-items:center;
               justify-content:center; font-size:11px; color:rgba(255,255,255,.5);
               text-align:center; padding:0 10px; line-height:1.5; }
@@ -180,6 +206,14 @@ class LixiangLocationPage extends HTMLElement {
             <img src="${__iconBase}/ic_home_photo.png" alt="" onerror="this.style.visibility='hidden'">重新拍照</div>
         </div>
         <div class="photos" id="photos"></div>
+        <div class="lightbox" id="lightbox" role="dialog" aria-modal="true"
+             aria-label="驻车照片大图">
+          <div class="lbhd"><span id="lb-title">驻车照片</span>
+            <div class="lbx" id="lb-close" role="button" tabindex="0"
+                 aria-label="关闭">×</div></div>
+          <div class="lbbody"><img id="lb-img" alt=""></div>
+          <div class="lbnav" id="lb-nav"></div>
+        </div>
         <div class="tip">驻车照片由车辆摄像头拍摄。点击「重新拍照」后，
           照片会显示在这里（5 路：前 / 后 / 左 / 右 / 俯视）。
           图片链接约 24 小时有效，过期后需重新获取。</div>
@@ -205,6 +239,18 @@ class LixiangLocationPage extends HTMLElement {
       this._a11y(el, label, fn);
       el.addEventListener("click", fn);
     });
+
+    // 大图查看器的关闭（点遮罩空白处也关）
+    const lb = this.querySelector("#lightbox");
+    if (lb) {
+      this._a11y(this.querySelector("#lb-close"), "关闭大图",
+                 () => this._closeLightbox());
+      lb.addEventListener("click", (ev) => {
+        if (ev.target === lb || ev.target.classList.contains("lbbody")) {
+          this._closeLightbox();
+        }
+      });
+    }
 
     // 导航
     const nav = () => {
@@ -338,6 +384,60 @@ class LixiangLocationPage extends HTMLElement {
     }
   }
 
+  /** 打开大图查看器（可左右切换 5 路）。 */
+  _openLightbox(curKey, curLbl, curUrl, urls, angles) {
+    const lb = this.querySelector("#lightbox");
+    if (!lb) return;
+    // 只列出真正有图的方位
+    const avail = angles.map(([k, l]) => {
+      const hit = Object.entries(urls || {})
+        .find(([kk]) => kk && kk.includes(`picIn${k}.jpg`));
+      return hit ? [k, l, hit[1]] : null;
+    }).filter(Boolean);
+    if (!avail.length) return;
+
+    const show = (idx) => {
+      const [k, l, u] = avail[idx];
+      const img = lb.querySelector("#lb-img");
+      img.src = u;
+      img.alt = `${l}视图`;
+      lb.querySelector("#lb-title").textContent = `驻车照片 · ${l}`;
+      lb.querySelectorAll("#lb-nav span").forEach((sp, i) =>
+        sp.classList.toggle("on", i === idx));
+      lb.dataset.idx = String(idx);
+    };
+    const nav = lb.querySelector("#lb-nav");
+    nav.innerHTML = avail.map(([k, l], i) =>
+      `<span data-i="${i}" role="button" tabindex="0">${l}</span>`).join("");
+    nav.querySelectorAll("span").forEach((sp) => {
+      sp.onclick = () => show(Number(sp.dataset.i));
+    });
+
+    const start = Math.max(0, avail.findIndex(([k]) => k === curKey));
+    show(start);
+    lb.classList.add("on");
+    this._lbKeyHandler = (ev) => {
+      if (ev.key === "Escape") { this._closeLightbox(); return; }
+      const n = avail.length;
+      const i = Number(lb.dataset.idx || 0);
+      if (ev.key === "ArrowRight") show((i + 1) % n);
+      if (ev.key === "ArrowLeft") show((i - 1 + n) % n);
+    };
+    document.addEventListener("keydown", this._lbKeyHandler);
+    lb.querySelector("#lb-close").focus?.();
+  }
+
+  _closeLightbox() {
+    const lb = this.querySelector("#lightbox");
+    if (!lb) return;
+    lb.classList.remove("on");
+    lb.querySelector("#lb-img").src = "";   // 释放图片
+    if (this._lbKeyHandler) {
+      document.removeEventListener("keydown", this._lbKeyHandler);
+      this._lbKeyHandler = null;
+    }
+  }
+
   /** 把 URL 填进对应方位；缺失的显示原因而不是假装有图。 */
   _paintPhotos(box, urls, angles, err) {
     const list = Object.entries(urls || {});
@@ -351,7 +451,13 @@ class LixiangLocationPage extends HTMLElement {
         cell.innerHTML = `<img src="${hit[1]}" alt="${lbl}视图" loading="lazy"
              style="width:100%;height:100%;object-fit:cover;border-radius:8px"
              onerror="this.parentNode.innerHTML='<div class=&quot;none&quot;>${lbl}视图<br>（图片已过期）</div><div class=&quot;lbl&quot;>${lbl}</div>'">
-           <div class="lbl">${lbl}</div>`;
+           <div class="lbl">${lbl}</div>
+           <div class="zoom" aria-hidden="true">⤢</div>`;
+        // 点缩略图 → 大图（URL 只在内存里，不落 DOM 属性）
+        cell.onclick = () => this._openLightbox(key, lbl, hit[1], urls, angles);
+        cell.setAttribute("role", "button");
+        cell.setAttribute("tabindex", "0");
+        cell.setAttribute("aria-label", `${lbl}视图，点击查看大图`);
       } else {
         const why = err ? "获取失败" : (list.length ? "该方位无图" : "尚未拍照");
         cell.innerHTML = `<div class="none">${lbl}视图<br>（${why}）</div>
