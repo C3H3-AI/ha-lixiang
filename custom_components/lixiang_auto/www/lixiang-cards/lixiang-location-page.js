@@ -42,6 +42,27 @@ const STYLE = `
 
   /* ── 地图区 ── */
   .mapwrap { position:relative; height:340px; background:#E8EEF4; overflow:hidden; }
+  /* ── 自建地图（高德瓦片，免 key/免登录）── */
+  .tiles { position:absolute; inset:0; cursor:grab; touch-action:none; }
+  .tiles.grabbing { cursor:grabbing; }
+  .tiles img { position:absolute; width:256px; height:256px; user-select:none;
+               pointer-events:none; -webkit-user-drag:none; }
+  /* ★ 2026-10-03：车标改为【小车图形】（对齐 App）——
+     原来是个 36px 大圆点，太大且不像车，无法表达"车辆位置"。
+     小车用已有的 icon_car_loc.webp，尺寸收小到 22px。 */
+  .puck { position:absolute; width:22px; height:22px; margin:-11px 0 0 -11px;
+          display:flex; align-items:center; justify-content:center;
+          pointer-events:none; z-index:4; }
+  .puck img { width:22px; height:22px;
+              filter:drop-shadow(0 1px 3px rgba(0,0,0,.45)); }
+  .mapctl { position:absolute; right:12px; bottom:12px; display:flex;
+            flex-direction:column; gap:6px; z-index:5; }
+  .mapctl span { width:32px; height:32px; border-radius:8px;
+                 background:rgba(255,255,255,.96); display:flex;
+                 align-items:center; justify-content:center; font-size:17px;
+                 color:#333; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,.16);
+                 user-select:none; }
+  .mapctl span:active { transform:scale(.93); }
   .mapwrap iframe { width:100%; height:100%; border:0; }
   .mapwrap .ph { position:absolute; inset:0; display:flex; flex-direction:column;
                  align-items:center; justify-content:center; gap:10px;
@@ -176,7 +197,15 @@ class LixiangLocationPage extends HTMLElement {
     root.className = "root";
     root.innerHTML = `
       <div class="mapwrap" id="mapwrap">
-        <div class="ph" id="mapph">
+        <div class="tiles" id="tiles"></div>
+        <div class="puck" id="puck" style="display:none">
+          <img src="${__iconBase}/icon_car_loc.webp" alt="车辆位置"></div>
+        <div class="mapctl">
+          <span id="cz-in" role="button" tabindex="0" aria-label="放大">+</span>
+          <span id="cz-out" role="button" tabindex="0" aria-label="缩小">−</span>
+          <span id="cz-me" role="button" tabindex="0" aria-label="回到车辆">⌖</span>
+        </div>
+        <div class="ph" id="mapph" style="display:none">
           <img class="car" src="${__iconBase}/icon_car_loc.webp" alt="">
           <div id="coords">定位获取中…</div>
         </div>
@@ -303,16 +332,13 @@ class LixiangLocationPage extends HTMLElement {
     const coords = q("#coords");
     if (la != null && lo != null) {
       coords.textContent = `${Number(la).toFixed(5)}, ${Number(lo).toFixed(5)}`;
-      const wrap = q("#mapwrap");
-      // 若配置了地图 iframe 则嵌入；否则显示静态坐标 + 车辆图标
-      if (this._config.map_iframe && !wrap.dataset.done) {
-        const f = document.createElement("iframe");
-        f.src = this._config.map_iframe
-          .replace("{lat}", la).replace("{lon}", lo);
-        f.title = "车辆地图";
-        wrap.insertBefore(f, wrap.firstChild);
-        wrap.dataset.done = "1";
-      }
+      // ★ 2026-10-03：改用【自建地图】——直接拼高德瓦片。
+      //   此前用 iframe 嵌 uri.amap.com/marker，但那是网页版，
+      //   在 iframe 里会要求登录（截图里是「请按住滑块拖动」验证页）。
+      //   高德瓦片本身免 key、免登录：
+      //     https://webrd0{s}.is.autonavi.com/appmaptile?...&x=&y=&z=
+      //   注意 HA 存 WGS84、高德瓦片是 GCJ-02，需要纠偏（见 _wgs2gcj）。
+      this._initMap(la, lo);
     } else {
       coords.textContent = "暂无定位（车辆可能离线）";
     }
@@ -464,6 +490,162 @@ class LixiangLocationPage extends HTMLElement {
            <div class="lbl">${lbl}</div>`;
       }
     });
+  }
+
+  // ── 自建地图：高德瓦片 ────────────────────────────────────────────────
+  /** WGS84 → GCJ-02（大陆有 300~600m 偏移，不纠偏车标会跑偏）。 */
+  _wgs2gcj(lat, lon) {
+    const a = 6378245.0, ee = 0.00669342162296594323;
+    const outOfChina = (la, lo) => lo < 72.004 || lo > 137.8347 || la < 0.8293 || la > 55.8271;
+    if (outOfChina(lat, lon)) return [lat, lon];
+    const tfLat = (x, y) => {
+      let r = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x));
+      r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+      r += (20*Math.sin(y*Math.PI) + 40*Math.sin(y/3*Math.PI)) * 2/3;
+      r += (160*Math.sin(y/12*Math.PI) + 320*Math.sin(y*Math.PI/30)) * 2/3;
+      return r;
+    };
+    const tfLon = (x, y) => {
+      let r = 300 + x + 2*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x));
+      r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+      r += (20*Math.sin(x*Math.PI) + 40*Math.sin(x/3*Math.PI)) * 2/3;
+      r += (150*Math.sin(x/12*Math.PI) + 300*Math.sin(x/30*Math.PI)) * 2/3;
+      return r;
+    };
+    const dLat0 = tfLat(lon - 105, lat - 35), dLon0 = tfLon(lon - 105, lat - 35);
+    const radLat = lat / 180 * Math.PI;
+    let magic = Math.sin(radLat); magic = 1 - ee*magic*magic;
+    const sqrtMagic = Math.sqrt(magic);
+    const dLat = (dLat0 * 180) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI);
+    const dLon = (dLon0 * 180) / (a / sqrtMagic * Math.cos(radLat) * Math.PI);
+    return [lat + dLat, lon + dLon];
+  }
+
+  _lonlatToTile(lat, lon, z) {
+    const n = 2 ** z;
+    const x = (lon + 180) / 360 * n;
+    const y = (1 - Math.log(Math.tan(lat * Math.PI/180) + 1/Math.cos(lat * Math.PI/180)) / Math.PI) / 2 * n;
+    return [x, y];
+  }
+
+  _initMap(la, lo) {
+    const box = this.querySelector("#tiles");
+    const wrap = this.querySelector("#mapwrap");
+    const puck = this.querySelector("#puck");
+    if (!box || !wrap || la == null || lo == null) return;
+    // WGS84 → GCJ-02
+    const [glat, glon] = this._wgs2gcj(Number(la), Number(lo));
+    this._map = this._map || { z: 16 };
+    this._map.lat = glat; this._map.lon = glon;
+    this.querySelector("#mapph").style.display = "none";
+
+    this._drawMap();
+    if (!box.dataset.wired) {
+      box.dataset.wired = "1";
+      // 拖拽平移
+      let sx = 0, sy = 0, ox = 0, oy = 0, drag = false;
+      const down = (e) => {
+        drag = true; box.classList.add("grabbing");
+        const p = e.touches ? e.touches[0] : e;
+        sx = p.clientX; sy = p.clientY; ox = this._map.px || 0; oy = this._map.py || 0;
+        e.preventDefault();
+      };
+      const move = (e) => {
+        if (!drag) return;
+        const p = e.touches ? e.touches[0] : e;
+        this._map.px = ox + (sx - p.clientX);
+        this._map.py = oy + (sy - p.clientY);
+        this._positionTiles();
+        e.preventDefault();
+      };
+      const up = () => { drag = false; box.classList.remove("grabbing"); };
+      box.addEventListener("mousedown", down);
+      box.addEventListener("touchstart", down, { passive: false });
+      window.addEventListener("mousemove", move);
+      window.addEventListener("touchmove", move, { passive: false });
+      window.addEventListener("mouseup", up);
+      window.addEventListener("touchend", up);
+      // 双击放大
+      box.addEventListener("dblclick", () => this._zoomMap(1));
+    }
+    // 缩放 / 回到车辆
+    const wire = (sel, fn, label) => {
+      const el = this.querySelector(sel);
+      if (el && !el.dataset.w) { el.dataset.w = "1"; el.onclick = fn;
+        this._a11y?.(el, label, fn); el.setAttribute("tabindex","0"); }
+    };
+    wire("#cz-in", () => this._zoomMap(1), "放大");
+    wire("#cz-out", () => this._zoomMap(-1), "缩小");
+    wire("#cz-me", () => { this._map.px = 0; this._map.py = 0; this._drawMap(); }, "回到车辆");
+    puck.style.display = "";
+  }
+
+  _zoomMap(delta) {
+    if (!this._map) return;
+    const z = Math.max(3, Math.min(18, this._map.z + delta));
+    if (z === this._map.z) return;
+    // 缩放时保持车辆在视野中心
+    this._map.z = z; this._map.px = 0; this._map.py = 0;
+    this._drawMap();
+  }
+
+  /** 按当前缩放/偏移算出需要的瓦片并放置。 */
+  _drawMap() {
+    const box = this.querySelector("#tiles");
+    const wrap = this.querySelector("#mapwrap");
+    if (!box || !wrap || !this._map) return;
+    const W = wrap.clientWidth || 400, H = wrap.clientHeight || 340;
+    const z = this._map.z;
+    // ★ 关键：cx/cy 是【瓦片坐标系里的小数】(如 27394.7)。
+    //   车辆中心与该点的像素差 = (cx - cxInt) * 256。
+    //   之前写成 cpx - (cx - tx) * 256 —— 把整个 cx（两万多）当像素用了，
+    //   结果 left = -1400 万 px，瓦片全跑到屏幕外（这就是"看不到地图"的原因）。
+    const [cxExact, cyExact] = this._lonlatToTile(this._map.lat, this._map.lon, z);
+    const cxInt = Math.floor(cxExact), cyInt = Math.floor(cyExact);
+    const offX = (cxExact - cxInt) * 256;   // 车辆在中心瓦片内的像素偏移
+    const offY = (cyExact - cyInt) * 256;
+    const px = this._map.px || 0, py = this._map.py || 0;
+    const cpx = W / 2 + px, cpy = H / 2 + py;   // 车辆在容器里的像素位置
+    // 需要覆盖的瓦片范围（以中心瓦片为基准向外扩）
+    const x0 = cxInt - Math.ceil((cpx - offX) / 256);
+    const x1 = cxInt + Math.ceil((W - cpx + offX) / 256);
+    const y0 = cyInt - Math.ceil((cpy - offY) / 256);
+    const y1 = cyInt + Math.ceil((H - cpy + offY) / 256);
+    const n = 2 ** z;
+    const frag = [];
+    for (let tx = x0; tx <= x1; tx++) {
+      for (let ty = y0; ty <= y1; ty++) {
+        if (tx < 0 || ty < 0 || tx >= n || ty >= n) continue;
+        // 该瓦片左上角在容器中的位置
+        const left = cpx - offX + (tx - cxInt) * 256;
+        const top = cpy - offY + (ty - cyInt) * 256;
+        const s = (tx + ty) % 4 + 1;   // 高德 1..4 轮询
+        const url = `https://webrd0${s}.is.autonavi.com/appmaptile`
+                  + `?lang=zh_cn&size=1&scale=1&style=8&x=${tx}&y=${ty}&z=${z}`;
+        frag.push(`<img data-k="${tx}_${ty}" src="${url}"`
+                + ` style="left:${Math.round(left)}px;top:${Math.round(top)}px">`);
+      }
+    }
+    // 复用已有瓦片节点（减少闪烁）
+    const existing = new Map();
+    box.querySelectorAll("img").forEach((im) => existing.set(im.dataset.k, im));
+    const added = [];
+    for (const f of frag) {
+      const k = /data-k="([^"]+)"/.exec(f)[1];
+      const im = existing.get(k);
+      if (im) {
+        const st = /left:(-?\d+)px;top:(-?\d+)px/.exec(f);
+        im.style.left = st[1] + "px"; im.style.top = st[2] + "px";
+        existing.delete(k);
+      } else {
+        added.push(f);
+      }
+    }
+    existing.forEach((im) => im.remove());
+    if (added.length) box.insertAdjacentHTML("beforeend", added.join(""));
+    // 车辆标记固定在中心
+    const puck = this.querySelector("#puck");
+    if (puck) { puck.style.left = (W/2 + px) + "px"; puck.style.top = (H/2 + py) + "px"; }
   }
 
   _haversine(lat1, lon1, lat2, lon2) {

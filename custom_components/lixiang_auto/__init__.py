@@ -216,7 +216,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     (_veh or {}).get("vehicleRoleId"))
             except Exception as err:  # noqa: BLE001
                 _LOGGER.debug("账号角色探测失败（按车主处理）: %s", err)
-                _rel = 0
             if ability is not None and getattr(ability, "available", False):
                 _LOGGER.info(
                     "车型能力表: %s (modelId=%s, %s, 温区 %s-%s)",
@@ -494,6 +493,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         target_vin = data.get("vin")
         want_time = data.get("time")
         want_angles = data.get("angles")
+        want_car_type = data.get("car_type")
         result: dict = {}
         for eid, d in (hass.data.get(DOMAIN) or {}).items():
             if not isinstance(d, dict):
@@ -513,14 +513,22 @@ def _async_register_services(hass: HomeAssistant) -> None:
             #     所以先走实体注册表，再退回 vss 原始数据。
             when = want_time
             if not when:
+                # ★ 2026-10-03 修 bug：原来遍历所有实体、匹配「拍照时间」或
+                #   「上报时间」属性 —— 但「上报时间」**每个实体都有**，
+                #   于是先撞上了 `sensor.*_chu_shuang_mo_shi`（除霜模式），
+                #   拿它的上报时间当拍照时间去构造 OSS key → 接口返回 data:{}
+                #   → 卡片永远显示「图片已过期」。
+                #
+                #   现在只认拍照专用实体，且只认「拍照时间」属性。
+                _reg = er.async_get(hass)
                 for st in hass.states.async_all("sensor"):
-                    eid_reg = er.async_get(hass).async_get(st.entity_id)
-                    if eid_reg is None or eid_reg.platform != DOMAIN:
+                    eid_reg = _reg.async_get(st.entity_id)
+                    if (eid_reg is None or eid_reg.platform != DOMAIN
+                            or eid_reg.config_entry_id != eid):
                         continue
-                    if eid_reg.config_entry_id != eid:
-                        continue
-                    attrs = st.attributes or {}
-                    cand = attrs.get("拍照时间") or attrs.get("上报时间")
+                    if "pai_zhao_xin_xi" not in st.entity_id:
+                        continue          # 只认「360 拍照信息」实体
+                    cand = (st.attributes or {}).get("拍照时间")
                     if cand:
                         when = cand
                         break
@@ -538,17 +546,48 @@ def _async_register_services(hass: HomeAssistant) -> None:
                         when = (_json.loads(raw) or {}).get("picTime") or raw
                     except (ValueError, TypeError):
                         when = raw
-            if not when:
-                result[vin] = {"error": "无拍照时间（先触发一次远程拍照）"}
-                continue
-
-            _LOGGER.debug("svm: vin=%s when=%r", vin, when, type(when).__name__)
+            # ★ 2026-10-03 修 bug：**不要因为 when 为空就提前退出**。
+            #   此前是 `if not when: continue` —— 而 when 来自实体属性，
+            #   车辆离线/实体 unavailable 时它是空的，于是根本走不到
+            #   下面读 VSS fileKeys 的逻辑 → 永远返回「无拍照时间」。
+            #   现在：先尽力读 VSS，when 仅用于展示。
             try:
-                keys = await hass.async_add_executor_job(
-                    api.svm_photo_filekeys, when)
-                _LOGGER.debug("svm: 生成 %d 个 key", len(keys), keys[:2])
+                # ★ 2026-10-03 决定性修正：**不要拼路径**。
+                #   VSS `Vehicle.360Svm.Park.Filekey` 的 JSON 自带 fileKeys
+                #   （App 的 XPhotoDataHandle.smali 就是这么用的）。
+                #   拼路径之所以总是失败：文件名时间戳 ≠ picTime
+                #   （实测 18:43:29 vs 20260903184323，差 6 秒）。
+                keys = []
+                raw_fk = None
+                coord = d.get("coordinator")
+                if coord is not None and getattr(coord, "data", None):
+                    sig = (coord.data.get("vss") or {}).get(
+                        "Vehicle.360Svm.Park.Filekey")
+                    raw_fk = sig.get("value") if isinstance(sig, dict) else None
+                # 缓存里没有 → 直接问一次服务端（VSS 缓存会滞后，实测差 3 小时）
+                if not raw_fk:
+                    try:
+                        live = await hass.async_add_executor_job(
+                            api.get_vss_state, ["Vehicle.360Svm.Park.Filekey"])
+                        sig2 = (live.get("data") or live).get(
+                            "Vehicle.360Svm.Park.Filekey") or {}
+                        raw_fk = sig2.get("value") if isinstance(sig2, dict) else None
+                    except Exception:  # noqa: BLE001
+                        pass
+                if raw_fk:
+                    fk_map = await hass.async_add_executor_job(
+                        api.svm_filekeys_from_vss, raw_fk)
+                    keys = list(fk_map.values())
+                    # 顺带刷新展示用的时间（VSS 里的 picTime 比实体属性新）
+                    _pt = await hass.async_add_executor_job(api.svm_pic_time, raw_fk)
+                    if _pt:
+                        when = _pt
+                if not keys and when:
+                    # 兜底：真没有 fileKeys 时才按模板拼（通常拿不到）
+                    keys = await hass.async_add_executor_job(
+                        api.svm_photo_filekeys, when, want_car_type or "")
                 if not keys:
-                    result[vin] = {"error": f"拍照时间无法解析: {when!r}"}
+                    result[vin] = {"error": "服务端未返回 fileKeys（先触发一次远程拍照）"}
                     continue
                 # 只取要求的方位
                 if want_angles:
@@ -568,7 +607,6 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 if not ok:
                     out["error"] = f"code={code} {r.get('message') or r.get('msg') or ''}".strip()
                 result[vin] = out
-                _LOGGER.info("驻车照片(%s): %d 张, time=%s", vin, len(urls), when)
             except Exception as err:  # noqa: BLE001
                 _LOGGER.error("驻车照片查询异常: %s", err)
                 result[vin] = {"error": f"{type(err).__name__}: {err}"[:200]}
