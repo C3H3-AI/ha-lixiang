@@ -141,9 +141,10 @@ SWITCHES = (
     #   controlType 来自 VehicleControlModel$Companion
     #   这三个是"白名单类"→ acCtrlValue 只用 "ON"/"OFF"
     ("ac_heat_fast", "空调快速制热", "mdi:fire",
-     "ac_heat_fast", "acHeatFast", "空调"),
+     "ac_fan_speed", "acHeatFast", "空调"),   # ★ state_key=ac_fan_speed (ExSpeedStatus)，
+                                                 #   原 key 在 VSS 不存在 → unknown
     ("ac_cool_fast", "空调快速制冷", "mdi:snowflake",
-     "ac_cool_fast", "acCoolFast", "空调"),
+     "ac_fan_speed", "acCoolFast", "空调"),   # ★ 同上
     ("ac_defrost", "除雪除冰", "mdi:snowflake-melt",
      "ac_defrost", "dfstSw", "空调"),
     # ★ 2026-09-24 补充：充电启停
