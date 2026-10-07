@@ -131,6 +131,10 @@ SCOPE_VEHICLE_VSS = (
 # 车控(锁车/空调等, scope里VIN后缀)
 AUD_VEHICLE_CTRL = "1j0vgTqagJUHuT6nLmbTGx"
 def veh_ctrl_scope(vin):  # 车控scope含VIN, 运行时动态构造
+    # ⚠️ 2026-10-07：本函数疑似旧路径 —— auth.get_veh_ctrl_token() 未见调用方，
+    #    实际车控 VAT scope 以 li_api.vat_scope() / VAT_SCOPE_COMMANDS 为准
+    #    （真机实证 14 项）。此表缺 remoteADCtrl/remoteADInit/fTkC，
+    #    勿在此增删 scope；如确认废弃请整体删除。
     scopes = [
         f"remoteVehFrgControl:{vin}",
         f"remoteVehAuth:{vin}",
