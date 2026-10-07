@@ -55,15 +55,16 @@ _JOB_CMDS = [
     "remote_charging_stop",
     "remoteChargingControl",
     "chargeLimit",
+    # ★ 2026-10-07 真机实测 2009（destParams=metaJobService.*，APK 实证）
+    "sentinelModeSetting",
+    "mobileVehSvm",
 ]
 
-# 反向：实测可用的命令【不得】被拦截
+# 反向：HTTP 可用的命令【不得】被拦截
 _WORKING_CMDS = [
     "remoteVehSearch",
     "remoteVehLockControl",
     "remoteVehACSmartControl",
-    "sentinelModeSetting",
-    "remoteVehSvm",
 ]
 
 
@@ -287,6 +288,7 @@ class TestReadonlyAttributes:
     @pytest.mark.parametrize("ct,name", [
         ("__SCHEDULED__", "预约充电"),
         ("__INSULATION__", "电池保温"),
+        ("__SENTRY__", "哨兵模式"),
     ])
     def test_switch_charge_entities_annotated(self, mods, ct, name):
         ent = _make_switch(mods, ct, name)
@@ -317,10 +319,11 @@ class TestReadonlyAttributes:
         )
         assert mods["li_api"].JOB_CHANNEL_REASON_ATTR not in ent.extra_state_attributes
 
-    def test_sentry_switch_not_annotated(self, mods):
-        """哨兵模式（实测可用）不得被标为只读。"""
+    def test_sentry_switch_annotated(self, mods):
+        """★ 哨兵（2026-10-07 实证 destParams=metaJobService → 2009）应标只读。"""
         ent = _make_switch(mods, "__SENTRY__", "哨兵模式")
-        assert mods["li_api"].JOB_CHANNEL_REASON_ATTR not in ent.extra_state_attributes
+        attrs = ent.extra_state_attributes
+        assert attrs[mods["li_api"].JOB_CHANNEL_REASON_ATTR] == mods["li_api"].JOB_CHANNEL_NOTICE
 
 
 # ---------------------------------------------------------------------------
@@ -344,6 +347,7 @@ class TestWriteRaisesClearError:
     @pytest.mark.parametrize("ct,name", [
         ("__SCHEDULED__", "预约充电"),
         ("__INSULATION__", "电池保温"),
+        ("__SENTRY__", "哨兵模式"),
     ])
     def test_switch_write_raises(self, mods, ct, name):
         ent = _make_switch(mods, ct, name)
