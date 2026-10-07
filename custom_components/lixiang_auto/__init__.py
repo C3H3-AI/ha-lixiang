@@ -16,6 +16,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant, ServiceResponse, SupportsResponse
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
     config_validation as cv,
     aiohttp_client,
@@ -261,6 +262,10 @@ SERVICE_DUMP_ABILITY = "dump_ability"
 SERVICE_GET_TRAVEL = "get_travel"
 SERVICE_GET_CHARGE = "get_charge"
 SERVICE_GET_SVM_PHOTO = "get_svm_photo"
+SERVICE_CREATE_TASK = "create_task"
+SERVICE_GET_TASKS = "get_tasks"
+SERVICE_UPDATE_TASK = "update_task"
+SERVICE_DELETE_TASK = "delete_task"
 
 
 def _async_register_services(hass: HomeAssistant) -> None:
@@ -612,6 +617,225 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 result[vin] = {"error": f"{type(err).__name__}: {err}"[:200]}
         return result
 
+    async def _handle_create_task(call) -> ServiceResponse:
+        """创建任务大师任务（HTTP /task-config/mob/save，2026-10-07 抓包实证）。
+
+        参数：
+          · name        任务名（必填）
+          · actions     动作数组（必填，object/JSON 字符串均可），如
+                        [{"actionType": "PowerOutlet",
+                          "params": [{"key": "operation", "value": "open"}]}]
+          · conditions  条件数组（可选，默认无条件），如
+                        [{"conditionType": "Microphone",
+                          "params": [{"key": "state", "value": "connected"}]}]
+          · automate / voice_execute / run_once / enabled  可选（默认 true/false/false/true）
+          · vin         多车时指定（可选）
+
+        返回：{vin: {"configId", "configName", "response"}} 或 {vin: {"error": ...}}
+        """
+        from .li_api import build_task_payload
+
+        data = call.data or {}
+        conditions = data.get("conditions") or []
+        actions = data.get("actions")
+        # object selector 在 UI 里可能给 JSON 字符串
+        if isinstance(conditions, str):
+            conditions = json.loads(conditions)
+        if isinstance(actions, str):
+            actions = json.loads(actions)
+        try:
+            payload = build_task_payload(
+                str(data.get("name") or ""),
+                conditions,
+                actions or [],
+                automate=bool(data.get("automate", True)),
+                voice_execute=bool(data.get("voice_execute", False)),
+                run_once=bool(data.get("run_once", False)),
+                enabled=bool(data.get("enabled", True)),
+            )
+        except (ValueError, json.JSONDecodeError, TypeError) as err:
+            raise HomeAssistantError(f"任务参数错误: {err}") from err
+
+        target_vin = data.get("vin")
+        result: dict = {}
+        errors = 0
+        for eid, d in (hass.data.get(DOMAIN) or {}).items():
+            if not isinstance(d, dict):
+                continue
+            api = d.get("li_api")
+            entry = hass.config_entries.async_get_entry(eid)
+            if api is None or entry is None:
+                continue
+            vin = entry.data.get(CONF_VIN) or eid
+            if target_vin and vin != target_vin:
+                continue
+            coord = d.get("coordinator")
+            try:
+                resp = await hass.async_add_executor_job(api.save_task, payload)
+                if coord is not None and hasattr(coord, "invalidate_task_cache"):
+                    coord.invalidate_task_cache()
+                    await coord.async_request_refresh()
+                result[vin] = {
+                    "configId": payload["configId"],
+                    "configName": payload["configName"],
+                    "response": resp,
+                }
+            except Exception as err:  # noqa: BLE001
+                errors += 1
+                _LOGGER.error("创建任务失败 (%s): %s", vin, err)
+                result[vin] = {"error": f"{type(err).__name__}: {err}"[:300]}
+        if not result:
+            raise HomeAssistantError("未找到 lixiang_auto 配置项（或 vin 不匹配）")
+        if errors and errors == len(result):
+            first = next(iter(result.values()))
+            raise HomeAssistantError(f"创建任务失败: {first.get('error')}")
+        return result
+
+    # ---- 任务大师服务套件（2026-10-07：查询/更新/删除，按需调用的"接口"）----
+
+    def _li_task_entries(target_vin):
+        """→ [(vin, api, coordinator)]，按可选 vin 过滤配置条目。"""
+        out = []
+        for eid, d in (hass.data.get(DOMAIN) or {}).items():
+            if not isinstance(d, dict):
+                continue
+            api = d.get("li_api")
+            entry = hass.config_entries.async_get_entry(eid)
+            if api is None or entry is None:
+                continue
+            vin = entry.data.get(CONF_VIN) or eid
+            if target_vin and vin != target_vin:
+                continue
+            out.append((vin, api, d.get("coordinator")))
+        return out
+
+    def _task_fail(msg: str) -> None:
+        if msg:
+            raise HomeAssistantError(msg)
+
+    async def _handle_get_tasks(call) -> ServiceResponse:
+        """查询任务大师列表（完整 data，含 taskValue）。
+
+        返回：{vin: {"count": N, "tasks": [...]}} 或 {vin: {"error": ...}}
+        """
+        target_vin = (call.data or {}).get("vin")
+        result: dict = {}
+        errors = 0
+        for vin, api, _coord in _li_task_entries(target_vin):
+            try:
+                tasks = await hass.async_add_executor_job(api.get_tasks)
+                result[vin] = {"count": len(tasks), "tasks": tasks}
+            except Exception as err:  # noqa: BLE001
+                errors += 1
+                _LOGGER.error("查询任务失败 (%s): %s", vin, err)
+                result[vin] = {"error": f"{type(err).__name__}: {err}"[:300]}
+        _task_fail("未找到 lixiang_auto 配置项（或 vin 不匹配）" if not result else None)
+        if errors and errors == len(result):
+            raise HomeAssistantError(
+                f"查询任务失败: {next(iter(result.values())).get('error')}")
+        return result
+
+    async def _handle_update_task(call) -> ServiceResponse:
+        """按 config_id 更新任务（先拉线上最新，再合并覆盖字段，防止旧缓存回写）。
+
+        可覆盖字段：name / conditions / actions / automate / voice_execute /
+        run_once / enabled（不传=保持原值）。
+        """
+        data = call.data or {}
+        config_id = str(data.get("config_id") or "").strip()
+        if not config_id:
+            raise HomeAssistantError(
+                "update_task 需要 config_id"
+                "（从任务大师传感器属性或 lixiang_auto.get_tasks 获取）")
+        conditions = data.get("conditions")
+        actions = data.get("actions")
+        if isinstance(conditions, str):
+            conditions = json.loads(conditions)
+        if isinstance(actions, str):
+            actions = json.loads(actions)
+        target_vin = data.get("vin")
+        result: dict = {}
+        errors = 0
+        for vin, api, coord in _li_task_entries(target_vin):
+            try:
+                tasks = await hass.async_add_executor_job(api.get_tasks)
+                cur = next((t for t in tasks
+                            if isinstance(t, dict) and t.get("configId") == config_id),
+                           None)
+                if cur is None:
+                    raise HomeAssistantError(
+                        f"线上没有该任务: {config_id}（ vin={vin} ）")
+                payload = dict(cur)
+                if data.get("name") is not None:
+                    payload["configName"] = str(data["name"]).strip()
+                for src, dst in (("automate", "automate"),
+                                 ("voice_execute", "voiceExecute"),
+                                 ("run_once", "runOnce"),
+                                 ("enabled", "enabled")):
+                    if src in data:
+                        payload[dst] = bool(data[src])
+                tv = dict(payload.get("taskValue") or {})
+                if conditions is not None:
+                    tv["conditions"] = conditions
+                if actions is not None:
+                    tv["actions"] = actions
+                payload["taskValue"] = tv
+            except HomeAssistantError:
+                raise
+            except Exception as err:  # noqa: BLE001
+                errors += 1
+                _LOGGER.error("读取任务失败 (%s): %s", vin, err)
+                result[vin] = {"error": f"{type(err).__name__}: {err}"[:300]}
+                continue
+            try:
+                resp = await hass.async_add_executor_job(api.update_task, payload)
+                if coord is not None and hasattr(coord, "invalidate_task_cache"):
+                    coord.invalidate_task_cache()
+                    await coord.async_request_refresh()
+                result[vin] = {
+                    "configId": config_id,
+                    "configName": payload.get("configName"),
+                    "enabled": payload.get("enabled"),
+                    "response": resp,
+                }
+            except Exception as err:  # noqa: BLE001
+                errors += 1
+                _LOGGER.error("更新任务失败 (%s): %s", vin, err)
+                result[vin] = {"error": f"{type(err).__name__}: {err}"[:300]}
+        _task_fail("未找到 lixiang_auto 配置项（或 vin 不匹配）" if not result else None)
+        if errors and errors == len(result):
+            raise HomeAssistantError(
+                f"更新任务失败: {next(iter(result.values())).get('error')}")
+        return result
+
+    async def _handle_delete_task(call) -> ServiceResponse:
+        """按 config_id 删除任务。"""
+        data = call.data or {}
+        config_id = str(data.get("config_id") or "").strip()
+        if not config_id:
+            raise HomeAssistantError(
+                "delete_task 需要 config_id"
+                "（从任务大师传感器属性或 lixiang_auto.get_tasks 获取）")
+        target_vin = data.get("vin")
+        result: dict = {}
+        errors = 0
+        for vin, api, coord in _li_task_entries(target_vin):
+            try:
+                resp = await hass.async_add_executor_job(api.delete_task, config_id)
+                if coord is not None and hasattr(coord, "invalidate_task_cache"):
+                    coord.invalidate_task_cache()
+                    await coord.async_request_refresh()
+                result[vin] = {"configId": config_id, "response": resp}
+            except Exception as err:  # noqa: BLE001
+                errors += 1
+                _LOGGER.error("删除任务失败 (%s): %s", vin, err)
+                result[vin] = {"error": f"{type(err).__name__}: {err}"[:300]}
+        _task_fail("未找到 lixiang_auto 配置项（或 vin 不匹配）" if not result else None)
+        if errors and errors == len(result):
+            raise HomeAssistantError(
+                f"删除任务失败: {next(iter(result.values())).get('error')}")
+        return result
+
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, _handle_refresh)
     hass.services.async_register(DOMAIN, SERVICE_WAKEUP, _handle_wakeup)
     hass.services.async_register(DOMAIN, SERVICE_DUMP_ABILITY, _handle_dump_ability)
@@ -620,6 +844,14 @@ def _async_register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_GET_CHARGE, _handle_get_charge,
                                   supports_response=SupportsResponse.OPTIONAL)
     hass.services.async_register(DOMAIN, SERVICE_GET_SVM_PHOTO, _handle_get_svm_photo,
+                                  supports_response=SupportsResponse.OPTIONAL)
+    hass.services.async_register(DOMAIN, SERVICE_CREATE_TASK, _handle_create_task,
+                                  supports_response=SupportsResponse.OPTIONAL)
+    hass.services.async_register(DOMAIN, SERVICE_GET_TASKS, _handle_get_tasks,
+                                  supports_response=SupportsResponse.OPTIONAL)
+    hass.services.async_register(DOMAIN, SERVICE_UPDATE_TASK, _handle_update_task,
+                                  supports_response=SupportsResponse.OPTIONAL)
+    hass.services.async_register(DOMAIN, SERVICE_DELETE_TASK, _handle_delete_task,
                                   supports_response=SupportsResponse.OPTIONAL)
 
     _LOGGER.debug(

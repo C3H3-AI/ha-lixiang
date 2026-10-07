@@ -67,6 +67,10 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
         # ★ 2026-10-02：本月里程 / 本月充电量（低频 1h）—— 与 App 首页对齐
         self._month_ts: dict[str, float] = {}
         self._month_cache: dict[str, dict] = {}
+        # ★ 2026-10-07：任务大师列表（HTTP 120s 一次；创建/启停后主动失效）
+        self._task_ts: dict[str, float] = {}
+        self._task_cache: dict[str, list] = {}
+        self._task_error: dict[str, str] = {}   # route_id → 最近一次拉取错误
         # 主 route（当前唯一支持的车；多车时扩展为遍历）
         self._route_id: str = ""
 
@@ -239,6 +243,13 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             return False             # 全部为 False → 离线
         return None                  # 无有效值 → 未知
 
+    def invalidate_task_cache(self) -> None:
+        """任务创建/启停成功后调用：清列表时间戳 → 下次刷新立即重拉。
+
+        配合 ``async_request_refresh()`` 使用（服务/开关写操作后）。
+        """
+        self._task_ts.clear()
+
     async def _async_update_data(self) -> dict:
         """轮询车辆数据（在线驱动）。
 
@@ -330,6 +341,53 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             _LOGGER.warning("本月数据拉取异常: %s", _err3)
             _charge_kwh = self._charge_total_cache.get(self._rid())
 
+        # ★ 2026-10-07：任务大师列表（HTTP；2 分钟一次，失败 60s 重试）
+        #   云端配置、与车辆在线无关 → 放在在线探测之前，离线路径也能带上
+        _tasks: list = []
+        try:
+            import time as _t5
+            _rid5 = self._rid()
+            _now5 = _t5.time()
+            _last5 = self._task_ts.get(_rid5, 0.0)
+            if (_now5 - _last5) > 120 or _last5 == 0.0:
+                _api5 = self.li_api
+                if _api5 is not None and hasattr(_api5, "get_tasks"):
+                    try:
+                        _tl = await self.hass.async_add_executor_job(
+                            _api5.get_tasks)
+                        self._task_cache[_rid5] = _tl or []
+                        self._task_ts[_rid5] = _now5
+                        if self._task_error.pop(_rid5, None):
+                            _LOGGER.info("任务大师列表恢复: %d 条", len(_tl or []))
+                        else:
+                            _LOGGER.debug("任务大师列表更新: %d 条", len(_tl or []))
+                    except Exception as _err5:  # noqa: BLE001
+                        # 失败 60s 后重试（不阻塞整轮更新）；
+                        # ★ 错误上浮到传感器属性；内容变化才打 warning（防刷屏）
+                        self._task_ts[_rid5] = _now5 - 120 + 60
+                        _msg = f"{type(_err5).__name__}: {_err5}"[:300]
+                        _prev = self._task_error.get(_rid5)
+                        self._task_error[_rid5] = _msg
+                        if _prev != _msg:
+                            _LOGGER.warning(
+                                "任务大师列表拉取失败(60s 后重试): %s", _msg)
+                        else:
+                            _LOGGER.debug("任务大师列表拉取仍失败: %s", _msg)
+                elif _api5 is not None and not hasattr(_api5, "get_tasks"):
+                    _msg = "li_api 缺少 get_tasks 方法（集成文件未完整部署？）"
+                    if self._task_error.get(_rid5) != _msg:
+                        _LOGGER.warning("任务大师列表拉取失败: %s", _msg)
+                    self._task_error[_rid5] = _msg
+                else:
+                    self._task_error[_rid5] = "无 li_api（未配置密码登录，无法拉取）"
+            _tasks = self._task_cache.get(_rid5) or []
+        except Exception as _err5b:  # noqa: BLE001
+            _LOGGER.warning("任务大师列表拉取异常: %s", _err5b)
+            try:
+                self._task_error[self._rid()] = (
+                    f"{type(_err5b).__name__}: {_err5b}")[:300]
+            except Exception:  # noqa: BLE001
+                pass
 
         try:
             data = await self.client.update()
@@ -373,6 +431,8 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                 _LOGGER.debug("车辆离线，跳过完整轮询（保留 %d 个信号）",
                               len(data["vss"]))
                 data["charge_total_kwh"] = _charge_kwh
+                data["tasks"] = _tasks
+                data["task_error"] = self._task_error.get(self._rid())
                 for _k4, _v4 in (_month_fields or {}).items():
                     data[_k4] = _v4
                 return data
@@ -537,6 +597,8 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
 
 
         data["charge_total_kwh"] = _charge_kwh
+        data["tasks"] = _tasks
+        data["task_error"] = self._task_error.get(self._rid())
         for _k4, _v4 in (_month_fields or {}).items():
             data[_k4] = _v4
         return data
