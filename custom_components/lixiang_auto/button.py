@@ -30,6 +30,7 @@ from .const import CONF_VIN, DOMAIN, LOGGER_NAME
 from .gate import require_control
 from .entity_helper import route_id_of_vin
 from .device import build_device_info
+from .li_api import job_channel_readonly_attrs
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -119,6 +120,9 @@ class LiCarButton(CoordinatorEntity, ButtonEntity):
     @property
     def extra_state_attributes(self) -> dict:
         attrs: dict = {"cmd_key": self._cmd_key, "cmd_data": self._cmd_data}
+        # ★ 2026-10-07：JOB 通道按钮（如远程拍照 mobileVehSvm）自曝只读原因，
+        #   与写入时 li_api 抛出的错误逐字一致（复用统一只读标注）。
+        attrs.update(job_channel_readonly_attrs(self._cmd_key))
         if self._last_result is not None:
             attrs["last_command_result"] = self._last_result
         return attrs
@@ -150,8 +154,8 @@ class LiCarButton(CoordinatorEntity, ButtonEntity):
                     self._api.send_command_fire_and_forget,
                     self._cmd_key, cmd_data)
             self._last_result = res
-            _LOGGER.info("车控 %s %s 已执行: %s", self._cmd_key, self._cmd_data, res)
+            _LOGGER.info("车控 %s %s 已执行: %s", self._cmd_key, cmd_data, res)
         except Exception as err:  # noqa: BLE001
-            _LOGGER.error("车控 %s %s 失败: %s", self._cmd_key, self._cmd_data, err)
+            _LOGGER.error("车控 %s %s 失败: %s", self._cmd_key, cmd_data, err)
             raise
         await self.coordinator.async_request_refresh()

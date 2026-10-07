@@ -182,11 +182,15 @@ class LiApiError(RuntimeError):
 # JOB 通道命令判定（2026-09-26）
 # ---------------------------------------------------------------------------
 # 逆向来源：LiveNetControlRouter.resolveRoute()
-#   key 含 "mob.vehCtrlService.vehCtrlJobList" → VEH_CONTROL（HTTP cmd/send）
-#   否则                                       → JOB（LiNdn/NDN）
+#   destParams 含 "mob.vehCtrlService.vehCtrlJobList" → VEH_CONTROL（HTTP cmd/send）
+#   否则（mob.metaJobService.* 等）                    → JOB（LiNdn/NDN）
 #
-# 充电的 destParams = "mob.metaJobService.remoteChargingControl" → 走 JOB。
-# 因此这些 command_key 用 HTTP 发必然 2009。
+# ★ destParams 权威表：XVehicleJobHelper.commandDestParamsMap（APK 反编译 2026-10-07）：
+#     充电 → mob.metaJobService.remoteChargingControl
+#     哨兵 → mob.metaJobService.sentinelModeSetting   ← HTTP 真机实测 2009
+#     拍照 → mob.metaJobService.mobileVehSvm          ← HTTP 真机实测 2009
+#     推流 → mob.metaJobService.mobileVehSvm（同表）
+#   → 这些 command_key 用 HTTP 发必然 2009。
 _JOB_CHANNEL_COMMANDS = frozenset({
     # ---- 充电控制（已实测 2009）----
     "remote_charge_control",          # 启停 / 上限 / 保温 / 预约
@@ -194,17 +198,22 @@ _JOB_CHANNEL_COMMANDS = frozenset({
     "remote_charging_stop",
     "remoteChargingControl",
     "chargeLimit",
+    # ---- 哨兵 / 远程拍照（2026-10-07 真机实测 2009 + APK destParams 实证）----
+    "sentinelModeSetting",            # 哨兵模式开关
+    "mobileVehSvm",                   # 驻车/远程拍照
+    "mobileVehPushStream",            # 推流（destParams 与 SVM 同表）
+    "mobileVehCloseStream",
     # ---- 未实测但有同样特征（destParams 走 metaJob）----
     "MoveOffAdd",                     # 按时出发
     "MoveOffModify",
     "ReserveFridgeData",              # 冰箱预约
     "sceneModeCtrl",                  # 场景模式
 })
-# ⚠️ 反面例证（这些【不】在列表里，因为实测能用）：
-#   · sentinelModeSetting —— App 走 JOB，但 HTTP cmd/send 也能成功 ✅
-#   · remoteVehSvm        —— 远程拍照，实测能用 ✅
-#   ★ 说明「App 走 JOB」不等于「HTTP 一定不能用」；
-#     只有实测 2009 的才列入。
+# ⚠️ 历史误判记录（2026-10-07 修正）：
+#   本表注释曾把 sentinelModeSetting 与 "remoteVehSvm" 列为「HTTP 实测能用」
+#   的反面例证。用户真机实测 mobileVehSvm 返回 pushState=7 resultCode=2009，
+#   且 APK destParams 表证明哨兵/拍照均走 metaJobService 路由；
+#   "remoteVehSvm" 本身也不是真实 cmdKey（真实值 mobileVehSvm）。已按实证修正。
 
 
 def _is_job_channel_command(command_key: str) -> bool:
@@ -213,10 +222,11 @@ def _is_job_channel_command(command_key: str) -> bool:
     return key in _JOB_CHANNEL_COMMANDS
 
 
-#: ★ 统一文案：供【所有】走 JOB 通道的实体复用。
+#: ★ 统一文案：供【所有】走 JOB 通道的实体复用（充电/哨兵/拍照…）。
 #:   实体在 extra_state_attributes 里暴露它，并在写入时抛出，保证
 #:   「用户看到的提示」与「实际抛出的错误」逐字一致。
-JOB_CHANNEL_NOTICE = "充电走 LiNdn 通道，当前版本不支持控制"
+#:   （文案须保留 "LiNdn" 与 "不支持" 关键词 —— 有测试断言。）
+JOB_CHANNEL_NOTICE = "该命令走理想 App 的 LiNdn（JOB）通道，当前版本不支持控制"
 
 #: 属性名（中文，便于用户在 HA 开发者工具里直接读懂）
 JOB_CHANNEL_REASON_ATTR = "只读原因"

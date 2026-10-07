@@ -58,10 +58,14 @@ _LOGGER = logging.getLogger(LOGGER_NAME)
 #: ★ 2026-09-28：走 JOB（LiNdn）通道的 switch control_type。
 #:   这两个开关的 cmdKey 都是 remote_charge_control → HTTP 必然 2009。
 #:   （__CHARGING__ 同理，但它已不在 SWITCHES 列表中，保留为防御）
+#: ★ 2026-10-07 新增 __SENTRY__：sentinelModeSetting 的 destParams =
+#:   mob.metaJobService.sentinelModeSetting（APK 实证）→ JOB 通道，
+#:   真机 HTTP 下发同族命令（mobileVehSvm）实测 2009。
 _JOB_CHANNEL_CONTROL_TYPES = frozenset({
     "__SCHEDULED__",    # 预约充电
     "__INSULATION__",   # 电池保温
     "__CHARGING__",     # 充电启停（已停用，防御性保留）
+    "__SENTRY__",       # 哨兵模式（2026-10-07 起只读标注）
 })
 
 CMD_AC = "remoteVehACSmartControl"
@@ -426,7 +430,10 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
         #   但那条分支已被 __SCHEDULED__ 取代（见 SWITCHES 列表），
         #   这里统一按 control_type 判定，避免遗漏。
         if self._control_type in _JOB_CHANNEL_CONTROL_TYPES:
-            attrs.update(job_channel_readonly_attrs("remote_charge_control"))
+            _job_key = ("sentinelModeSetting"
+                        if self._control_type == "__SENTRY__"
+                        else "remote_charge_control")
+            attrs.update(job_channel_readonly_attrs(_job_key))
         if self._last_result is not None:
             attrs["last_command_result"] = self._last_result
         return attrs
