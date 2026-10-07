@@ -148,23 +148,27 @@ class TestKnownFeaturesIsFallbackOnly:
 
 
 class TestVatScopeMatchesApp:
-    """★ VAT scope 必须与 App 的 subTokenData 完全一致（2026-09-26）。
+    """★ VAT scope 必须与 App 运行时实际请求的完全一致（2026-10-07 更新）。
 
-    重大修正：之前我们自己拼了 14 个 scope（含 cpCtrl/ssCtrl/ChargingControl），
-    实测服务端会【整批降级】，只授权 8 个（丢掉 fTkC/rmCtrl/ADCtrl/ADInit）。
+    权威来源（运行时实证，优先于静态配置）：
+      真机 Reqable 抓包 ×2（2026-10-07）+ 服务端签发的 JWT 解码：
+        App POST /api/auth 请求 14 个 scope，
+        服务端 JWT scopes 声明【全量签发 14 个】（含 cpCtrl/ssCtrl），零降级。
+      与静态 APK 的差异：assets/m01config.json 内置 VAT_1 仍为 12 个，
+        运行时由 IDaaS 服务下发的配置追加了 cpCtrl/ssCtrl
+        （见 IDAADSVehicleHelper → IIDaasService.o(v2_vat) 取 scope 列表）。
 
-    权威来源：APK 内置 assets/m01config.json → code="app" → subTokenData
-             里 type="VAT_1" 的 scope（精确 12 个）。
-
-    实测：用精确 12 个 → 服务端授权全部 12 个 ✅
+    历史教训（仍然有效）：不得夹带 App 从未请求过的假名
+      （如 ChargingControl）——那才是 2026-09-26「14→8 整批降级」的真因。
     """
 
-    # App 的 VAT_1 scope（从 m01config.json 提取，权威）
+    # App 运行时实际请求并获签的 VAT scope（2026-10-07 真机 JWT 实证，14 个）
     APP_VAT1 = (
         "remoteVehACSmartControl", "remoteVehFrgControl", "remoteVehAuth",
         "remoteVehLockControl", "remoteVehPlgControl", "remoteVehSearch",
         "remoteVehWdwControl", "remoteVehACFirstControl",
         "remoteADCtrl", "remoteADInit", "fTkC", "rmCtrl",
+        "cpCtrl", "ssCtrl",
     )
 
     @staticmethod
@@ -199,8 +203,8 @@ class TestVatScopeMatchesApp:
             assert "remoteVehremoteVeh" not in s
             assert not s.startswith("remoteVehremote"), f"{s} 前缀重复"
 
-    def test_scope_count_is_12(self):
-        assert len(self._scope_tuple()) == 12
+    def test_scope_count_is_14(self):
+        assert len(self._scope_tuple()) == 14
 
     def test_vat_scope_format(self):
         """vat_scope() 只加 :VIN（名字已含 remoteVeh 前缀）。"""
