@@ -26,6 +26,12 @@
 
 状态读取: VSS 实时信号
 
+★ 2026-10-07 新增（cmdKey+cmdData 均经 APK 反编译实证）:
+  - 充电盖:     cpCtrl   {"cpOpen":"ON"/"OFF"}
+  - 后视镜加热: rmCtrl   {"ctrlType":"HEAT","ctrlValue":"ON"/"OFF"} (660s 长命令)
+  来源: 理想 App 8.27.0 APK → XVehicleJobHelper.handleCmdKey /
+        remoteVehChrgPorLidControl / remoteVehRearMirroHeatControl。
+
 ⚠️ 车控会真实作用于车辆。
 """
 
@@ -196,6 +202,23 @@ SWITCHES = (
     #   命令：sentinelModeSetting {"sentinelSwitch":0/1}
     ("sentry", "哨兵模式", "mdi:shield-car",
      "sentry_switch", "__SENTRY__", "哨兵"),
+
+    # ═══ 2026-10-07 新增：cmdKey+cmdData 均经 APK 反编译实证 ═══
+    #
+    # 充电盖：
+    #   cmdKey=cpCtrl —— XVehicleJobHelper.handleCmdKey 分发
+    #   cmdData = {"cpOpen": "ON"(开) / "OFF"(关)}
+    #   状态源：charge_port_lid = ChrgPorLidStsV2（-1无效/0关/非0开）
+    ("charge_port_lid", "充电盖", "mdi:ev-plug-type2",
+     "charge_port_lid", "__CP_CTRL__", None),
+
+    # 后视镜加热：
+    #   cmdKey=rmCtrl —— remoteVehRearMirroHeatControl("ON"/"OFF")
+    #   cmdData = {ctrlType:"HEAT", ctrlValue:"ON"/"OFF"}
+    #   ⚠️ 长命令（App TimeOut=660s），li_api.LONG_RUNNING_CMD_KEYS 已含 rmCtrl
+    #   状态源：左/右后视镜加热（RearMirro.LHeatSts/RHeatSts）任一非 0 → on
+    ("mirror_heat", "后视镜加热", "mdi:mirror",
+     "mirror_heat_left", "__RM_CTRL__", None),
 )
 
 
@@ -294,6 +317,32 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
                     vss_val = bool(int(o.get("sentinelSwitch", 0)))
                 except (ValueError, TypeError, AttributeError):
                     vss_val = None
+            elif self._control_type == "__CP_CTRL__":
+                # ★ 充电口盖：Semantics.CHARGE_LID（-1=无效 unknown，0=关，非0=开）
+                try:
+                    iv = int(float(v))
+                    vss_val = None if iv == -1 else iv != 0
+                except (TypeError, ValueError):
+                    vss_val = None
+            elif self._control_type == "__RM_CTRL__":
+                # ★ 后视镜加热：左/右任一非 0 → on；两路皆缺 → unknown
+                _vss = (self.coordinator.data or {}).get("vss", {})
+
+                def _nz(kk: str) -> bool | None:
+                    sig2 = _vss.get(kk) or {}
+                    vv = sig2.get("value")
+                    if vv is None:
+                        return None
+                    try:
+                        return int(float(vv)) != 0
+                    except (TypeError, ValueError):
+                        return bool(vv)
+
+                _l, _r = _nz("mirror_heat_left"), _nz("mirror_heat_right")
+                vss_val = (
+                    None if (_l is None and _r is None)
+                    else bool(_l) or bool(_r)
+                )
             else:
                 try:
                     vss_val = int(float(v)) != 0
@@ -322,7 +371,21 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
             "cmd_key": CMD_AC,
             "control_type": self._control_type,
         }
-        if self._control_type == "__CHARGING__":
+        if self._control_type == "__CP_CTRL__":
+            # ★ 充电盖（2026-10-07 APK 反编译实证，见 _send 分支注释）
+            attrs.update({
+                "cmd_key": "cpCtrl",
+                "cmd_data_协议": '开={"cpOpen":"ON"} / 关={"cpOpen":"OFF"}',
+                "cmd_data_来源": "APK 反编译 XVehicleJobHelper.handleCmdKey（理想 App 8.27.0）",
+            })
+        elif self._control_type == "__RM_CTRL__":
+            # ★ 后视镜加热（2026-10-07 APK 反编译实证，见 _send 分支注释）
+            attrs.update({
+                "cmd_key": "rmCtrl",
+                "cmd_data_协议": '开={"ctrlType":"HEAT","ctrlValue":"ON"} / 关="OFF"',
+                "cmd_data_来源": "APK 反编译 XVehicleJobHelper.remoteVehRearMirroHeatControl（有效期 660s 长命令）",
+            })
+        elif self._control_type == "__CHARGING__":
             # ★ 2026-09-24 充电开关特例：
             #   充电启停有【前置条件】，不满足时点了没反应是正常的。
             #   这里显式暴露条件，避免用户困惑。
@@ -379,7 +442,7 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
     async def _send(self, level: int) -> None:
         """下发命令.
 
-        ★ 三种模式（2026-09-24）：
+        ★ 六种模式（2026-10-07）：
           ① 常规（空调/座椅）：cmdKey 固定 remoteVehACSmartControl
              cmdData = {acCtrlType, acCtrlValue, acCountdownTimer, acCtrlTemp}
           ② 充电启停：cmdKey = remote_charge_control
@@ -389,6 +452,10 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
              cmdData = {statusControlRequest:255, controlType:"2",
                         batteryInsulation:"1"/"0"}
           ④ 哨兵：cmdKey = sentinelModeSetting
+          ⑤ 充电盖：cmdKey = cpCtrl    cmdData = {cpOpen:"ON"/"OFF"}     ★APK实证
+          ⑥ 后视镜加热：cmdKey = rmCtrl
+             cmdData = {ctrlType:"HEAT", ctrlValue:"ON"/"OFF"}           ★APK实证
+             （rmCtrl 为 660s 长命令，jobExpire 走 LONG_RUNNING=900）
 
           ⚠️ 历史错误：曾用 remote_charging_start/stop 作为 cmdKey
              （这两个不存在）→ 返回 2009。已于 2026-09-24 修正。
@@ -435,6 +502,22 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
                 "sentinelSwitch": 1 if level != 0 else 0,
                 "timestap": int(_t.time() * 1000),
             }
+        elif self._control_type == "__CP_CTRL__":
+            # ★ 充电盖：cmdKey=cpCtrl（2026-10-07 APK 反编译实证）
+            #   XVehicleJobHelper.handleCmdKey:
+            #     OpenChrgPorLid  → remoteVehChrgPorLidControl("ON")
+            #     CloseChrgPorLid → remoteVehChrgPorLidControl("OFF")
+            #   cmdData = {"cpOpen": "ON"/"OFF"}（不是 lockSw！）
+            cmd_key = "cpCtrl"
+            cmd_data = {"cpOpen": "ON" if level != 0 else "OFF"}
+        elif self._control_type == "__RM_CTRL__":
+            # ★ 后视镜加热：cmdKey=rmCtrl（2026-10-07 APK 反编译实证）
+            #   XVehicleJobHelper.remoteVehRearMirroHeatControl("ON"/"OFF")
+            #   cmdData = {ctrlType:"HEAT", ctrlValue:"ON"/"OFF"}
+            #   ⚠️ App 侧有效期 660s（REAR_MIRROR_HEAT_DURATION）→ 长命令，
+            #     li_api.LONG_RUNNING_CMD_KEYS 已含 rmCtrl（jobExpire=900）
+            cmd_key = "rmCtrl"
+            cmd_data = {"ctrlType": "HEAT", "ctrlValue": "ON" if level != 0 else "OFF"}
         else:
             cmd_key = CMD_AC
             cmd_data = _custom(self._control_type, level)

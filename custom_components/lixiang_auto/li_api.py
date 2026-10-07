@@ -77,26 +77,30 @@ EP_LCP_PNC_LIST = "/lcp-bff-app-api/user-settings/v1/user-pnc-switch/list"
 
 # VAT scope
 #
-# ★★ 2026-09-26 重大修正：
-#   之前我们自己拼了 14 个（含 cpCtrl / ssCtrl / ChargingControl）—— 那是错的！
-#   实测：多请求 App 没有的 scope 会让服务端【整批降级】，只授权 8 个
-#        （丢掉 fTkC / rmCtrl / ADCtrl / ADInit）。
+# ★★ 2026-10-07 修正（真机 HAR 抓包实证，Reqable 理想 App 8.27.0）：
+#   App 对同一 audience (AUD_VAT) POST /api/auth 实际请求【14 个】scope，
+#   服务端 302 正常全量授权（原 12 个 + cpCtrl:<VIN> + ssCtrl:<VIN>）。
 #
-#   权威来源：APK 内置 assets/m01config.json → code="app" → subTokenData
-#             里 type="VAT_1" 的 scope（精确 12 个，含 remoteVeh 前缀）
+#   历史误判回顾（2026-09-26）：当时自己拼 14 个被服务端降级到 8 个，
+#   据此得出「12 个才对」。现在看，当时多拼了 App 没有的名字
+#   （ChargingControl）才是降级主因【推测】；按真机的 14 个原样请求
+#   是可回退的低风险改动（最坏情况=回到现状）。
 #
-#   实测对比（2026-09-26）：
-#     · 我们拼的 14 个 → 服务端只给 8 个   ❌
-#     · App 的 12 个   → 服务端给全部 12 个 ✅
+#   各 scope 佐证：
+#     cpCtrl = 充电盖（HAR：job_key=cpCtrl 执行成功）
+#     rmCtrl = 后视镜（HAR：failReason="后视镜控制完成"）
+#     ssCtrl = 含义未证实（推测遮阳帘类；7 个抓包动作均未出现，
+#              纯为复刻真机完整 scope 集，防整批降级）
 #
 # ⚠️ 名字已含完整前缀，vat_scope() 只加 ":<VIN>" 后缀。
-# ⚠️ 充电没有独立 scope（subTokenData 40 项里搜不到 cpCtrl/Charging*）——
-#    充电走 JOB（NDN）路由，与 scope 无关。
+# ⚠️ 充电【启停】没有独立 scope —— 走 JOB（NDN）路由，与 scope 无关；
+#     cpCtrl 只是「充电盖」开关的 scope，不是充电控制。
 VAT_SCOPE_COMMANDS = (
     "remoteVehACSmartControl", "remoteVehFrgControl", "remoteVehAuth",
     "remoteVehLockControl", "remoteVehPlgControl", "remoteVehSearch",
     "remoteVehWdwControl", "remoteVehACFirstControl",
     "remoteADCtrl", "remoteADInit", "fTkC", "rmCtrl",
+    "cpCtrl", "ssCtrl",
 )
 
 # 车控端点
@@ -147,8 +151,12 @@ CMD_EXPIRE_MS = 30_000
 #   短命令 (锁/窗/寻车/启动)     -> jobExpire=30 足够
 #   长命令 (座椅加热/通风/空调)  -> jobExpire>=900 (实测 30 会超时 ps=7 rc=空)
 #   App 源码里开空调也有 1860 的分支 (getVehPowerMode()!=2)
+# ★ 2026-10-07 新增 rmCtrl (后视镜加热, APK 实证):
+#   App 侧 REAR_MIRROR_HEAT_DURATION=660000ms (11 分钟), 与空调同属
+#   长有效期命令 —— 用默认 30s 有超时风险, 按 900 覆盖 (>=660)。
 LONG_RUNNING_CMD_KEYS = {
     "remoteVehACSmartControl",   # 空调/座椅/方向盘加热/除霜
+    "rmCtrl",                    # 后视镜加热 (App TimeOut=660s)
 }
 LONG_CMD_EXPIRE = 900
 LONG_CMD_EXPIRE_MS = 900_000
