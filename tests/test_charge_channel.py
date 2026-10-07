@@ -4,8 +4,8 @@
       HTTP cmd/send 只支持 VEH_CONTROL 通道 → 必然 2009。
 
 本测试守卫：
-  · 充电命令被正确识别为 JOB 通道
-  · ★ 实测能用的命令【不】被误判（哨兵/拍照/锁车）
+  · metaJobService 路由的命令（充电/哨兵/拍照）被正确识别为 JOB 通道
+  · ★ HTTP 可用的命令（锁车/空调/寻车等 vehCtrlJobList 路由）不被误判
   · 2009 时抛出 LiChannelNotSupported（而非静默失败）
 """
 from __future__ import annotations
@@ -43,15 +43,26 @@ class TestJobChannelList:
             assert c in cmds, f"{c} 应被判为 JOB 通道"
 
     @pytest.mark.parametrize("cmd", [
-        "sentinelModeSetting",     # ★ 实测能用
-        "remoteVehSvm",            # ★ 实测能用（远程拍照）
-        "remoteVehLockControl",    # 实测能用
-        "remoteVehACSmartControl", # 实测能用
-        "remoteVehSearch",         # 实测能用
+        "remoteVehLockControl",    # vehCtrlJobList 路由（HTTP 实测可用）
+        "remoteVehACSmartControl", # 同上
+        "remoteVehSearch",         # 同上
+        "remoteVehAuth",           # 同上（HAR sourceId=vehCtrl5GJobList）
+        "cpCtrl",                  # 同上（2026-10-07 HAR 实证）
+        "rmCtrl",                  # 同上
     ])
     def test_working_commands_not_in_list(self, cmd):
-        """★ 实测能用的命令【不】得进列表（否则会误报不支持）。"""
-        assert cmd not in _job_commands(), f"{cmd} 实测能用，不该判为 JOB"
+        """★ HTTP 可用的命令【不】得进列表（否则会误报不支持）。"""
+        assert cmd not in _job_commands(), f"{cmd} HTTP 可用，不该判为 JOB"
+
+    @pytest.mark.parametrize("cmd", [
+        "sentinelModeSetting",     # ★ 2026-10-07 真机实测 2009（metaJobService）
+        "mobileVehSvm",            # ★ 2026-10-07 真机实测 2009（同上）
+        "mobileVehPushStream",     # destParams 与 SVM 同表（APK 实证）
+        "mobileVehCloseStream",    # 同上
+    ])
+    def test_meta_job_commands_in_list(self, cmd):
+        """★ metaJobService 路由命令必须进列表（发送前拦截）。"""
+        assert cmd in _job_commands(), f"{cmd} 走 JOB 通道，应被拦截"
 
 
 class TestChannelDetection:
