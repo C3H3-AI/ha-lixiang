@@ -619,7 +619,9 @@ class LiApiClient:
           · X-CHJ-APP-Version / X-CHJ-Version: 8.27.0（App 值）
           · X-CHJ-ModelName: ANDROID + X-CHJ-DeviceModel（App 值）
           · 新增 X-CHJ-Metadata / Accept-Language / App UA
-        签名第 2 段保持 SIGN_APP_VERSION（travel 实测该段用它可通过）。
+        签名第 2 段必须与请求头版本一致（2026-10-08 维护者真机变体矩阵：
+        8.25.4签名+8.27.0头 → 100005 签名错误；两段同为 8.27.0 → 通过；
+        第 7 段语言 zh-CN/zh-Hans-CN 均可——真正要对齐的是版本段）。
         """
         ts = str(int(time.time() * 1000))
         nonce = str(uuid.uuid4())
@@ -628,7 +630,7 @@ class LiApiClient:
         else:
             md5 = EMPTY_MD5
         data = "\n".join([
-            "prod", SIGN_APP_VERSION, self._key_id, self._xdev, method, "*/*",
+            "prod", TASK_APP_VERSION, self._key_id, self._xdev, method, "*/*",
             "zh-CN", md5, "application/json", ts, nonce,
         ]) + "\n"
         sig = base64.b64encode(
