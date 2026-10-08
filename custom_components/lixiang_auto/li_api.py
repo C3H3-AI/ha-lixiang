@@ -286,6 +286,19 @@ def _is_unauthorized(err) -> bool:
     return "HTTP 401" in m or "Unauthorized" in m
 
 
+#: 充电类型 → 字段前缀。来源：App bundle `chargingType === 1/2/3/4`
+#: 与 I18N 文案（chargingTypeDC / chargingTypeAC / chargingTypeSC / chargingType4CAnd5C）。
+#:
+#: ★ 2026-10-08：统计「本月充电量 / 累计充电量」必须遍历**全部 4 种**——
+#:   此前只用 1+2，漏掉 5C超充 与 **理想超充**，真机实测少算 53.19 kWh/月。
+CHARGE_TYPE_PREFIX: tuple[tuple[int, str], ...] = (
+    (1, "dc"),    # DC  直流快充
+    (2, "ac"),    # AC  交流慢充
+    (3, "sc"),    # SC  5C 超充
+    (4, "hpc"),   # 4CAnd5C 理想超充
+)
+
+
 class LiApiError(HomeAssistantError):
     """理想 API 认证/请求错误.
 
@@ -961,7 +974,8 @@ class LiApiClient:
         """某月充电记录明细。
 
         dt: "年-月" 如 "2026-9"
-        charging_type: 1=直流(DC) 2=交流(AC)（App 响应里的数字编码）
+        charging_type: 见 ``CHARGE_TYPE_PREFIX`` —— 1=DC 直流快充 / 2=AC 交流慢充
+                       / 3=SC 5C超充 / 4=4CAnd5C 理想超充
         """
         return self._signed_call_travel(
             "GET",
@@ -1028,15 +1042,29 @@ class LiApiClient:
         }
 
     def get_charge_current_month_kwh(self) -> dict | None:
-        """本月充电量（App 充电页同口径：直流 + 交流分别取当月）。
+        """本月充电量（App 充电页同口径：**全部 4 种充电类型**）。
 
-        返回 {dc_kwh, ac_kwh, total_kwh, dc_times, ac_times}；失败返回 None。
+        ★ 2026-10-08 修正：原先只统计 `chargingType` 1(DC)+2(AC)，漏掉了
+          3(SC 5C超充) 与 4(4CAnd5C **理想超充**)，导致「本月充电量」少算。
+          真机实测（同一账号同一月）：
+             1 DC = 78.65 / 2 AC = 41.18 / 3 SC = 29.43 / 4 理想超充 = 23.76
+             旧口径 = 119.83（正是用户报告的 119.80）❌
+             正确值 = 173.02 ✅   （少算 53.19 kWh）
+          类型语义来自 App bundle（`chargingType === 1/2/3/4`）与 I18N 文案
+          （chargingTypeDC/AC/SC/4CAnd5C）。
+
+        返回 {dc_kwh, ac_kwh, sc_kwh, hpc_kwh, total_kwh,
+              dc_times, ac_times, sc_times, hpc_times, total_times}；
+        失败返回 None。
         """
         import datetime as _dt
         now = _dt.datetime.now()
-        out = {"dc_kwh": 0.0, "ac_kwh": 0.0, "dc_times": 0, "ac_times": 0}
+        out: dict = {}
+        for _ct, _pfx in CHARGE_TYPE_PREFIX:
+            out[f"{_pfx}_kwh"] = 0.0
+            out[f"{_pfx}_times"] = 0
         got = False
-        for ct, pfx in ((1, "dc"), (2, "ac")):
+        for ct, pfx in CHARGE_TYPE_PREFIX:
             try:
                 r = self.get_charge_monthly_stats(ct)
             except Exception:  # noqa: BLE001
@@ -1054,19 +1082,26 @@ class LiApiClient:
                     break
         if not got:
             return None
-        out["total_kwh"] = round(out["dc_kwh"] + out["ac_kwh"], 2)
+        out["total_kwh"] = round(
+            sum(out[f"{p}_kwh"] for _, p in CHARGE_TYPE_PREFIX), 2)
+        out["total_times"] = sum(
+            out[f"{p}_times"] for _, p in CHARGE_TYPE_PREFIX)
         return out
 
     def get_charge_total_kwh(self) -> float | None:
-        """累计充电量（kWh，直流+交流所有月份求和）。
+        """累计充电量（kWh，**全部 4 种充电类型**所有月份求和）。
 
         ★ 用途：给 HA 能源面板提供一个「总充电量」传感器。
           数据源是官方按月统计（天然递增 → total_increasing）。
           失败返回 None（调用方保留上次值，不写 0 以免破坏递增曲线）。
+
+        ★ 2026-10-08 修正：原先只遍历 (1, 2)，漏掉 3(SC 5C超充) 与
+          4(4CAnd5C **理想超充**) → 累计量同样少算。改为遍历
+          ``CHARGE_TYPE_PREFIX`` 全部类型。
         """
         total = 0.0
         got = False
-        for ct in (1, 2):
+        for ct, _pfx in CHARGE_TYPE_PREFIX:
             try:
                 r = self.get_charge_monthly_stats(ct)
                 _LOGGER.debug("{d}ct=%s code=%s msg=%s data_len=%s",
