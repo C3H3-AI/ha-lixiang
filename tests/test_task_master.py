@@ -97,6 +97,38 @@ class TestLiApiTaskEndpoints:
         assert fn(Exception("HTTP 300 access_denied")) is False
         assert fn(Exception("HTTP 429 rate limited")) is False
 
+    def test_is_scope_denied_distinguishes_login_required(self):
+        """★ HTTP 300 有两种语义，不能一刀切（纯函数真实执行）。
+
+        · 300 + access_denied  → scope 被策略拒绝 → 重登无用（True）
+        · 300 + login_required → 会话失效         → **必须重登**（False）
+
+        2026-10-08 真机故障实证：把 login_required 也判为 scope 拒绝
+        → _get_scoped 永不重登 → 通知 / VSS / 任务大师三个模块全部持续
+        失败且**无法自愈**（22:33 起每 30~60s 一次，十余分钟未恢复，
+        只能手动重载集成）。
+        """
+        fn = _extract_function(_src("li_api.py"), "_is_scope_denied")
+
+        # ① 会话失效 → 必须允许走重登分支
+        assert fn(Exception(
+            '换 token 失败 (ALL): HTTP 300 {"location":'
+            '"https://account.lixiang.com/app-auth?error=login_required"}'
+        )) is False, "login_required 被误判为 scope 拒绝 → 永不重登（严重）"
+
+        # ② scope 被策略拒绝 → 不重登（避免重登风暴）
+        assert fn(Exception(
+            '换 token 失败 (task-master): HTTP 300 '
+            '{"location":"https://id.lixiang.com/app-auth?error=access_denied"}'
+        )) is True, "access_denied 未被识别为 scope 拒绝"
+
+        # ③ 其它 300（无明确关键词）→ 保守按拒绝处理
+        assert fn(Exception("HTTP 300 redirect without keyword")) is True
+
+        # ④ 非 300 错误不属此列
+        assert fn(Exception("HTTP 401 Unauthorized")) is False
+        assert fn(Exception("HTTP 403 forbidden")) is False
+
     def test_task_call_401_selfheal(self):
         """★ 任务接口遇 401 必须【主动失效 token 缓存并重取】。
 

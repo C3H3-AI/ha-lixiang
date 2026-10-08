@@ -257,8 +257,21 @@ def _is_scope_denied(err) -> bool:
     实测 2026-10-08：单 scope task-master → HTTP 300 access_denied；
     若误判为会话失效会走 _login()（其内 _tokens.clear()）→ 每分钟
     「重登+清全缓存」风暴（真机 87 次/1.5h）。
+
+    ★ 2026-10-08 二次修正（真机故障实证）：**不能只看 "HTTP 300"**。
+    HTTP 300 有两种语义完全不同的情况：
+
+      · `300 + access_denied`  → scope 被策略拒绝 → 重登无用，直接抛
+      · `300 + login_required` → 会话失效 → **必须重登**，否则永久失效
+
+    此前用 `"HTTP 300" in m` 一刀切，把 login_required 也判为 scope 拒绝
+    → `_get_scoped` 永不重登 → 通知/VSS/任务大师全部持续失败且**无法自愈**
+    （真机 22:33 起每 30~60s 失败一次，持续十余分钟仍未恢复，只能手动重载）。
+    故此处仅以 access_denied 为准，并显式排除 login_required。
     """
     m = str(err)
+    if "login_required" in m:
+        return False          # 会话失效 → 允许走重登分支
     return "access_denied" in m or "HTTP 300" in m
 
 
