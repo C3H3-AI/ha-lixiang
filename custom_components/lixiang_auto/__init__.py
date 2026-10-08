@@ -456,10 +456,20 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 continue
             try:
                 if dt:
-                    ct = int(ctype) if ctype else 1
-                    r = await hass.async_add_executor_job(
-                        api.get_charge_records_monthly, str(dt), ct)
-                    kind = f"{dt} 明细(type={ct})"
+                    # ★ 2026-10-09：默认聚合全部 4 种充电类型（1/2/3/4），
+                    #   避免只能看到单一充电方式的明细（如看不到理想超充）。
+                    #   charging_type 传 0 / "all" 也表示聚合；
+                    #   传 1~4 则只查该类型（保持原有能力）。
+                    _raw = str(ctype).strip().lower() if ctype not in (None, "") else ""
+                    if _raw in ("", "0", "all", "全部"):
+                        r = await hass.async_add_executor_job(
+                            api.get_charge_records_monthly_all, str(dt))
+                        kind = f"{dt} 明细(全部类型聚合)"
+                    else:
+                        ct = int(ctype)
+                        r = await hass.async_add_executor_job(
+                            api.get_charge_records_monthly, str(dt), ct)
+                        kind = f"{dt} 明细(type={ct})"
                 else:
                     r = await hass.async_add_executor_job(api.get_charge_monthly_stats)
                     kind = "按月统计"
