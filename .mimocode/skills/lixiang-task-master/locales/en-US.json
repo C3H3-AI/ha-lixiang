@@ -1,0 +1,4 @@
+{
+  "displayName": "Li Auto Task Master for HA",
+  "brief": "Build and explain lixiang_auto Task Master service calls (create/get/update/delete), craft condition-action JSON, and debug empty task lists"
+}
