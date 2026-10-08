@@ -111,3 +111,20 @@ class TestChargeStatsScope:
         blk = _func_block(_src("li_api.py"), "get_charge_records_monthly")
         for kw in ("DC", "AC", "5C", "理想超充"):
             assert kw in blk, f"类型说明缺 {kw}"
+
+    def test_monthly_all_aggregates_every_type(self):
+        """★ 明细聚合必须遍历全部 4 种类型（不得漏掉理想超充）。
+
+        2026-10-09：服务原先默认 charging_type=1，只能拿到直流记录，
+        明细里看不到 5C超充 / 理想超充 —— 与统计口径同类的漏算。
+        """
+        blk = _func_block(_src("li_api.py"), "get_charge_records_monthly_all")
+        assert "CHARGE_TYPE_PREFIX" in blk, "聚合未遍历全部充电类型"
+
+    def test_service_defaults_to_all_not_single_type(self):
+        """★ 服务默认必须走聚合，而非兜底成单一类型 1(DC)。"""
+        src_text = _src("__init__.py")
+        assert "get_charge_records_monthly_all" in src_text, "handler 未调用聚合方法"
+        assert re.search(r'int\(ctype\)\s*if\s*ctype\s*else\s*1', src_text) is None, (
+            "仍把默认兜底为 charging_type=1（明细会漏掉超充）")
+        assert re.search(r'"0",\s*"all"', src_text), "未处理 0/all 聚合分支"
