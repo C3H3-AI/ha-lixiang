@@ -29,6 +29,10 @@ Base：`https://api-app.lixiang.com`（集成内 `API_APP`）
 任务接口头照抄 App：`content-language=zh-CN`、`modelname=ANDROID`、
 `version=8.27.0`、`x-chj-metadata`、`accept-language=zh-CN`、M01 UA
 （★ 头里的版本一旦改动，**签名第 2 段必须同步改**，否则 100005）。
+★ **业务调用返回 401 时自动自愈**（2026-10-08 补）：`_task_call` 遇 401 会
+**只失效 `taskmaster` 一项缓存并重取一次**（不触发重新登录 —— 避免重登风暴）。
+真机教训：401 曾连续 147 次、跨 10 小时才恢复，因为缓存的 token（ttl=1800s）
+不会自动失效，每 60 秒重试都复用同一个被拒 token。
 
 ## 2. create 请求体（原样抓包）
 
