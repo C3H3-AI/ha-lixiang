@@ -24,3 +24,9 @@ docs/*.md
 !docs/README.md
 # ★ 用户文档（非逆向分析）—— 例外的白名单
 !docs/CARDS.md
+
+# ★ 技能文档（docs/skills/）—— 面向 AI 助手与贡献者，需随仓库公开
+#   说明：docs/*.md 只匹配第一层，docs/skills/**/*.md 本就不受影响；
+#   此处显式声明白名单，避免将来调整上方便规则时误伤（2026-10-08 补）。
+!docs/skills/**
+!docs/skills
