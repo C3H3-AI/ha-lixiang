@@ -262,6 +262,17 @@ def _is_scope_denied(err) -> bool:
     return "access_denied" in m or "HTTP 300" in m
 
 
+def _is_unauthorized(err) -> bool:
+    """业务调用返回 401（token 被服务端拒绝）→ 应失效缓存重取，而非重登。
+
+    ★ 2026-10-08 真机实测：任务接口 401 连续 147 次（10:07→20:52，跨 10 小时）。
+    token 缓存 ttl=1800s 在正常情况下不会失效 → 每 60s 重试都复用同一个
+    被拒 token，必须等到 ttl 到期才重新换取，故障恢复被严重拖慢。
+    """
+    m = str(err)
+    return "HTTP 401" in m or "Unauthorized" in m
+
+
 class LiApiError(HomeAssistantError):
     """理想 API 认证/请求错误.
 
@@ -1514,9 +1525,25 @@ class LiApiClient:
             "taskmaster", SCOPE_TASK_MASTER, AUD_VSS, ttl=1800)
 
     def _task_call(self, method: str, path: str, body: str = "") -> dict:
-        """任务接口统一入口：完整五件套 token + App 实测头签名调用。"""
-        return self._signed_call_task(
-            method, path, body, self._get_task_token())
+        """任务接口统一入口：完整五件套 token + App 实测头签名调用。
+
+        ★ 401 自愈（2026-10-08 真机教训）：服务端临时拒绝 401 时，
+          token 缓存（ttl=1800s）不会自动失效 → 每 60s 重试都复用同一个
+          被拒 token，要等 ttl 到期才重取（真机实测 401 连续 147 次、
+          跨 10 小时）。故遇 401 主动失效缓存并重取一次。
+          仅失效 taskmaster 一项，**不触发 _login()** —— 避免 PR #11
+          已修掉的「重登 + 清全缓存」风暴。
+        """
+        try:
+            return self._signed_call_task(
+                method, path, body, self._get_task_token())
+        except LiApiError as err:
+            if not _is_unauthorized(err):
+                raise
+            _LOGGER.info("任务接口返回 401，失效 token 缓存并重取一次")
+            self._invalidate_token("taskmaster")
+            return self._signed_call_task(
+                method, path, body, self._get_task_token())
 
     def get_tasks(self, page_size: int = 50, page_no: int = 1,
                   task_type: int = 0) -> list[dict]:
