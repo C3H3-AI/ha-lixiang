@@ -313,7 +313,9 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                         _api3.get_charge_current_month_kwh)
                     if _tc is not None:
                         _mc["month_charge_kwh"] = _tc.get("total_kwh")
-                        _mc["month_charge_times"] = (
+                        # ★ 2026-10-08：次数须含全部 4 种类型（含理想超充）；
+                        #   优先用 total_times，兼容旧返回结构
+                        _mc["month_charge_times"] = _tc.get("total_times") or (
                             (_tc.get("dc_times") or 0) + (_tc.get("ac_times") or 0))
                 if _mc:
                     self._month_cache[_rid3] = _mc
