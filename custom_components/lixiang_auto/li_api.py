@@ -139,12 +139,22 @@ CTRL_DOMAIN = "xcu"
 #   urls 含 /ssp-task-master-service, 同条目 scope 含 "task-master"
 # 鉴权: HZ 级 token (scope=task-master) + _signed_call 的 x-chj-* 签名头
 #   （抓包实测: Authorization: Bearer HZ:… + X-CHJ-Sign / X-CHJ-TOKEN）
-SCOPE_TASK_MASTER = "task-master"
-# 回退集（若单 scope 被服务端拒绝）：App subTokenData → httpLiMeshServiceV2.scope
-# 的权威 5 项（remote-wakeup / cmd-result / cmd-send / vss / task-master）
-SCOPE_TASK_MASTER_FULL = (
+# ★ 2026-10-08 实测：单换 "task-master" 被 SSO 拒绝
+#   （POST /api/auth → HTTP 300 {"location":"…app-auth?error=access_denied"}），
+#   完整五件套可正常换取 —— 与 App 行为一致（App 从不单换，只用完整包）。
+#   故固定使用 App subTokenData → httpLiMeshServiceV2.scope 的权威 5 项：
+#   remote-wakeup / cmd-result / cmd-send / vss / task-master。
+SCOPE_TASK_MASTER = (
     "remote-wakeup:wakeup veh-ctrl:cmd-result-get "
     "veh-ctrl:cmd-send vss:get-batch task-master")
+
+# 任务接口专用头（对照 2026-10-07 抓包；travel 接口同款教训：
+# 默认头会被拒，必须照抄 App 头并同步重签——签名覆盖第 7 段语言字段）
+TASK_APP_VERSION = "8.27.0"            # x-chj-app-version / x-chj-version
+TASK_UA = "M01/8.27.0 (Xiaomi; 16)"    # user-agent
+TASK_DEVICE_MODEL = "23127PN0CC"       # x-chj-devicemodel（真机型号）
+TASK_META = '{"language":"zh","code":"102004"}'  # x-chj-metadata（travel 同款）
+
 EP_TASK_LIST = "/ssp-task-master-service/v1/task-config/mob/my-task-by-vin/{vin}"
 EP_TASK_SAVE = "/ssp-task-master-service/v1/task-config/mob/save/{vin}"
 EP_TASK_UPDATE = "/ssp-task-master-service/v1/task-config/mob/update-task/{vin}"
@@ -239,6 +249,17 @@ def _ensure_task_ok(op: str, resp) -> None:
     if isinstance(resp, dict) and (resp.get("code") in (0, "0") or resp.get("success")):
         return
     raise LiApiError(f"任务大师{op}失败: {str(resp)[:200]}")
+
+
+def _is_scope_denied(err) -> bool:
+    """换取 scope 被服务端策略拒绝（≠ 会话失效，不应触发重登）。
+
+    实测 2026-10-08：单 scope task-master → HTTP 300 access_denied；
+    若误判为会话失效会走 _login()（其内 _tokens.clear()）→ 每分钟
+    「重登+清全缓存」风暴（真机 87 次/1.5h）。
+    """
+    m = str(err)
+    return "access_denied" in m or "HTTP 300" in m
 
 
 class LiApiError(HomeAssistantError):
@@ -500,9 +521,16 @@ class LiApiClient:
             allow_redirects=False, timeout=20,
         )
         frag = urllib.parse.urlparse(r.headers.get("location", "")).fragment
-        tok = dict(urllib.parse.parse_qsl(frag)).get("access_token", "")
+        params = dict(urllib.parse.parse_qsl(frag))
+        tok = params.get("access_token", "")
         if not tok:
             raise LiApiError(f"换 token 失败 ({scope}): HTTP {r.status_code} {r.text[:120]}")
+        # ★ 诊断：HZ token 不透明，fragment 里的 scope/expires 是唯一能观察
+        #   「服务端实际授予了什么」的窗口（排查 403 用，只打非敏感参数）
+        if params.get("scope") or params.get("audience"):
+            _LOGGER.debug("换token成功 grant参数: scope=%s aud=%s keys=%s",
+                          params.get("scope", "?"), params.get("audience", "?"),
+                          sorted(params.keys()))
         return tok
 
     def _get_scoped(self, name: str, scope: str, audience: str, ttl: int = 780) -> str:
@@ -512,7 +540,12 @@ class LiApiClient:
             return ent[0]
         try:
             tok = self._exchange(scope, audience)
-        except LiApiError:
+        except LiApiError as err:
+            # ★ 2026-10-08：scope 被策略拒绝 ≠ 会话失效 —— 重登不仅修不了，
+            #   还会因 _login() 内的 _tokens.clear() 形成「每分钟重登+清缓存」
+            #   风暴（真机实测 87 次/1.5h，有账号风控风险）→ 直接抛出。
+            if _is_scope_denied(err):
+                raise
             if self._password:
                 _LOGGER.info("会话失效, 重新登录 (%s)", name)
                 self._cli = None
@@ -566,6 +599,55 @@ class LiApiClient:
             "X-CHJ-VIN": self._vin,
             "Authorization": f"Bearer {bearer}",
             "User-Agent": f"m01/{SIGN_APP_VERSION} (iPad; iOS 16.7.12; Scale/2.00)",
+        }
+        req = urllib.request.Request(
+            API_APP + path, method=method,
+            headers=headers, data=body.encode() if body else None)
+        try:
+            with urllib.request.urlopen(
+                    req, context=_ssl_ctx(), timeout=20) as resp:
+                return json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            raise LiApiError(f"{method} {path}: HTTP {e.code} {e.read().decode()[:200]}")
+
+    def _signed_call_task(self, method: str, path: str, body: str,
+                          bearer: str) -> dict:
+        """任务大师专用签名调用（2026-10-08：App 实测头对照 + 同步重签）。
+
+        与 _signed_call 的差异（对照抓包，travel 接口同款教训）：
+          · Content-Language: zh-CN（App 值；★签名第 7 段必须同步）
+          · X-CHJ-APP-Version / X-CHJ-Version: 8.27.0（App 值）
+          · X-CHJ-ModelName: ANDROID + X-CHJ-DeviceModel（App 值）
+          · 新增 X-CHJ-Metadata / Accept-Language / App UA
+        签名第 2 段保持 SIGN_APP_VERSION（travel 实测该段用它可通过）。
+        """
+        ts = str(int(time.time() * 1000))
+        nonce = str(uuid.uuid4())
+        if body:
+            md5 = base64.b64encode(hashlib.md5(body.encode()).digest()).decode()
+        else:
+            md5 = EMPTY_MD5
+        data = "\n".join([
+            "prod", SIGN_APP_VERSION, self._key_id, self._xdev, method, "*/*",
+            "zh-CN", md5, "application/json", ts, nonce,
+        ]) + "\n"
+        sig = base64.b64encode(
+            hmac.new(self._hac, data.encode(), hashlib.sha256).digest()).decode()
+        headers = {
+            "X-CHJ-Env": "prod", "X-CHJ-APP-Version": TASK_APP_VERSION,
+            "X-CHJ-Key": self._key_id, "X-CHJ-Deviceid": self._xdev,
+            "X-CHJ-Timestamp": ts, "X-CHJ-Nonce": nonce, "X-CHJ-Sign": sig,
+            "Content-MD5": md5, "Content-Type": "application/json",
+            "Content-Language": "zh-CN", "Accept": "*/*",
+            "Accept-Language": "zh-CN",
+            "X-CHJ-Version": TASK_APP_VERSION, "X-CHJ-DeviceType": "2",
+            "X-CHJ-ModelName": "ANDROID",
+            "X-CHJ-DeviceModel": TASK_DEVICE_MODEL,
+            "X-CHJ-Tag": "1", "X-CHJ-Metadata": TASK_META,
+            "X-CHJ-TOKEN": self._app_token,
+            "X-CHJ-VIN": self._vin,
+            "Authorization": f"Bearer {bearer}",
+            "User-Agent": TASK_UA,
         }
         req = urllib.request.Request(
             API_APP + path, method=method,
@@ -1421,27 +1503,18 @@ class LiApiClient:
     # ---------- 任务大师 Task Master（2026-10-07 抓包实证，全 HTTP）----------
 
     def _get_task_token(self) -> str:
-        """任务大师 token（scope=task-master，与 App subTokenData 一致）。"""
+        """任务大师 token = App 权威完整五件套。
+
+        ★ 单换 "task-master" 会被 SSO 拒绝（HTTP 300 access_denied，2026-10-08
+          实测），故不再尝试单 scope，也没有回退分支。
+        """
         return self._get_scoped(
             "taskmaster", SCOPE_TASK_MASTER, AUD_VSS, ttl=1800)
 
     def _task_call(self, method: str, path: str, body: str = "") -> dict:
-        """任务接口统一入口：单 scope 失败 → 自动回退 App 完整 5 项 scope 重试一次。"""
-        try:
-            return self._signed_call(
-                method, path, body, self._get_task_token())
-        except LiApiError as err:
-            if self._tokens.get("taskmaster_full"):
-                raise  # 完整 scope 也失败过 → 不再重试，直接抛原始错误
-            _LOGGER.warning(
-                "任务接口首次失败，回退 App 完整 scope 重试一次: %s",
-                str(err)[:160])
-            tok = self._get_scoped(
-                "taskmaster_full", SCOPE_TASK_MASTER_FULL, AUD_VSS, ttl=1800)
-            try:
-                return self._signed_call(method, path, body, tok)
-            except LiApiError as err2:
-                raise LiApiError(f"{err2}（首次错误: {str(err)[:160]}）") from err2
+        """任务接口统一入口：完整五件套 token + App 实测头签名调用。"""
+        return self._signed_call_task(
+            method, path, body, self._get_task_token())
 
     def get_tasks(self, page_size: int = 50, page_no: int = 1,
                   task_type: int = 0) -> list[dict]:
