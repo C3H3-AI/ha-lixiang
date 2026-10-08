@@ -1,0 +1,93 @@
+# ═══════════════════════════════════════════════════════════════
+# 仓库标签定义（sync-labels.yml 手动同步；pr_guard.py 自动创建的
+# 标签也在此登记，保证颜色/描述统一，避免 422 幂等创建时用默认灰色）
+# ═══════════════════════════════════════════════════════════════
+
+# ---- 基础（GitHub 内置同名保留）----
+- name: bug
+  color: d73a4a
+  description: 功能异常 / Something isn't working
+- name: enhancement
+  color: a2eeef
+  description: 新功能或改进 / New feature or request
+- name: documentation
+  color: 0075ca
+  description: 文档改进 / Documentation improvements
+- name: question
+  color: d876e3
+  description: 需要更多信息 / Further information is requested
+- name: wontfix
+  color: ffffff
+  description: 不会处理 / This will not be worked on
+- name: duplicate
+  color: cfd3d7
+  description: 重复问题 / This already exists
+- name: invalid
+  color: e4e669
+  description: 无效 / This doesn't seem right
+- name: good first issue
+  color: 7057ff
+  description: 适合新手 / Good for newcomers
+- name: help wanted
+  color: 008672
+  description: 需要帮助 / Extra attention is needed
+
+# ---- PR 类型（pr_guard 按标题 Conventional Commits 自动打）----
+- name: "type: feat"
+  color: a2eeef
+  description: 新功能 / feature
+- name: "type: fix"
+  color: d73a4a
+  description: 修复 / bug fix
+- name: "type: refactor"
+  color: fbca04
+  description: 重构（不改行为） / refactor, no behavior change
+- name: "type: docs"
+  color: 0075ca
+  description: 文档 / documentation
+- name: "type: ci"
+  color: 1d76db
+  description: CI 与构建 / CI and build
+- name: "type: chore"
+  color: cccccc
+  description: 杂项 / chores
+- name: "type: test"
+  color: 0e8a16
+  description: 测试 / tests
+- name: "type: perf"
+  color: f9d0c4
+  description: 性能 / performance
+
+# ---- PR 范围（pr_guard 按改动路径自动打）----
+- name: "area: api"
+  color: 5319e7
+  description: li_api / 网络 / API 层
+- name: "area: platforms"
+  color: 1d76db
+  description: 实体平台（sensor/switch/button/…）
+- name: "area: signals"
+  color: 006b75
+  description: 信号定义与翻译
+- name: "area: ability"
+  color: 00b8d9
+  description: 车型能力与配置
+- name: "area: tests"
+  color: 0e8a16
+  description: 测试
+- name: "area: ci"
+  color: 1d76db
+  description: workflow / 构建脚本
+- name: "area: docs"
+  color: 0075ca
+  description: 文档
+- name: "area: scripts"
+  color: cccccc
+  description: 辅助脚本
+
+# ---- Issue 生命周期（stale.yml 使用）----
+- name: stale
+  color: eeeeee
+  description: 15 天无活动，5 天后自动关闭 / inactive, will close soon
+- name: stale-closed
+  color: d4c5f9
+  description: 因长期无活动关闭 / closed due to inactivity
