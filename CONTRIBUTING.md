@@ -473,6 +473,53 @@ grep -rn "<你的手机号>\|<你的VIN>" chk/ || echo "干净"
 
 ---
 
+## 技能文档（`docs/skills/`）
+
+面向 AI 助手与贡献者的操作手册统一放在 **`docs/skills/<技能名>/`**：
+
+```
+docs/skills/lixiang-task-master/
+├── SKILL.md              # 必须：带 YAML frontmatter（name + description）
+├── references/           # 可选：详细参考资料
+└── locales/              # 可选：多语言文案
+```
+
+### 规则
+
+1. **位置固定为 `docs/skills/`** —— 不要放 `.mimocode/`、`.claude/` 等其它
+   工具的目录（那是各工具的私有约定，本仓库不采用）
+2. `SKILL.md` **必须带 frontmatter**（`name` + `description`），否则 AI 助手
+   无法识别该技能
+3. `docs/*.md` 被 `.gitignore` 忽略（逆向文档不公开），但 `docs/skills/**`
+   有**显式白名单**，可正常提交
+4. **改完技能文档必须同步到本机**，否则 AI 助手加载的仍是旧版：
+
+```bash
+./scripts/li-skills.sh status    # 查看仓库 ↔ 本机差异
+./scripts/li-skills.sh install   # 同步到本机
+./scripts/li-skills.sh check     # 一致性校验（不一致退出 1）
+```
+
+安装目标是 `${DSH_HOME:-~/.dsh}/skills/<技能名>/`。
+
+### ⚠️ 教训（2026-10-08）
+
+技能文档曾出现两类问题，都已修复，现在是脚本兜底：
+
+| 问题 | 后果 |
+|---|---|
+| 放在 `.mimocode/skills/`（别的工具约定）| AI 助手**完全看不到**该技能（不在 skill catalog 里）|
+| 仓库文档更新后本机未同步 | 内容漂移：本机是旧版、仓库是新版，两边说法不一致 |
+
+同一时期还发现文档描述**滞后于代码**（PR #11 只改了代码与行内注释，
+技能文档仍写着已删除的「scope 回退」机制和错误的签名归因）——
+**改代码时请一并检查 `docs/skills/` 是否需要同步更新。**
+
+> 技能内容里不要出现个人环境信息（本机绝对路径、内网 IP、Windows 用户名），
+> 一律使用通用路径（如 `custom_components/lixiang_auto`）。
+
+---
+
 ## 相关脚本
 
 | 脚本 | 位置 | 作用 |
@@ -481,11 +528,13 @@ grep -rn "<你的手机号>\|<你的VIN>" chk/ || echo "干净"
 | `scripts/li-status.sh` | 仓库内 | ★ 仓库巡检（未发布提交/漂着分支/CI/分支保护）|
 | `scripts/li-verify.sh` | 仓库内 | 实机验证（7 项，含重启 HA + 真实数据）|
 | `scripts/li-sync.sh` | 仓库内 | 双副本同步 + 敏感扫描 |
+| `scripts/li-skills.sh` | 仓库内 | 技能文档同步 / 一致性校验（`docs/skills/` ↔ 本机）|
 | `bump.sh` | `ha-lixiang/` | 版本号递增 |
 
 ### 提 PR 前的自检
 
 ```bash
-./li-verify.sh     # 实机验证 7 项全过
+./li-verify.sh             # 实机验证 7 项全过
 ./scripts/li-status.sh     # 仓库体检无告警
+./scripts/li-skills.sh check   # 技能文档与本机一致（改过 docs/skills/ 时必做）
 ```
