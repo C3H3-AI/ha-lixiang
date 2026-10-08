@@ -39,9 +39,16 @@ def _extract_function(source: str, name: str):
 # ---------------------------------------------------------------------------
 
 class TestLiApiTaskEndpoints:
-    def test_scope_is_task_master(self):
-        m = re.search(r'SCOPE_TASK_MASTER\s*=\s*"([^"]+)"', _src("li_api.py"))
-        assert m and m.group(1) == "task-master"
+    def test_scope_is_full_bundle(self):
+        """★ 单换 task-master 被 SSO 拒（HTTP300 access_denied，2026-10-08 实测），
+        必须固定使用 App 权威完整五件套。"""
+        m = re.search(r'SCOPE_TASK_MASTER\s*=\s*\((.*?)\)', _src("li_api.py"), re.S)
+        assert m, "未找到 SCOPE_TASK_MASTER"
+        for need in ("task-master", "vss:get-batch", "veh-ctrl:cmd-send",
+                     "veh-ctrl:cmd-result-get", "remote-wakeup:wakeup"):
+            assert need in m.group(1), f"缺 {need}"
+        # 不允许回退机制残留（主路径即完整包）
+        assert "SCOPE_TASK_MASTER_FULL" not in _src("li_api.py")
 
     def test_endpoints_present(self):
         s = _src("li_api.py")
@@ -55,19 +62,30 @@ class TestLiApiTaskEndpoints:
         tree = ast.parse(_src("li_api.py"))
         names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
         for fn in ("get_tasks", "save_task", "update_task", "delete_task",
-                   "_get_task_token", "_task_call"):
+                   "_get_task_token", "_task_call", "_signed_call_task"):
             assert fn in names, f"缺少方法 {fn}"
+        assert "_is_scope_denied" in names, "缺少 scope 拒绝判别函数"
 
-    def test_scope_fallback_present(self):
-        """单 scope 被拒时回退 App 完整 5 项（含 task-master）。"""
+    def test_scope_denied_no_relogin(self):
+        """★ scope 被拒 ≠ 会话失效：_get_scoped 不得对其触发重登。
+
+        2026-10-08 真机教训：误判导致「每分钟 _login + _tokens.clear()」
+        风暴（87 次/1.5h，账号风控风险）。
+        """
         s = _src("li_api.py")
-        m = re.search(r"SCOPE_TASK_MASTER_FULL\s*=\s*\((.*?)\)", s, re.S)
-        assert m, "缺少 SCOPE_TASK_MASTER_FULL"
-        joined = m.group(1).replace('"', "").replace("\n", "").replace(" ", "")
-        assert "task-master" in joined and "vss:get-batch" in joined
+        i = s.find("def _get_scoped")
+        blk = s[i:i + 900]
+        pos_guard = blk.find("if _is_scope_denied(err)")
+        pos_login = blk.find("self._login()")   # 真实调用（注释里的字样不算）
+        assert pos_guard > 0, "_get_scoped 未使用 scope 拒绝判别"
+        assert pos_login > 0 and pos_guard < pos_login, (
+            "必须在重登分支之前拦截")
+        i2 = s.find("def _is_scope_denied")
+        helper = s[i2:i2 + 400]
+        assert "access_denied" in helper and "HTTP 300" in helper
 
     def test_signed_call_used(self):
-        """任务请求必须经 _task_call → _signed_call（抓包有 x-chj-sign）。"""
+        """任务请求必须经 _task_call → _signed_call_task（App 实测头 + 重签）。"""
         s = _src("li_api.py")
         for fn in ("get_tasks", "save_task", "update_task"):
             i = s.find(f"def {fn}(")
@@ -75,7 +93,30 @@ class TestLiApiTaskEndpoints:
             blk = s[i:i + 900]
             assert "_task_call" in blk, f"{fn} 未走 _task_call"
         i = s.find("def _task_call(")
-        assert i > 0 and "_signed_call" in s[i:i + 900]
+        assert i > 0 and "_signed_call_task" in s[i:i + 400]
+
+    def test_task_headers_match_app_capture(self):
+        """任务专用签名调用的头与抓包一致（403 排查：travel 同款教训）。"""
+        s = _src("li_api.py")
+        i = s.find("def _signed_call_task")
+        assert i > 0, "缺少 _signed_call_task"
+        blk = s[i:i + 2500]
+        # 签名第 7 段与发送头都必须是 zh-CN（改语言必须同步重签）
+        assert '"zh-CN", md5' in blk.replace("'", '"'), "签名语言段未用 zh-CN"
+        assert '"Content-Language": "zh-CN"' in blk
+        assert '"X-CHJ-ModelName": "ANDROID"' in blk
+        assert "X-CHJ-Metadata" in blk and "Accept-Language" in blk
+        # ★ 签名第 2 段必须等于请求头版本（不一致 → 100005，
+        #   2026-10-08 维护者真机变体矩阵：8.25.4签名+8.27.0头=100005）
+        m_data = re.search(r'data = "\\n"\.join\(\[(.*?)\]\)', blk, re.S)
+        assert m_data, "未找到签名 data 串"
+        assert "TASK_APP_VERSION" in m_data.group(1), "签名第2段必须用 TASK_APP_VERSION"
+        assert "SIGN_APP_VERSION" not in m_data.group(1), (
+            "签名第2段不得用 SIGN_APP_VERSION（与头不一致 → 100005）")
+        # 版本/UA 常量存在
+        s2 = _src("li_api.py")
+        assert 'TASK_APP_VERSION = "8.27.0"' in s2
+        assert "M01/8.27.0" in s2
 
 
 # ---------------------------------------------------------------------------

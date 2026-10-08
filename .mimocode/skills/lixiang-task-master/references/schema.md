@@ -17,11 +17,15 @@ Base：`https://api-app.lixiang.com`（集成内 `API_APP`）
 | GET | `/ssp-task-master-service/v1/task-basic/mob/condition-and-action/{VIN}` | 条件/动作字典（15 条件 + 17 动作，约 66KB） |
 | GET | `/ssp-task-master-service/v1/square-recommendation/mob/query-task-list/{VIN}` | 广场推荐任务 |
 
-鉴权（抓包实测）：`Authorization: Bearer HZ:<token>`（scope 含 `task-master`，
-与 subTokenData 的 httpLiMeshServiceV2 白名单一致）+ `X-CHJ-Sign` 签名头
-（集成 `_signed_call`）+ `X-CHJ-Token`/`X-CHJ-Deviceid`/`X-CHJ-Vin`。
-单 scope 被拒时集成自动回退完整 5 项 scope：
+鉴权（抓包实测 + 2026-10-08 修正）：`Authorization: Bearer <五件套token>` +
+`X-CHJ-Sign` 签名头（集成 `_signed_call_task`，**签名第 7 段语言=zh-CN**）。
+★ 单换 `task-master` 会被 SSO 拒绝（HTTP 300 `access_denied`，且重登会引发
+「每分钟重登+清缓存」风暴——已加 `_is_scope_denied` 守卫禁止对 scope 拒绝重登），
+故固定使用 App subTokenData 权威五件套：
 `remote-wakeup:wakeup veh-ctrl:cmd-result-get veh-ctrl:cmd-send vss:get-batch task-master`。
+任务接口头照抄 App：`content-language=zh-CN`、`modelname=ANDROID`、
+`version=8.27.0`、`x-chj-metadata`、`accept-language=zh-CN`、M01 UA
+（travel 接口同款教训：默认头会被拒，改语言必须同步重签）。
 
 ## 2. create 请求体（原样抓包）
 

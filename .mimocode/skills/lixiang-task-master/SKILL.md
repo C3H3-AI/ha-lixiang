@@ -81,7 +81,7 @@ data:
 
 | 症状 | 原因 | 处置 |
 |---|---|---|
-| 任务大师传感器 = 0 | 列表拉取失败或文件未部署 | 看传感器属性**「拉取错误」**：`li_api 缺少 get_tasks` → 拷全 `li_api.py/coordinator.py/sensor.py`；`无 li_api` → 集成未用密码登录；HTTP 4xx → token/scope（集成已内置单 scope→完整 5 项 scope 自动回退，把错误文本发回分析） |
+| 任务大师传感器 = 0 | 列表拉取失败或文件未部署 | 看传感器属性**「拉取错误」**：`li_api 缺少 get_tasks` → 拷全 `li_api.py/coordinator.py/sensor.py`；`无 li_api` → 集成未用密码登录；HTTP 403 → scope/头问题（scope 已固定为 App 权威完整五件套；任务接口已照抄 App 头并同步重签，2026-10-08 修正——若仍 403，把「拉取错误」全文发回分析） |
 | 服务列表里没有 create_task 等 | `__init__.py` / `services.yaml` 未部署 | 覆盖这两个文件并**重启 HA**（重载集成无效，Python 模块有 import 缓存） |
 | 创建/更新报 LiApiError | 服务端拒绝（参数/权限） | 读错误文本中的服务端响应；检查 conditionType/actionType 是否字典外编造 |
 | update 后字段"被改回" | 不会——除非没等自动刷新就看 | 等几秒（写后自动 invalidate+refresh）；仍异常则调 `lixiang_auto.refresh` |
