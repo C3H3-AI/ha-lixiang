@@ -27,7 +27,7 @@
 - 四个服务：create_task / get_tasks / update_task / delete_task
   （update 只传要改的字段，其余保持原值）
 - 条件与动作参数须使用 App 任务字典中的类型（详见配套技能文档）
-- 配套技能文档（.mimocode/skills/lixiang-task-master/）
+- 配套技能文档（docs/skills/lixiang-task-master/）
 
 ## [1.3.3] — 2026-10-08
 
