@@ -971,7 +971,7 @@ class LiApiClient:
             "", self._travel_bearer())
 
     def get_charge_records_monthly(self, dt: str, charging_type: int) -> dict:
-        """某月充电记录明细。
+        """某月充电记录明细（单一类型）。
 
         dt: "年-月" 如 "2026-9"
         charging_type: 见 ``CHARGE_TYPE_PREFIX`` —— 1=DC 直流快充 / 2=AC 交流慢充
@@ -982,6 +982,43 @@ class LiApiClient:
             f"/bsp-vcp-message/v1/app/vehicle/chargeRecords/monthly"
             f"?vin={self._vin}&dt={dt}&chargingType={charging_type}",
             "", self._travel_bearer())
+
+    def get_charge_records_monthly_all(self, dt: str) -> dict:
+        """某月充电记录明细（**聚合全部 4 种类型**，按时间倒序）。
+
+        ★ 2026-10-09：单一 charging_type 只能取到一种充电方式的记录，
+          而 App 明细页展示的是全部类型。默认应聚合，避免「明细里看不到
+          5C超充 / 理想超充」——与 get_charge_current_month_kwh 的
+          统计口径漏算是同一类问题。
+
+        返回结构与单类型一致：{"code": 0, "data": [...]}，每条记录补充
+        chargingType 字段标明来源；全部类型都失败才返回错误码。
+        """
+        merged: list = []
+        got = False
+        failed = 0
+        for ct, _pfx in CHARGE_TYPE_PREFIX:
+            try:
+                r = self.get_charge_records_monthly(dt, ct)
+            except Exception:  # noqa: BLE001
+                failed += 1
+                continue
+            if r.get("code") not in (None, 0):
+                failed += 1
+                continue
+            for x in (r.get("data") or []):
+                if isinstance(x, dict):
+                    x = dict(x)
+                    x.setdefault("chargingType", ct)
+                merged.append(x)
+                got = True
+        try:
+            merged.sort(key=lambda x: (x.get("startTime") or 0), reverse=True)
+        except Exception:  # noqa: BLE001
+            pass
+        if not got and failed:
+            return {"code": -1, "message": f"全部 {failed} 种充电类型均拉取失败"}
+        return {"code": 0, "message": "SUCCESS", "data": merged}
 
     def get_travel_current_month_km(self) -> dict | None:
         """本月里程（App 首页「本月陪伴里程」同口径）。

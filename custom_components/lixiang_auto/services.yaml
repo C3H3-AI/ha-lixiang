@@ -100,11 +100,13 @@ get_charge:
         text:
     charging_type:
       name: 充电类型
-      description: 1=直流(DC)，2=交流(AC)；默认 1
+      description: >-
+        1=直流(DC)，2=交流(AC)，3=5C超充，4=理想超充(4C/5C)；
+        不填 / 0 / all = 聚合全部 4 种类型（推荐，与 App 明细页一致）。默认聚合。
       required: false
       selector:
         number:
-          min: 1
+          min: 0
           max: 4
 
 get_svm_photo:
