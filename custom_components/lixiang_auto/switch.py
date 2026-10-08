@@ -51,7 +51,7 @@ from .const import CONF_VIN, DOMAIN, LOGGER_NAME
 from .gate import require_control
 from .entity_helper import route_id_of_vin
 from .device import build_device_info
-from .li_api import job_channel_readonly_attrs
+from .li_api import LiApiError, job_channel_readonly_attrs
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -258,6 +258,30 @@ async def async_setup_entry(
         LiCarSwitch(coordinator, li_api, device_info, vin, *spec[:5])
         for spec in specs
     ])
+
+    # ★ 任务大师动态开关（2026-10-07）：随 data["tasks"] 增量注册；
+    #   任务删除 → 实体 available=False（保注册，不产生僵尸/丢历史）。
+    _task_seen: set[str] = set()
+
+    def _add_task_switches() -> None:
+        tasks = (coordinator.data or {}).get("tasks")
+        if not isinstance(tasks, list):
+            return
+        fresh = []
+        for t in tasks:
+            cid = t.get("configId") if isinstance(t, dict) else None
+            if cid and cid not in _task_seen:
+                _task_seen.add(cid)
+                fresh.append(LiTaskSwitch(
+                    coordinator, li_api, device_info, vin,
+                    cid, t.get("configName") or cid))
+        if fresh:
+            _LOGGER.info("注册任务大师开关: %d 个", len(fresh))
+            async_add_entities(fresh)
+
+    _add_task_switches()
+    config_entry.async_on_unload(
+        coordinator.async_add_listener(_add_task_switches))
 
 
 class LiCarSwitch(CoordinatorEntity, SwitchEntity):
@@ -542,4 +566,108 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
             _LOGGER.error("车控 %s %s 失败: %s", cmd_key, cmd_data, err)
             self._optimistic_on = None
             raise
+        await self.coordinator.async_request_refresh()
+
+
+class LiTaskSwitch(CoordinatorEntity, SwitchEntity):
+    """任务大师单任务启停开关（2026-10-07，update-task 全量回传翻转 enabled）。
+
+    任务列表由 coordinator 拉取（data["tasks"]，条目含完整 taskValue）；
+    本实体按 configId 动态注册，任务被删除后实体转 unavailable（不删注册表）。
+    """
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, li_api, device_info, vin: str,
+                 config_id: str, task_name: str) -> None:
+        super().__init__(coordinator)
+        self._api = li_api
+        self._config_id = config_id
+        self._attr_name = task_name or config_id
+        self._attr_icon = "mdi:format-list-checks"
+        self._rid = route_id_of_vin(vin)
+        self._attr_unique_id = f"{DOMAIN}_{self._rid}_task_{config_id}"
+        self._attr_device_info = device_info
+        self._optimistic: bool | None = None
+        self._optimistic_until: float = 0.0
+        self._last_result: dict | None = None
+
+    def _task(self) -> dict | None:
+        tasks = (self.coordinator.data or {}).get("tasks")
+        if not isinstance(tasks, list):
+            return None
+        for t in tasks:
+            if isinstance(t, dict) and t.get("configId") == self._config_id:
+                return t
+        return None
+
+    @property
+    def available(self) -> bool:
+        data = self.coordinator.data or {}
+        if not self.coordinator.last_update_success:
+            return False
+        # 列表已加载但此任务消失 → 已删除，实体不可用
+        if "tasks" in data and self._task() is None:
+            return False
+        return True
+
+    @property
+    def is_on(self) -> bool | None:
+        import time as _t
+        task = self._task()
+        cur = bool(task.get("enabled")) if task else None
+        if self._optimistic is not None:
+            if _t.monotonic() < self._optimistic_until and self._optimistic != cur:
+                return self._optimistic
+            self._optimistic = None
+            self._optimistic_until = 0.0
+        return cur
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        from .sensor import _task_summary
+        task = self._task() or {}
+        attrs: dict = {
+            "config_id": self._config_id,
+            "automate": task.get("automate"),
+            "run_once": task.get("runOnce"),
+            "voice_execute": task.get("voiceExecute"),
+        }
+        tv = task.get("taskValue")
+        if isinstance(tv, dict) and tv:
+            attrs["summary"] = _task_summary(tv)
+        if self._last_result is not None:
+            attrs["last_command_result"] = self._last_result
+        return attrs
+
+    @require_control
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._set_enabled(True)
+
+    @require_control
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self._set_enabled(False)
+
+    async def _set_enabled(self, enabled: bool) -> None:
+        """整条任务回传 update-task，仅翻转 enabled（与 App 行为一致）。"""
+        import time as _t
+        task = self._task()
+        if not task:
+            raise LiApiError("任务数据尚未加载（列表为空），请稍后再试")
+        payload = dict(task)
+        payload["enabled"] = enabled
+        try:
+            res = await self.hass.async_add_executor_job(
+                self._api.update_task, payload)
+            self._last_result = res
+            self._optimistic = enabled
+            self._optimistic_until = _t.monotonic() + OPTIMISTIC_TTL
+            _LOGGER.info("任务启停 %s → enabled=%s: %s",
+                         self._config_id, enabled, res)
+        except Exception as err:  # noqa: BLE001
+            self._optimistic = None
+            _LOGGER.error("任务启停失败 (%s): %s", self._config_id, err)
+            raise
+        if hasattr(self.coordinator, "invalidate_task_cache"):
+            self.coordinator.invalidate_task_cache()
         await self.coordinator.async_request_refresh()

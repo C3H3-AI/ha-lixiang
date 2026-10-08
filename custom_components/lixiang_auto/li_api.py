@@ -25,6 +25,8 @@ import urllib.parse
 import urllib.request
 import uuid
 
+from homeassistant.exceptions import HomeAssistantError
+
 
 from .policy import (
     POLICY_COMMAND,
@@ -132,6 +134,22 @@ EP_CMD_RESULT = "/ssp-vehicle-control-service/ssp-vehicle-control/cmd-result"
 EP_WAKEUP = "/iot-connect-manager-service/v2/wakeup"
 CTRL_DOMAIN = "xcu"
 
+# ---------- 任务大师（2026-10-07 真机抓包实证：全 HTTP，非 JOB 通道）----------
+# 白名单: subTokenData → type=httpLiMeshServiceV2:
+#   urls 含 /ssp-task-master-service, 同条目 scope 含 "task-master"
+# 鉴权: HZ 级 token (scope=task-master) + _signed_call 的 x-chj-* 签名头
+#   （抓包实测: Authorization: Bearer HZ:… + X-CHJ-Sign / X-CHJ-TOKEN）
+SCOPE_TASK_MASTER = "task-master"
+# 回退集（若单 scope 被服务端拒绝）：App subTokenData → httpLiMeshServiceV2.scope
+# 的权威 5 项（remote-wakeup / cmd-result / cmd-send / vss / task-master）
+SCOPE_TASK_MASTER_FULL = (
+    "remote-wakeup:wakeup veh-ctrl:cmd-result-get "
+    "veh-ctrl:cmd-send vss:get-batch task-master")
+EP_TASK_LIST = "/ssp-task-master-service/v1/task-config/mob/my-task-by-vin/{vin}"
+EP_TASK_SAVE = "/ssp-task-master-service/v1/task-config/mob/save/{vin}"
+EP_TASK_UPDATE = "/ssp-task-master-service/v1/task-config/mob/update-task/{vin}"
+EP_TASK_DELETE = "/ssp-task-master-service/v1/task-config/mob/delete/{vin}/{config_id}"
+
 # cmd-result pushState 语义
 PUSH_STATE_SUCCESS = 5     # 执行成功
 PUSH_STATE_FAILED = 7      # 执行失败
@@ -174,8 +192,64 @@ def vat_scope(vin: str) -> str:
     return " ".join(f"{c}:{vin}" for c in VAT_SCOPE_COMMANDS)
 
 
-class LiApiError(RuntimeError):
-    """理想 API 认证/请求错误"""
+def build_task_payload(
+    config_name: str,
+    conditions: list,
+    actions: list,
+    *,
+    config_id: str | None = None,
+    automate: bool = True,
+    voice_execute: bool = False,
+    run_once: bool = False,
+    run_once_frequency: str = "2",
+    enabled: bool = True,
+) -> dict:
+    """构造任务大师 save 请求体（字段与 2026-10-07 真机抓包逐字段一致）。
+
+    抓包样本（POST /task-config/mob/save/{VIN}）:
+      {"configName","configId","automate","voiceExecute","runOnceFrequency",
+       "runOnce","taskValue":{"conditions":[...],"actions":[...]},"enabled"}
+
+    configId 由客户端生成：``mob_<13位毫秒>``（样本 mob_1791366893482）。
+    conditions/actions 为字典数组，结构见 condition-and-action 字典接口
+      （GET /task-basic/mob/condition-and-action/{VIN}，15 条件/17 动作）。
+    """
+    if not config_name or not str(config_name).strip():
+        raise ValueError("任务名称 (name) 不能为空")
+    if conditions is None:
+        conditions = []
+    if not isinstance(conditions, list):
+        raise ValueError("conditions 必须是列表")
+    if not isinstance(actions, list) or not actions:
+        raise ValueError("actions 必须是非空列表")
+    return {
+        "configName": str(config_name).strip(),
+        "configId": config_id or f"mob_{int(time.time() * 1000)}",
+        "automate": bool(automate),
+        "voiceExecute": bool(voice_execute),
+        "runOnceFrequency": str(run_once_frequency),
+        "runOnce": bool(run_once),
+        "taskValue": {"conditions": conditions, "actions": actions},
+        "enabled": bool(enabled),
+    }
+
+
+def _ensure_task_ok(op: str, resp) -> None:
+    """任务大师接口成功判定（抓包响应: {"message":"SUCCESS","code":0,"success":true}）。"""
+    if isinstance(resp, dict) and (resp.get("code") in (0, "0") or resp.get("success")):
+        return
+    raise LiApiError(f"任务大师{op}失败: {str(resp)[:200]}")
+
+
+class LiApiError(HomeAssistantError):
+    """理想 API 认证/请求错误.
+
+    ★ 2026-10-07：基类由 RuntimeError 改为 HomeAssistantError ——
+      所有车控/HTTP/通道错误冒泡到 HA 前端时显示真实文案
+      （如 "pushState=7 resultCode=-3 msg=执行失败"），
+      而不是笼统的「Unexpected exception」。
+      （代码库内只按 LiApiError 子类捕获，无按 RuntimeError 捕获，改基类安全。）
+    """
 
 
 # ---------------------------------------------------------------------------
@@ -1343,6 +1417,81 @@ class LiApiClient:
                                     command_data: dict | None = None) -> dict:
         """下发但不等待结果 (用于寻车等不需要确认的命令)."""
         return self.send_command(command_key, command_data, poll=False)
+
+    # ---------- 任务大师 Task Master（2026-10-07 抓包实证，全 HTTP）----------
+
+    def _get_task_token(self) -> str:
+        """任务大师 token（scope=task-master，与 App subTokenData 一致）。"""
+        return self._get_scoped(
+            "taskmaster", SCOPE_TASK_MASTER, AUD_VSS, ttl=1800)
+
+    def _task_call(self, method: str, path: str, body: str = "") -> dict:
+        """任务接口统一入口：单 scope 失败 → 自动回退 App 完整 5 项 scope 重试一次。"""
+        try:
+            return self._signed_call(
+                method, path, body, self._get_task_token())
+        except LiApiError as err:
+            if self._tokens.get("taskmaster_full"):
+                raise  # 完整 scope 也失败过 → 不再重试，直接抛原始错误
+            _LOGGER.warning(
+                "任务接口首次失败，回退 App 完整 scope 重试一次: %s",
+                str(err)[:160])
+            tok = self._get_scoped(
+                "taskmaster_full", SCOPE_TASK_MASTER_FULL, AUD_VSS, ttl=1800)
+            try:
+                return self._signed_call(method, path, body, tok)
+            except LiApiError as err2:
+                raise LiApiError(f"{err2}（首次错误: {str(err)[:160]}）") from err2
+
+    def get_tasks(self, page_size: int = 50, page_no: int = 1,
+                  task_type: int = 0) -> list[dict]:
+        """我的任务列表 → GET /task-config/mob/my-task-by-vin/{VIN}。
+
+        抓包实测响应: {"message","data":[...45 条...],"code":0,"success":true}
+        data 直接是列表，条目含完整 taskValue（开关切换可整条回传 update）。
+        """
+        path = (EP_TASK_LIST.format(vin=self._vin)
+                + f"?pageSize={int(page_size)}&pageNo={int(page_no)}"
+                + f"&taskType={int(task_type)}")
+        resp = self._task_call("GET", path)
+        data = resp.get("data") if isinstance(resp, dict) else None
+        if not isinstance(data, list):
+            raise LiApiError(f"任务列表响应异常: {str(resp)[:200]}")
+        return data
+
+    def save_task(self, task: dict) -> dict:
+        """创建任务 → POST /task-config/mob/save/{VIN}（body 用 build_task_payload）。"""
+        path = EP_TASK_SAVE.format(vin=self._vin)
+        body = json.dumps(task, ensure_ascii=False, separators=(",", ":"))
+        resp = self._task_call("POST", path, body)
+        _ensure_task_ok("创建任务", resp)
+        return resp if isinstance(resp, dict) else {"success": True}
+
+    def update_task(self, task: dict) -> dict:
+        """更新任务 → POST /task-config/mob/update-task/{VIN}。
+
+        抓包实测：body 为任务全量对象（与列表条目同构，改 enabled 即启停）。
+        """
+        if not isinstance(task, dict) or not task.get("configId"):
+            raise ValueError("update_task 需要含 configId 的完整任务对象")
+        path = EP_TASK_UPDATE.format(vin=self._vin)
+        body = json.dumps(task, ensure_ascii=False, separators=(",", ":"))
+        resp = self._task_call("POST", path, body)
+        _ensure_task_ok("更新任务", resp)
+        return resp if isinstance(resp, dict) else {"success": True}
+
+    def delete_task(self, config_id: str) -> dict:
+        """删除任务 → DELETE /task-config/mob/delete/{VIN}/{configId}。
+
+        抓包实测（2026-10-07）：HTTP 200，响应 {"message":"SUCCESS","code":0,...}。
+        """
+        cid = str(config_id).strip() if config_id is not None else ""
+        if not cid:
+            raise ValueError("delete_task 需要 config_id")
+        path = EP_TASK_DELETE.format(vin=self._vin, config_id=cid)
+        resp = self._task_call("DELETE", path)
+        _ensure_task_ok("删除任务", resp)
+        return resp if isinstance(resp, dict) else {"success": True}
 
 
 

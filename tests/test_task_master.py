@@ -1,0 +1,190 @@
+# -*- coding: utf-8
+"""任务大师（2026-10-07）结构性守卫 + payload 构造实测。
+
+背景：任务大师走 HTTP /ssp-task-master-service（真机抓包实证，非 JOB 通道），
+     本文件守卫：
+       ① li_api 端点/令牌/方法不被误删或改错
+       ② build_task_payload 与抓包 schema 逐字段一致（真实执行，不靠子串）
+       ③ 实体与服务接线存在（LiTaskSwitch / LiTaskMasterSensor / create_task）
+"""
+from __future__ import annotations
+
+import ast
+import re
+import time
+from pathlib import Path
+
+_INTEG = Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+
+
+def _src(name: str) -> str:
+    return (_INTEG / name).read_text(encoding="utf-8")
+
+
+def _extract_function(source: str, name: str):
+    """从源码中提取纯函数并 exec（只依赖 time/builtins 的函数可直接实测）。"""
+    tree = ast.parse(source)
+    for node in tree.body:
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            module = ast.Module(body=[node], type_ignores=[])
+            code = compile(module, "<extracted>", "exec")
+            ns: dict = {"time": time}
+            exec(code, ns)  # noqa: S102 - 测试内提取自家纯函数
+            return ns[name]
+    raise AssertionError(f"未找到函数 {name}")
+
+
+# ---------------------------------------------------------------------------
+# ① 接口层
+# ---------------------------------------------------------------------------
+
+class TestLiApiTaskEndpoints:
+    def test_scope_is_task_master(self):
+        m = re.search(r'SCOPE_TASK_MASTER\s*=\s*"([^"]+)"', _src("li_api.py"))
+        assert m and m.group(1) == "task-master"
+
+    def test_endpoints_present(self):
+        s = _src("li_api.py")
+        for ep in ("/ssp-task-master-service/v1/task-config/mob/my-task-by-vin/{vin}",
+                   "/ssp-task-master-service/v1/task-config/mob/save/{vin}",
+                   "/ssp-task-master-service/v1/task-config/mob/update-task/{vin}",
+                   "/ssp-task-master-service/v1/task-config/mob/delete/{vin}/{config_id}"):
+            assert f'"{ep}"' in s, f"缺少端点 {ep}"
+
+    def test_methods_exist(self):
+        tree = ast.parse(_src("li_api.py"))
+        names = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+        for fn in ("get_tasks", "save_task", "update_task", "delete_task",
+                   "_get_task_token", "_task_call"):
+            assert fn in names, f"缺少方法 {fn}"
+
+    def test_scope_fallback_present(self):
+        """单 scope 被拒时回退 App 完整 5 项（含 task-master）。"""
+        s = _src("li_api.py")
+        m = re.search(r"SCOPE_TASK_MASTER_FULL\s*=\s*\((.*?)\)", s, re.S)
+        assert m, "缺少 SCOPE_TASK_MASTER_FULL"
+        joined = m.group(1).replace('"', "").replace("\n", "").replace(" ", "")
+        assert "task-master" in joined and "vss:get-batch" in joined
+
+    def test_signed_call_used(self):
+        """任务请求必须经 _task_call → _signed_call（抓包有 x-chj-sign）。"""
+        s = _src("li_api.py")
+        for fn in ("get_tasks", "save_task", "update_task"):
+            i = s.find(f"def {fn}(")
+            assert i > 0, fn
+            blk = s[i:i + 900]
+            assert "_task_call" in blk, f"{fn} 未走 _task_call"
+        i = s.find("def _task_call(")
+        assert i > 0 and "_signed_call" in s[i:i + 900]
+
+
+# ---------------------------------------------------------------------------
+# ② build_task_payload：与抓包 schema 逐字段一致（真实执行）
+# ---------------------------------------------------------------------------
+
+CAPTURED_KEYS = {
+    "configName", "configId", "automate", "voiceExecute",
+    "runOnceFrequency", "runOnce", "taskValue", "enabled",
+}
+
+
+class TestBuildTaskPayload:
+    def test_schema_matches_capture(self):
+        fn = _extract_function(_src("li_api.py"), "build_task_payload")
+        p = fn("测试任务",
+               [{"conditionType": "Microphone",
+                 "params": [{"key": "state", "value": "connected"}]}],
+               [{"actionType": "PowerOutlet",
+                 "params": [{"key": "operation", "value": "open"}]}])
+        assert set(p.keys()) == CAPTURED_KEYS, p.keys()
+        assert p["configId"].startswith("mob_")
+        assert p["configId"][4:].isdigit() and len(p["configId"]) == 17  # mob_+13位毫秒
+        assert p["runOnceFrequency"] == "2"
+        assert set(p["taskValue"].keys()) == {"conditions", "actions"}
+        assert p["enabled"] is True and p["automate"] is True
+        assert p["voiceExecute"] is False and p["runOnce"] is False
+
+    def test_config_id_is_millis_epoch(self):
+        fn = _extract_function(_src("li_api.py"), "build_task_payload")
+        t0 = int(time.time() * 1000)
+        cid = fn("x", [], [{"actionType": "A"}])["configId"]
+        assert cid.startswith("mob_")
+        assert int(cid.split("_")[1]) >= t0
+
+    def test_validation(self):
+        fn = _extract_function(_src("li_api.py"), "build_task_payload")
+        import pytest
+        with pytest.raises(ValueError):
+            fn("", [], [{"actionType": "A"}])          # 空名称
+        with pytest.raises(ValueError):
+            fn("名字", [], [])                          # 空动作
+        with pytest.raises(ValueError):
+            fn("名字", "not-a-list", [{"actionType": "A"}])  # conditions 类型错
+
+
+# ---------------------------------------------------------------------------
+# ③ 实体与服务接线
+# ---------------------------------------------------------------------------
+
+class TestEntitiesAndService:
+    def test_task_switch_class_and_dynamic_registration(self):
+        s = _src("switch.py")
+        tree = ast.parse(s)
+        names = {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+        assert "LiTaskSwitch" in names
+        assert "async_add_listener" in s, "缺少动态注册监听"
+        assert "invalidate_task_cache" in s, "启停后未失效任务缓存"
+        assert "update_task" in s, "开关未走 update_task"
+
+    def test_task_sensor_class(self):
+        s = _src("sensor.py")
+        tree = ast.parse(s)
+        names = {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+        assert "LiTaskMasterSensor" in names
+        assert '_task_summary' in s
+        assert "拉取错误" in s, "传感器需暴露拉取错误属性（排障入口）"
+
+    def test_task_summary_rendering(self):
+        fn = _extract_function(_src("sensor.py"), "_task_summary")
+        out = fn({"conditions": [{"paramDescs": ["已连接"]}],
+                  "actions": [{"paramDescs": ["打开"]}]})
+        assert "已连接" in out and "打开" in out and "→" in out
+        # save 请求体的另一种拼写 paramsDescs
+        out2 = fn({"conditions": [], "actions": [{"paramsDescs": ["关窗"]}]})
+        assert "关窗" in out2 and "无条件" in out2
+
+    def test_coordinator_fetch_and_invalidate(self):
+        s = _src("coordinator.py")
+        assert 'get_tasks' in s and '"tasks"' in s
+        assert "def invalidate_task_cache" in s
+        # 两个 return 路径都要带上 tasks + 错误上浮
+        assert s.count('data["tasks"] = _tasks') == 2, "离线/在线两个出口都要挂 tasks"
+        assert s.count('data["task_error"]') == 2, "两个出口都要挂 task_error"
+        assert "_task_error" in s, "coordinator 需记录拉取错误"
+
+    def test_create_task_service_wired(self):
+        s = _src("__init__.py")
+        assert 'SERVICE_CREATE_TASK = "create_task"' in s
+        assert "SERVICE_CREATE_TASK, _handle_create_task" in s
+        assert "SupportsResponse.OPTIONAL" in s
+        assert "build_task_payload" in s
+        yaml_src = _src("services.yaml")
+        assert "create_task:" in yaml_src
+        assert re.search(r"create_task:.*?name:.*?required: true", yaml_src, re.S)
+        assert re.search(r"create_task:.*?actions:.*?required: true", yaml_src, re.S)
+
+    def test_task_service_suite_wired(self):
+        """CRUD 服务套件（查询/更新/删除）接线完整。"""
+        s = _src("__init__.py")
+        for const, handler in (("SERVICE_GET_TASKS", "_handle_get_tasks"),
+                               ("SERVICE_UPDATE_TASK", "_handle_update_task"),
+                               ("SERVICE_DELETE_TASK", "_handle_delete_task")):
+            assert f'{const} =' in s, f"缺少常量 {const}"
+            assert f"{const}, {handler}" in s, f"未注册 {handler}"
+        assert "invalidate_task_cache" in s, "写服务后需失效任务缓存"
+        yaml_src = _src("services.yaml")
+        for svc in ("get_tasks:", "update_task:", "delete_task:"):
+            assert svc in yaml_src, f"services.yaml 缺 {svc}"
+        # update/delete 的 config_id 必填
+        assert re.search(r"update_task:.*?config_id:.*?required: true", yaml_src, re.S)
+        assert re.search(r"delete_task:.*?config_id:.*?required: true", yaml_src, re.S)

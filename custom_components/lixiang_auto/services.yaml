@@ -137,3 +137,165 @@ get_svm_photo:
       example: '["Front", "Rear"]'
       selector:
         object:
+
+create_task:
+  name: 创建任务大师任务
+  description: >-
+    创建一个「任务大师」自动化任务（HTTP /ssp-task-master-service，
+    2026-10-07 真机抓包实证的字段结构）。conditions/actions 传字典数组；
+    条件/动作类型可参考集成内「任务大师」传感器属性，或 App 内任务编辑页。
+    成功后任务列表传感器与开关会立即刷新。
+  fields:
+    vin:
+      name: VIN
+      description: 多车时指定目标车辆；留空则对所有条目执行
+      required: false
+      selector:
+        text:
+    name:
+      name: 任务名称
+      description: 任务名（必填，如 "上车自动关窗"）
+      required: true
+      example: 麦克风连接时开插座
+      selector:
+        text:
+    conditions:
+      name: 条件
+      description: >-
+        条件数组（可选，省略=无条件常开）。元素形如
+        {"conditionType":"Microphone","params":[{"key":"state","value":"connected"}]}
+      required: false
+      example: '[{"conditionType": "Microphone", "params": [{"key": "state", "value": "connected"}]}]'
+      selector:
+        object:
+    actions:
+      name: 动作
+      description: >-
+        动作数组（必填，至少一个）。元素形如
+        {"actionType":"PowerOutlet","params":[{"key":"operation","value":"open"}]}
+      required: true
+      example: '[{"actionType": "PowerOutlet", "params": [{"key": "operation", "value": "open"}]}]'
+      selector:
+        object:
+    automate:
+      name: 自动执行
+      description: 无条件自动运行（默认 true）
+      required: false
+      default: true
+      selector:
+        boolean:
+    voice_execute:
+      name: 语音可执行
+      description: 是否可被语音助手触发（默认 false）
+      required: false
+      default: false
+      selector:
+        boolean:
+    run_once:
+      name: 只运行一次
+      description: 触发一次后自动停用（默认 false）
+      required: false
+      default: false
+      selector:
+        boolean:
+    enabled:
+      name: 启用
+      description: 创建后是否立即启用（默认 true）
+      required: false
+      default: true
+      selector:
+        boolean:
+
+get_tasks:
+  name: 查询任务大师列表
+  description: >-
+    按需拉取任务大师完整列表（含每个任务的条件/动作 taskValue），
+    以服务响应形式返回，用于脚本/自动化里获取 config_id 或做条件判断。
+  fields:
+    vin:
+      name: VIN
+      description: 多车时指定目标车辆；留空则查询所有条目
+      required: false
+      selector:
+        text:
+
+update_task:
+  name: 更新任务大师任务
+  description: >-
+    按 config_id 更新已有任务。先拉取线上最新版本再合并覆盖字段
+    （不传的字段保持原值），避免旧缓存回写。conditions/actions 传字典数组。
+    成功后任务列表传感器与开关立即刷新。
+  fields:
+    vin:
+      name: VIN
+      description: 多车时指定目标车辆；留空则对所有条目执行
+      required: false
+      selector:
+        text:
+    config_id:
+      name: 任务ID
+      description: 目标任务的 configId（如 mob_1791366893482），来自传感器属性或 get_tasks
+      required: true
+      example: mob_1791366893482
+      selector:
+        text:
+    name:
+      name: 任务名称
+      description: 修改任务名（不传=不改）
+      required: false
+      selector:
+        text:
+    conditions:
+      name: 条件
+      description: 整体替换条件数组（不传=不改）
+      required: false
+      selector:
+        object:
+    actions:
+      name: 动作
+      description: 整体替换动作数组（不传=不改）
+      required: false
+      selector:
+        object:
+    automate:
+      name: 自动执行
+      description: 是否自动运行（不传=不改）
+      required: false
+      selector:
+        boolean:
+    voice_execute:
+      name: 语音可执行
+      description: 是否可被语音助手触发（不传=不改）
+      required: false
+      selector:
+        boolean:
+    run_once:
+      name: 只运行一次
+      description: 触发一次后自动停用（不传=不改）
+      required: false
+      selector:
+        boolean:
+    enabled:
+      name: 启用
+      description: 任务启停（不传=不改；也可用任务开关实体）
+      required: false
+      selector:
+        boolean:
+
+delete_task:
+  name: 删除任务大师任务
+  description: 按 config_id 删除任务（与 App 删除行为一致），成功后开关实体转为不可用。
+  fields:
+    vin:
+      name: VIN
+      description: 多车时指定目标车辆；留空则对所有条目执行
+      required: false
+      selector:
+        text:
+    config_id:
+      name: 任务ID
+      description: 目标任务的 configId（来自传感器属性或 get_tasks）
+      required: true
+      example: mob_1791366893482
+      selector:
+        text:

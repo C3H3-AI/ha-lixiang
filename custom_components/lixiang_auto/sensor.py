@@ -16,6 +16,7 @@ from typing import Any
 from homeassistant.components.sensor import (
     RestoreSensor,
     SensorDeviceClass,
+    SensorEntity,
     SensorEntityDescription,
     SensorStateClass,
 )
@@ -364,6 +365,72 @@ _VEHICLE_INFO_ATTRS = (
 from .features import feature_of as _feature_of  # noqa: E402
 
 
+# ---------------------------------------------------------------------------
+# 任务大师（2026-10-07，HTTP /ssp-task-master-service 抓包实证）
+# ---------------------------------------------------------------------------
+
+def _task_summary(task_value: dict) -> str:
+    """taskValue → 一行摘要："当 已连接 且 … → 打开…"。
+
+    paramDescs（列表响应）/ paramsDescs（save 请求体）两种拼写都兼容；
+    无描述时回退 conditionType / actionType。
+    """
+    def _one(item: dict) -> str:
+        descs = item.get("paramDescs") or item.get("paramsDescs")
+        if descs:
+            return "/".join(str(d) for d in descs)
+        return str(item.get("conditionType") or item.get("actionType") or "?")
+
+    conds = task_value.get("conditions") or []
+    acts = task_value.get("actions") or []
+    c = " 且 ".join(_one(x) for x in conds) or "（无条件）"
+    a = "；".join(_one(x) for x in acts) or "（无动作）"
+    return f"当{c} → {a}"
+
+
+class LiTaskMasterSensor(CoordinatorEntity, SensorEntity):
+    """任务大师列表汇总（state=任务总数，属性含每个任务的启停与摘要）。"""
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, device_info, vin: str) -> None:
+        super().__init__(coordinator)
+        self._attr_name = "任务大师"
+        self._attr_icon = "mdi:clipboard-list"
+        self._rid = route_id_of_vin(vin)
+        self._attr_unique_id = f"{DOMAIN}_{self._rid}_task_master"
+        self._attr_device_info = device_info
+
+    def _tasks(self) -> list[dict]:
+        t = (self.coordinator.data or {}).get("tasks")
+        return t if isinstance(t, list) else []
+
+    @property
+    def native_value(self):
+        return len(self._tasks())
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        tasks = self._tasks()
+        items = [
+            {
+                "configId": t.get("configId"),
+                "name": t.get("configName"),
+                "enabled": bool(t.get("enabled")),
+                "automate": bool(t.get("automate")),
+                "summary": _task_summary(t.get("taskValue") or {}),
+            }
+            for t in tasks
+        ]
+        return {
+            "任务数": len(tasks),
+            "启用数": sum(1 for t in items if t["enabled"]),
+            "任务": items,
+            # ★ 拉取失败时这里会显示具体错误（HTTP 状态/服务端响应），
+            #   成功后自动消失 —— 排查"任务数=0"先看这个属性
+            "拉取错误": (self.coordinator.data or {}).get("task_error") or "无",
+        }
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -415,6 +482,9 @@ async def async_setup_entry(
     entities = [
         LiCarSensor(coordinator, desc, device_info, vin) for desc, _ in keep
     ]
+    # ★ 任务大师列表汇总（2026-10-07）—— 有密码登录（li_api）才创建
+    if hass.data[DOMAIN][config_entry.entry_id].get("li_api") is not None:
+        entities.append(LiTaskMasterSensor(coordinator, device_info, vin))
     async_add_entities(entities)
 
 
