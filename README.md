@@ -4,7 +4,7 @@
 
 ---
 
-> ## ⚠️ BETA 版本（v1.0.0）
+> ## ⚠️ BETA 版本（v1.4.1）
 >
 > **本项目处于 Beta 阶段，欢迎试用但不建议用于关键场景。**
 >
@@ -17,7 +17,7 @@
 > | 多车 | ❌ **未支持**（一个集成实例 = 一辆车） |
 > | 信号语义 | ✅ **已用 App 官方 spec 全量审计**（150 信号 × 1563 路径，2026-09-28）<br>发现并修正 2 处语义错误 |
 > | 首次登录 | ⚠️ 辅助页面方案**刚验证 1 次**，不同网络/浏览器未测 |
-> | 单元测试 | ✅ **702 个**（signals / rendering / policy / coordinator / features / vehicle_role）<br>❓ 实车端到端仍需手工验证 |
+> | 单元测试 | ✅ **1142 个**（signals / rendering / policy / coordinator / features / vehicle_role / task_master）<br>❓ 实车端到端仍需手工验证 |
 >
 > ### 家人共享账号（2026-09-28 实测）
 >
@@ -76,7 +76,7 @@
 > | 场景模式 / 冰箱预约 | ❌ 未实现 |
 > | 宠物模式 / 洗车模式（App 8.25.3+）| ❌ 未实现 |
 > 
-> **技术细节**：详见 [docs/LiNdn长连接发现_20260925.md](docs/LiNdn长连接发现_20260925.md)。
+> **技术细节**：见仓库内的逆向分析文档（按设计不随公开仓库发布）。
 > LiNdn 是 Rust 实现的 NDN 协议栈（`liblivenet.so`，9.4 MB），
 > 需要 JOB_PORT token + GFM forwarding hint + HTTP-over-NDN 封装。
 > 
@@ -104,11 +104,11 @@
 > > 「remote_charge_control」走的是理想 App 的 LiNdn（JOB）通道，
 > > HTTP 车控接口不支持。这是已知限制，充电相关控制暂不可用。
 > 
-> **完整分析**：[docs/充电控制完整破解_20260926.md](docs/充电控制完整破解_20260926.md)
+> **完整分析**：见仓库内的逆向分析文档（按设计不随公开仓库发布）。
 > 
 > ### 反馈
 >
-> 遇到问题请提 [Issue](https://github.com/c3h3-ci/ha-lixiang/issues)，
+> 遇到问题请提 [Issue](https://github.com/C3H3-AI/ha-lixiang/issues)，
 > 并附上「设备 → 下载诊断」导出的 JSON（已脱敏）。
 >
 > ### 版本路线
@@ -134,6 +134,8 @@
   座椅加热/通风（8 个位置，含档位）、方向盘加热
 - **车辆定位**：GPS 轨迹（可显示在地图上）
 - **服务器通知**：拉取理想服务器的车辆预警通知（充电完成、电量不足等）
+- **任务大师**（v1.4.0+）：查看车机「任务大师」的任务列表，支持**创建 / 查询 /
+  更新 / 删除**任务，并按车上任务数量**动态注册启停开关**
 - **车型自适应**：自动探测车辆支持的功能，不同的车显示不同的实体
 - **账号自适应**：识别车主 / 家人共享 / 试驾（`vehicle_role.py`，复刻 App 的 `relationType`）
 - **多车支持**：一个账号多辆车（每辆车独立接入）
@@ -236,6 +238,12 @@ cp -r custom_components/lixiang_auto /path/to/homeassistant/config/custom_compon
 诊断类实体（OTA、保养、版本、遮阳帘、后视镜加热、主驾有人等）默认隐藏，
 需要时可在设备页面启用。
 
+> 💡 **任务大师相关实体（v1.4.0+，未计入上表数量）**：
+> · `sensor.<车名>_任务大师` —— 任务总数；属性含每个任务的启用状态与 `config_id`
+> · `switch.<车名>_<任务名>` —— **按车上任务数量动态注册**，用于启停单个任务
+>   （车上没有任务时不出现；在 App 里新增任务后会自动出现）
+> · 删除任务后，对应的开关会保留为「不可用」状态（HA 实体注册表的既有行为）
+
 ---
 
 ## 服务
@@ -244,6 +252,47 @@ cp -r custom_components/lixiang_auto /path/to/homeassistant/config/custom_compon
 |---|---|
 | `lixiang_auto.refresh` | 立即刷新一次数据 |
 | `lixiang_auto.wakeup` | 唤醒休眠的车辆 |
+| `lixiang_auto.dump_ability` | 导出车型能力表（探测本车支持哪些功能）|
+| `lixiang_auto.get_travel` | 查询行程 / 陪伴里程 |
+| `lixiang_auto.get_charge` | 查询充电记录 |
+| `lixiang_auto.get_svm_photo` | 查询驻车照片 |
+| `lixiang_auto.get_tasks` | 查询任务大师任务列表 |
+| `lixiang_auto.create_task` | 创建任务大师任务 |
+| `lixiang_auto.update_task` | 更新任务大师任务（只传要改的字段）|
+| `lixiang_auto.delete_task` | 删除任务大师任务 |
+
+> 除 `wakeup` / `refresh` 外的服务都支持可选 `vin` 字段（多车场景指定车辆），
+> 单车时省略即可。
+
+### 任务大师（v1.4.0+）
+
+任务大师走**独立的 HTTP 服务**（`/ssp-task-master-service`），与车控命令
+（`cmd/send`）是两条不同通道 —— 因此不受「充电控制走 LiNdn 通道不可用」的
+限制影响。
+
+- **参数说明与 JSON 构造** → [技能文档](docs/skills/lixiang-task-master/SKILL.md)
+- **条件 / 动作类型字典** → [schema.md](docs/skills/lixiang-task-master/references/schema.md)
+
+```yaml
+# 创建任务（conditionType / actionType 必须取自上面的字典，不要自造）
+service: lixiang_auto.create_task
+data:
+  name: 我的任务
+  conditions: []          # 留空 = 手动触发
+  actions:
+    - actionType: <取自字典>
+      params:
+        - key: <取自字典>
+          value: "<值>"
+```
+
+获取 `config_id` 的三种方式：**「任务大师」传感器的属性**、`get_tasks` 的返回值、
+或 `create_task` 的响应。
+
+> · `update_task` 会**先拉线上最新再合并你传的字段** —— 只传要改的字段，
+>   未传的保持原值。
+> · `delete_task` 成功后，对应的启停开关会转为「不可用」。
+> · 写操作成功后集成会自动失效缓存并刷新，无需手动再调 `refresh`。
 
 ---
 
@@ -342,6 +391,15 @@ A: 检查集成选项里「允许远程控制」是否开启。
 A: 车辆可能离线（集成会自动跳过轮询以省流量）。
    可用 `lixiang_auto.wakeup` 服务唤醒。
 
+**Q: 任务大师传感器显示 0，或服务列表里找不到任务大师服务**
+A: 先看「任务大师」传感器属性里的**「拉取错误」**字段（会写明原因）。常见情况：
+   - **必须用手机号 + 密码登录**（任务大师不支持其它登录方式）
+   - 车上确实还没有任务 —— 列表为空是正常的
+   - 接口偶发限流（集成有 120 秒缓存 + 失败重试，稍后自行恢复）
+   - 服务列表里找不到 → 集成版本低于 v1.4.0，或改了文件后**没有重启 HA**
+     （集成文件变更必须重启，重载集成无效）
+   完整排障表见 [技能文档](docs/skills/lixiang-task-master/SKILL.md)。
+
 **Q: 充电控制点了没反应 / 提示「充电走 LiNdn 通道，当前版本不支持控制」**
 A: **这是已知限制，不是故障。** 充电启停 / 上限 / 预约 / 保温走理想 App 的
    **LiNdn(JOB) 长连接**，而 HTTP 车控接口（`cmd/send`）不支持这些命令。
@@ -401,6 +459,7 @@ HA 的实体注册表**不会**因为平台或名称变化而自动改名 ——
 - 登录：PAKE 协议（手机号 + 密码）
 - 状态读取：VSS 实时信号通道
 - 车辆控制：车控 API（需要 VAT token）
+- 任务大师：独立 HTTP 服务（`/ssp-task-master-service`），与车控通道分离
 
 ---
 
