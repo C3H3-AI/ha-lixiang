@@ -18,14 +18,17 @@ Base：`https://api-app.lixiang.com`（集成内 `API_APP`）
 | GET | `/ssp-task-master-service/v1/square-recommendation/mob/query-task-list/{VIN}` | 广场推荐任务 |
 
 鉴权（抓包实测 + 2026-10-08 修正）：`Authorization: Bearer <五件套token>` +
-`X-CHJ-Sign` 签名头（集成 `_signed_call_task`，**签名第 7 段语言=zh-CN**）。
+`X-CHJ-Sign` 签名头（集成 `_signed_call_task`）。
+★ **签名串第 2 段版本必须与请求头 `x-chj-version`/`x-chj-app-version` 一致**
+（实测：旧版本签名 + 新版本头 → `100005 请求签名错误`；两段同为同一版本 → 通过。
+第 7 段语言 `zh-CN` / `zh-Hans-CN` 均可，**不影响校验**）。
 ★ 单换 `task-master` 会被 SSO 拒绝（HTTP 300 `access_denied`，且重登会引发
 「每分钟重登+清缓存」风暴——已加 `_is_scope_denied` 守卫禁止对 scope 拒绝重登），
 故固定使用 App subTokenData 权威五件套：
 `remote-wakeup:wakeup veh-ctrl:cmd-result-get veh-ctrl:cmd-send vss:get-batch task-master`。
 任务接口头照抄 App：`content-language=zh-CN`、`modelname=ANDROID`、
 `version=8.27.0`、`x-chj-metadata`、`accept-language=zh-CN`、M01 UA
-（travel 接口同款教训：默认头会被拒，改语言必须同步重签）。
+（★ 头里的版本一旦改动，**签名第 2 段必须同步改**，否则 100005）。
 
 ## 2. create 请求体（原样抓包）
 
@@ -111,7 +114,8 @@ Base：`https://api-app.lixiang.com`（集成内 `API_APP`）
 
 ## 7. 集成侧实现要点（改代码前先读）
 
-- `li_api.py`：`SCOPE_TASK_MASTER`、`EP_TASK_*`、`_task_call`（签名+scope回退）、
+- `li_api.py`：`SCOPE_TASK_MASTER`（App 权威五件套）、`EP_TASK_*`、
+  `_task_call`（五件套 token + `_signed_call_task` 签名调用）、
   `get_tasks/save_task/update_task/delete_task`、`build_task_payload`。
 - `coordinator.py`：`data["tasks"]`（120s 缓存，失败 60s 重试）、
   `data["task_error"]`（上浮到传感器属性）、`invalidate_task_cache()`。
