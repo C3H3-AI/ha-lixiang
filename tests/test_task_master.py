@@ -65,6 +65,7 @@ class TestLiApiTaskEndpoints:
                    "_get_task_token", "_task_call", "_signed_call_task"):
             assert fn in names, f"缺少方法 {fn}"
         assert "_is_scope_denied" in names, "缺少 scope 拒绝判别函数"
+        assert "_is_unauthorized" in names, "缺少 401 判别函数"
 
     def test_scope_denied_no_relogin(self):
         """★ scope 被拒 ≠ 会话失效：_get_scoped 不得对其触发重登。
@@ -84,6 +85,45 @@ class TestLiApiTaskEndpoints:
         helper = s[i2:i2 + 400]
         assert "access_denied" in helper and "HTTP 300" in helper
 
+    def test_is_unauthorized(self):
+        """★ 401 判别纯函数【真实执行】（不靠子串匹配源码）。"""
+        fn = _extract_function(_src("li_api.py"), "_is_unauthorized")
+        # 真机原文样例：HTTP 401 {"status":401,"error":"Unauthorized",...}
+        assert fn(Exception('GET /x: HTTP 401 {"status":401,"error":"Unauthorized"}')) is True
+        assert fn(Exception("Unauthorized")) is True
+        # 不该误判的其它错误
+        assert fn(Exception("HTTP 403 forbidden")) is False
+        assert fn(Exception("任务列表响应异常: {'code': 100005}")) is False
+        assert fn(Exception("HTTP 300 access_denied")) is False
+        assert fn(Exception("HTTP 429 rate limited")) is False
+
+    def test_task_call_401_selfheal(self):
+        """★ 任务接口遇 401 必须【主动失效 token 缓存并重取】。
+
+        2026-10-08 真机教训：401 连续 147 次、跨 10 小时才自愈 ——
+        因为缓存 token（ttl=1800s）未失效，每 60s 重试都复用同一个
+        被拒 token，必须等 ttl 到期才重新换取。
+        """
+        s = _src("li_api.py")
+        i = s.find("def _task_call(")
+        assert i > 0, "缺少 _task_call"
+        j = s.find("def get_tasks(", i)
+        blk = s[i:j] if j > i else s[i:i + 1400]
+
+        pos_guard = blk.find("if not _is_unauthorized(err)")
+        pos_inval = blk.find('_invalidate_token("taskmaster")')
+        assert pos_guard > 0, "_task_call 未判别 401"
+        assert pos_inval > 0, "遇 401 未失效 taskmaster 缓存"
+        assert pos_guard < pos_inval, "必须先判别 401 再失效缓存"
+
+        # ★ 只失效 taskmaster，不得触发重登（PR #11 修掉的重登风暴）
+        assert "self._login()" not in blk, "401 自愈不得触发 _login()"
+        assert "_tokens.clear()" not in blk, "401 自愈不得清空全部 token"
+
+        # 失效缓存后必须重取 token 并重试一次
+        assert blk.count("_signed_call_task(") >= 2, "401 后须重取 token 重试一次"
+        assert blk.count("self._get_task_token()") >= 2, "重试须重新获取 token"
+
     def test_signed_call_used(self):
         """任务请求必须经 _task_call → _signed_call_task（App 实测头 + 重签）。"""
         s = _src("li_api.py")
@@ -93,7 +133,10 @@ class TestLiApiTaskEndpoints:
             blk = s[i:i + 900]
             assert "_task_call" in blk, f"{fn} 未走 _task_call"
         i = s.find("def _task_call(")
-        assert i > 0 and "_signed_call_task" in s[i:i + 400]
+        assert i > 0, "缺少 _task_call"
+        j = s.find("def get_tasks(", i)
+        blk = s[i:j] if j > i else s[i:i + 1500]
+        assert "_signed_call_task" in blk, "_task_call 未走 _signed_call_task"
 
     def test_task_headers_match_app_capture(self):
         """任务专用签名调用的头与抓包一致（403 排查：travel 同款教训）。"""
