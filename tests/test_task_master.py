@@ -106,6 +106,13 @@ class TestLiApiTaskEndpoints:
         assert '"Content-Language": "zh-CN"' in blk
         assert '"X-CHJ-ModelName": "ANDROID"' in blk
         assert "X-CHJ-Metadata" in blk and "Accept-Language" in blk
+        # ★ 签名第 2 段必须等于请求头版本（不一致 → 100005，
+        #   2026-10-08 维护者真机变体矩阵：8.25.4签名+8.27.0头=100005）
+        m_data = re.search(r'data = "\\n"\.join\(\[(.*?)\]\)', blk, re.S)
+        assert m_data, "未找到签名 data 串"
+        assert "TASK_APP_VERSION" in m_data.group(1), "签名第2段必须用 TASK_APP_VERSION"
+        assert "SIGN_APP_VERSION" not in m_data.group(1), (
+            "签名第2段不得用 SIGN_APP_VERSION（与头不一致 → 100005）")
         # 版本/UA 常量存在
         s2 = _src("li_api.py")
         assert 'TASK_APP_VERSION = "8.27.0"' in s2
