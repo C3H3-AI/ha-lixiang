@@ -384,3 +384,19 @@ def test_home_card_header_is_sticky():
     assert "scrollTop" in src, "未读取滚动容器的 scrollTop"
     # 监听器清理
     assert "_scrollCleanups" in src and "removeEventListener" in src, "滚动监听未清理"
+
+
+def test_home_card_header_avoids_ha_toolbar():
+    """★ 2026-10-09 用户反馈「抬头还是会被遮挡」的回归守卫。
+
+    HA 的顶栏是 position:fixed 覆盖层（高度 = --header-height，实测 56px）：
+      · 覆盖式布局（窄屏）：滚动容器顶边在视口顶端 → 抬头必须下移一个顶栏高度
+      · 预留式布局（宽屏）：滚动容器顶边已在顶栏之下 → 不能下移，否则露空白
+    因此粘顶位置必须由 JS 按实测布局算，不能写死 top:0 / top:56px。
+    """
+    src = (CARDS / "lixiang-app-home.js").read_text(encoding="utf-8")
+    assert "--header-height" in src, "未读取 HA 顶栏高度 --header-height"
+    assert "_headTopOffset" in src, "缺少「避开 HA 顶栏」的粘顶位置计算"
+    assert "--lx-head-top" in src, "粘顶位置未接到 CSS 变量 --lx-head-top"
+    assert "top:var(--lx-head-top" in src.replace(" ", ""), "CSS 未使用 --lx-head-top 作为 top"
+    assert "_scrollRoot" in src, "缺少滚动容器探测（决定是否覆盖式布局）"
