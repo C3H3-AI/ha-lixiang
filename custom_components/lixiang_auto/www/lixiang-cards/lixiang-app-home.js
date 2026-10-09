@@ -248,11 +248,19 @@ const QUICK = [
   { key:"lock",   name:"车锁",       off:"ic_home_lock_off_lisa.png",           on:"ic_home_lock_open_lisa.png" },
   { key:"window", name:"车窗",       off:"ic_home_window_off_lisa.png",         on:"ic_home_window_on_lisa.png" },
   { key:"trunk",  name:"尾门",       off:"ic_home_tail_w_off_2025.png",         on:"ic_home_tail_w_on_2025.png" },
-  { key:"auth",   name:"授权驾驶",   off:"ic_home_authorization_off_lisa.png",  on:"ic_home_authorization_on_lisa.png" },
-  { key:"summon", name:"直线召唤", note:"需车辆支持",   off:"ic_home_parkingout_off_lisa.png",     on:"ic_home_parkingout_on_lisa.png" },
+  // ★ 2026-10-09：授权驾驶是【动作】（button，cmdKey=remoteVehAuth），
+  //   可执行实体与状态显示实体分开：auth=动作，stateField=授权状态。
+  { key:"auth",   name:"授权驾驶", stateField:"auth_state",
+    off:"ic_home_authorization_off_lisa.png",  on:"ic_home_authorization_on_lisa.png" },
+  { key:"summon", name:"直线召唤", note:"集成暂未支持（命令走 JOB 通道）",
+    off:"ic_home_parkingout_off_lisa.png",     on:"ic_home_parkingout_on_lisa.png" },
   { key:"find",   name:"寻车",       off:"ic_summon_lisa.png",                  on:"ic_summon_lisa.png" },
-  { key:"port",   name:"充电口盖",   off:"ic_home_chrgporlid_off_lisa.png",     on:"ic_home_chrgporlid_on_lisa.png" },
-  { key:"mirror", name:"后视镜加热", off:"ic_home_rearmirroheat_off_lisa.png",  on:"ic_home_rearmirroheat_on_lisa.png" },
+  // optimMs：充电盖开合需数秒、状态回读慢 → 乐观值多留一会儿
+  { key:"port",   name:"充电口盖", optimMs:12000,
+    off:"ic_home_chrgporlid_off_lisa.png",     on:"ic_home_chrgporlid_on_lisa.png" },
+  // optimMs：后视镜加热是 App 侧 660s 长命令，VSS 回读更慢
+  { key:"mirror", name:"后视镜加热", optimMs:60000,
+    off:"ic_home_rearmirroheat_off_lisa.png",  on:"ic_home_rearmirroheat_on_lisa.png" },
 ];
 
 const FALLBACK = {
@@ -676,7 +684,10 @@ class LixiangAppHome extends HTMLElement {
     const eid = this._eidIn("quick", key);
     const el = this.querySelector(`.q[data-key="${key}"]`);
     const def = QUICK.find(x => x.key === key);
-    if (!eid) { this._toast(`${def.name} 尚未接入`, "err"); return; }
+    if (!eid) {
+      this._toast(`${def.name} ${def.note || "尚未接入"}`, "err");
+      return;
+    }
     if (!this._online()) { this._toast("车辆离线，操作不可用", "err"); return; }
     const s = this._hass.states[eid];
     if (!s) { this._toast("实体不存在", "err"); return; }
@@ -690,10 +701,17 @@ class LixiangAppHome extends HTMLElement {
         const unlocked = ["unlocked","已解锁","开锁"].some(v => String(s.state).includes(v));
         await this._hass.callService("lock", unlocked ? "lock" : "unlock", { entity_id: eid });
         this._optim[key] = !unlocked;
-      } else if (dom === "cover" || dom === "switch") {
+      } else if (dom === "cover") {
+        // ★ 2026-10-09 修复：cover 域【没有】open/close 服务，
+        //   正确服务名是 open_cover / close_cover（此前调用必然失败）。
         const opened = ["open","opening","on","开启","已连接"].some(v => String(s.state).includes(v));
-        await this._hass.callService(dom, opened ? "close" : "open", { entity_id: eid });
+        await this._hass.callService("cover", opened ? "close_cover" : "open_cover", { entity_id: eid });
         this._optim[key] = !opened;
+      } else if (dom === "switch") {
+        // ★ 2026-10-09 修复：switch 域没有 open/close，只有 turn_on/turn_off。
+        const on = ["on","open","开启","true"].some(v => String(s.state).includes(v));
+        await this._hass.callService("switch", on ? "turn_off" : "turn_on", { entity_id: eid });
+        this._optim[key] = !on;
       } else if (dom === "select") {
         const opts = (s.attributes && s.attributes.options) || [];
         const cur = opts.indexOf(s.state);
@@ -702,7 +720,7 @@ class LixiangAppHome extends HTMLElement {
         this._toast(`${def.name} → ${next}`, "ok");
       } else if (dom === "button") {
         await this._hass.callService("button","press",{entity_id:eid});
-      } else if (dom === "binary_sensor") {
+      } else if (dom === "binary_sensor" || dom === "sensor") {
         // 只读实体：不能控制，明确告知
         this._toast(`${def.name} 为只读状态，无法远程控制`, "err");
         return;
@@ -715,7 +733,8 @@ class LixiangAppHome extends HTMLElement {
       setTimeout(() => el.classList.remove("done"), 2400);
       this._toast(`${def.name} 已执行`, "ok");
       this._applyQuick();
-      setTimeout(() => { delete this._optim[key]; this._applyQuick(); }, 3500);
+      const ttl = (def && def.optimMs) || 3500;
+      setTimeout(() => { delete this._optim[key]; this._applyQuick(); }, ttl);
     } catch (err) {
       this._toast(`${def.name} 失败：${(err && err.message) || "未知"}`, "err");
     } finally {
@@ -729,17 +748,22 @@ class LixiangAppHome extends HTMLElement {
       const el = this.querySelector(`.q[data-key="${it.key}"]`);
       if (!el) return;
       const eid = this._eidIn("quick", it.key);
+      // stateField：动作类按钮（如授权驾驶 = button）用另一个实体显示状态
+      const stateEid = (it.stateField && this._eid(it.stateField)) || eid;
       let active = false; const missing = !eid || !this._st(eid);
-      if (eid && this._st(eid)) {
+      if (stateEid && this._st(stateEid)) {
         if (it.key in this._optim) active = this._optim[it.key];
         else if (it.key === "lock") {
-          const v = String((this._st(eid) || {}).state || "");
+          const v = String((this._st(stateEid) || {}).state || "");
           active = ["unlocked","已解锁"].some(x => v.includes(x));
-        } else active = this._on(eid);
+        } else active = this._on(stateEid);
       }
       el.className = "q" + (active ? " on" : "") + ((missing || offline) ? " dim" : "")
                    + (this._busy[it.key] ? " busy" : "");
       el.setAttribute("aria-pressed", active ? "true" : "false");
+      // 未接入的按钮：把原因写在下面（例如"集成暂未支持"），避免用户反复点
+      const sub = el.querySelector(".sub");
+      if (sub && missing && it.note) sub.textContent = it.note;
       const img = el.querySelector("img");
       if (img) img.src = this._img(active ? it.on : it.off);
     });

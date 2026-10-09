@@ -5,7 +5,7 @@
 [![Validate](https://github.com/C3H3-AI/ha-lixiang/actions/workflows/validate.yml/badge.svg)](https://github.com/C3H3-AI/ha-lixiang/actions/workflows/validate.yml)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Version](https://img.shields.io/badge/version-1.4.5-blue.svg)
+![Version](https://img.shields.io/badge/version-1.4.6-blue.svg)
 
 > ⚠️ **Beta 阶段** —— 功能可用，但边界场景尚未覆盖，不建议用于关键场景。
 > 当前仅 **理想 L6** 长期验证；L7 / L8 / L9 / MEGA / i 系列**未验证**。
@@ -147,8 +147,12 @@ cp -r custom_components/lixiang_auto /path/to/homeassistant/config/custom_compon
 > · 尾门/车窗 → `cover`（支持 open/close + 位置读回，无需单独开/关按钮）
 > · 哨兵/快冷/快热/除霜 → `switch`（带状态读回，一眼可见开关状态）
 
-诊断类实体（OTA、保养、版本、遮阳帘、后视镜加热、主驾有人等）默认隐藏，
+诊断类实体（OTA、保养、版本、遮阳帘、后视镜加热状态、主驾有人等）默认隐藏，
 需要时可在设备页面启用。
+
+> 💡 别混淆：`binary_sensor.<车名>_左/右后视镜加热`（诊断、默认隐藏、只读状态）
+> 与 `switch.<车名>_后视镜加热`（可控开关，2026-10-09 实车实测通过）是两个实体。
+> 充电口盖同理：`binary_sensor.充电口盖` 只读展示，`switch.充电盖` 可开合。
 
 > 💡 **任务大师相关实体（v1.4.0+，未计入上表数量）**：
 > · `sensor.<车名>_任务大师` —— 任务总数；属性含每个任务的启用状态与 `config_id`
@@ -414,8 +418,26 @@ HA 的实体注册表**不会**因为平台或名称变化而自动改名 ——
 | 账号 | ✅ 车主账号<br>✅ **家人共享账号**（2026-09-28 实测）<br>❓ 试驾账号**未验证** |
 | 多车 | ✅ 一个账号多辆车<br>❌ 一辆车接两个账号（VIN 冲突）|
 | 信号语义 | ✅ **已用 App 官方 spec 全量审计**（150 信号 × 1563 路径，2026-09-28）<br>发现并修正 2 处语义错误 |
+| 车控（新增两路）| ✅ **充电盖（`cpCtrl`）· 后视镜加热（`rmCtrl`）实车实测通过**（2026-10-09，开/关均生效）|
 | 首次登录 | ⚠️ 辅助页面方案**刚验证 1 次**，不同网络/浏览器未测 |
-| 单元测试 | ✅ **1142 个**（signals / rendering / policy / coordinator / features / vehicle_role / task_master）<br>❓ 实车端到端仍需手工验证 |
+| 单元测试 | ✅ **1176 个通过**（signals / rendering / policy / coordinator / features / vehicle_role / task_master / 卡片绑定）<br>❓ 实车端到端仍需手工验证 |
+
+### 2026-10-09 实车新增验证：充电盖 / 后视镜加热
+
+这两路车控 2026-10-07 由 APK 反编译得到（`XVehicleJobHelper.handleCmdKey`），
+2026-10-09 由**实车实测确认可用**：
+
+| 实体 | 命令 | 状态源 | 实测结论 |
+|---|---|---|---|
+| `switch.<车名>_充电盖` | `cpCtrl` `{"cpOpen":"ON"/"OFF"}` | `ChrgPorLidStsV2`（-1 无效 / 0 关 / 非 0 开）| ✅ 开/关均生效，状态回读一致 |
+| `switch.<车名>_后视镜加热` | `rmCtrl` `{"ctrlType":"HEAT","ctrlValue":"ON"/"OFF"}` | `RearMirro.LHeatSts/RHeatSts`（任一非 0 → 开）| ✅ 开/关均生效；660s 后按 App 语义自动停止 |
+
+> 补充说明：2026-09-26 曾判定 VAT token 的 `cpCtrl` scope 被服务端 `access_denied`。
+> 实车结果表明**车控通道的 cmdKey 分发不受该 scope 判定影响** —— 那条结论只针对
+> 旧版 VAT 的 scope 申请，不代表充电盖不能控制。
+>
+> 只读的 `binary_sensor.<车名>_充电口盖`（展示用）与可控制的 `switch.充电盖` 是两个实体；
+> 卡片的「充电口盖」按钮走的就是后者。
 
 ### 家人共享账号（2026-09-28 实测）
 
@@ -552,7 +574,7 @@ PYTHONUTF8=1 python -m pytest tests/ -q
 
 ## 更新日志
 
-见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v1.4.5**。
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v1.4.6**。
 
 ---
 
