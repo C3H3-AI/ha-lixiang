@@ -198,6 +198,12 @@ car_default_collapsed: false   # 默认是否收起
 
 > 抬头固定靠 `position:sticky`，因此在 HA 的外层滚动容器里同样生效；
 > 粘顶判定读的是滚动事件目标的 `scrollTop`（`window.scrollY` 在外层容器滚动时恒为 0）。
+>
+> ⚠️ **要避开 HA 顶栏**：HA 顶栏是 `position:fixed` 覆盖层（高度 = `--header-height`，
+> 实测 56px），若把抬头写成 `top:0`，它会正好钉进顶栏下面那 56px 里 → 被盖住
+> （v1.4.7 的真实用户反馈）。v1.4.8 起由 JS 按实测布局算粘顶位置，写入 `--lx-head-top`：
+> 覆盖式布局下移一个顶栏高度、预留式布局不下移。诊断字段：卡片 `.root` 上的
+> `data-head-top`（当前避让了多少 px）。
 
 ---
 
