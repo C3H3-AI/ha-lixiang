@@ -72,6 +72,124 @@ def test_cards_have_a11y():
         assert "prefers-reduced-motion" in src, f"{fname} 未尊重动效偏好"
 
 
+def test_cards_support_forced_theme():
+    """★ 必须支持 theme: 配置强制指定明暗（2026-10-09 修复）。
+
+    背景：此前 13 个有 UI 的卡片里只有 4 个支持 data-theme —— 用户在 YAML 里写
+    `theme: dark` 时，多数卡片仍跟随系统，配置形同无效。
+    统一要求：
+      ① CSS 有 data-theme="dark"/"light" 两套令牌
+      ② JS 在 setConfig 里把配置写到 dataset.theme（否则 CSS 永不生效）
+    """
+    for fname in EXPECTED:
+        src = (CARDS / fname).read_text(encoding="utf-8")
+        assert 'data-theme="dark"' in src, f"{fname} 缺强制 dark 主题样式"
+        assert 'data-theme="light"' in src, f"{fname} 缺强制 light 主题样式"
+        assert "dataset.theme" in src, (
+            f"{fname} 未在 setConfig 写入 dataset.theme（theme 配置不会生效）")
+
+
+def test_cards_theme_tokens_consistent():
+    """★ 强制主题令牌须与卡片既有主题一致（避免切换主题时颜色跳变/视觉回归）。"""
+
+    def _tokens(block: str) -> dict:
+        found = re.findall(r'(--lx-[a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{3,8})', block)
+        return {k: v.lower() for k, v in found}
+
+    for fname in EXPECTED:
+        src = (CARDS / fname).read_text(encoding="utf-8")
+        m_def = re.search(r':host\s*\{([^}]*)\}', src)
+        m_light = re.search(r'\[data-theme="light"\][^{]*\{([^}]*)\}', src)
+        m_dark = re.search(r'\[data-theme="dark"\][^{]*\{([^}]*)\}', src)
+        m_media = re.search(
+            r'@media\s*\(prefers-color-scheme:\s*dark\)\s*\{\s*:host[^{]*\{([^}]*)\}',
+            src, re.S)
+        assert m_light and m_dark, f"{fname} 缺强制主题令牌块"
+        t_def = _tokens(m_def.group(1)) if m_def else {}
+        t_light = _tokens(m_light.group(1))
+        t_dark = _tokens(m_dark.group(1))
+        t_media = _tokens(m_media.group(1)) if m_media else {}
+        # 强制 light 的 card/line 沿用本卡片默认值（保留既有视觉，避免回归）
+        for key in ("--lx-card", "--lx-line"):
+            if key in t_def and key in t_light:
+                assert t_def[key] == t_light[key], (
+                    f"{fname} 强制 light 的 {key} 与默认值不一致（会改变原有视觉）")
+        # 强制 dark 与"跟随系统 dark"的令牌必须一致
+        for key, val in t_media.items():
+            if key in t_dark:
+                assert val == t_dark[key], (
+                    f"{fname} 强制 dark 的 {key} 与系统 dark 不一致"
+                    f"（{val} vs {t_dark[key]}）")
+
+
+def test_theme_selector_matches_js_target():
+    """★ 强制主题的 CSS 选择器必须与 JS 实际写入位置一致（2026-10-09 真 bug）。
+
+    事故：CSS 写成 :host([data-theme=...])（期望属性在 host 上），
+          但 JS 写的是 root.dataset.theme（属性在 .root 上）
+          → 选择器永不命中，强制主题静默失效，且静态测试查子串仍会「通过」。
+    因此必须显式断言二者一致：
+      · 若 CSS 用 :host([data-theme=...]) → JS 必须写 host 属性（this.dataset.theme）
+      · 若 CSS 用 .root[data-theme=...]   → JS 必须写 root.dataset.theme
+    """
+    for fname in EXPECTED:
+        src = (CARDS / fname).read_text(encoding="utf-8")
+        css_on_host = ':host([data-theme=' in src
+        css_on_root = '.root[data-theme=' in src
+        assert css_on_host or css_on_root, f"{fname} 无强制主题选择器"
+        js_on_root = "root.dataset.theme" in src
+        js_on_host = bool(re.search(r'this\.dataset\.theme', src))
+        if css_on_root:
+            assert js_on_root, (
+                f"{fname} CSS 用 .root[data-theme] 但 JS 未写 root.dataset.theme —— 选择器永不命中")
+        if css_on_host and not css_on_root:
+            assert js_on_host, (
+                f"{fname} CSS 用 :host([data-theme]) 但 JS 未写 host 属性 —— 选择器永不命中")
+
+
+def test_theme_reads_persisted_config_not_param():
+    """★ 主题赋值引用的 c 必须在同作用域内声明（2026-10-09 真事故）。
+
+    事故：在某卡片 _build() 里写 `root.dataset.theme = c.theme || "light"`，
+          而该 _build() 内并没有声明 c（c 只是 setConfig 的形参）
+          → ReferenceError → setConfig/hass 抛错 → 卡片完全不渲染。
+          静态测试只查"是否含 dataset.theme"子串会误判通过，
+          浏览器实测（真实 setConfig→hass→_build 全链路）才暴露。
+
+    合法两种写法：
+      ① _build 内有 `const c = this._config;` 别名 → 可用 c.theme（4 个老卡片如此）
+      ② 直接用 (this._config && this._config.theme) || "light"（本次 9 个卡片采用）
+    """
+    for fname in EXPECTED:
+        src = (CARDS / fname).read_text(encoding="utf-8")
+        for m in re.finditer(r'root\.dataset\.theme\s*=\s*([^;]+);', src):
+            rhs = m.group(1)
+            if "c.theme" not in rhs:
+                continue
+            # 找到该赋值所处方法（setConfig / _build ...）的起点
+            starts = [(mm.start(), mm.group(0).strip()[:12]) for mm in
+                      re.finditer(r'\n\s*(setConfig|_build)\s*\([^)]*\)\s*\{', src)]
+            owner_start = None
+            for st, _nm in starts:
+                if st < m.start(): owner_start = st
+            if owner_start is None:
+                owner_start = 0
+            body_start = src.find('{', owner_start) + 1
+            # 花括号配对得到方法体
+            depth, k = 1, body_start
+            while k < len(src) and depth > 0:
+                if src[k] == '{': depth += 1
+                elif src[k] == '}': depth -= 1
+                k += 1
+            body = src[body_start:k]
+            has_alias = re.search(r'(?:const|let|var)\s+c\s*=\s*this\._config', body) is not None
+            assert has_alias, (
+                f"{fname} 的主题赋值用了 c.theme，但所在方法内没有 `const c = this._config` 别名"
+                f"（{rhs.strip()}）→ 会 ReferenceError、卡片不渲染；"
+                f" 请改为 (this._config && this._config.theme) || \"light\"")
+
+
+
 def test_cards_cleanup_resources():
     """必须实现 disconnectedCallback（防内存泄漏）。"""
     for fname in EXPECTED:
