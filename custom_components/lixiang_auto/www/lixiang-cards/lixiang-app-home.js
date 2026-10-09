@@ -42,7 +42,19 @@ const STYLE = `
   .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
     --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
 
-  .head { padding:8px 20px 0; }
+  /* ★ 2026-10-09（用户要求）：抬头固定 —— 滚动时头部（车型/续航/状态）不再消失。
+     · .head 粘顶（任何滚动容器都成立，HA 卡片外层滚动也可）
+     · 粘顶后收紧成单行 + 隐藏缩略 3D，避免固定头部占掉半屏 */
+  .head { position:sticky; top:0; z-index:30; background:var(--lx-bg);
+          padding:8px 20px 0; transition:box-shadow .2s, padding .2s, background .2s; }
+  .root.stuck .head { padding-bottom:8px; border-bottom:1px solid var(--lx-line);
+          box-shadow:0 6px 16px rgba(0,0,0,.06); }
+  .root.stuck .head .hrow { align-items:baseline; }
+  .root.stuck .head .hleft { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
+  .root.stuck .head .title { font-size:18px; line-height:1.25; }
+  .root.stuck .head .ranges { margin-top:0; gap:10px; }
+  .root.stuck .head .parked { margin-top:0; font-size:12px; }
+  .root.stuck .head .mini { display:none; }
   .hrow { display:flex; align-items:flex-start; gap:10px; }
   .hleft { flex:1; min-width:0; }
   .title { font-size:25px; font-weight:600; letter-spacing:.2px; line-height:1.15; }
@@ -396,8 +408,22 @@ class LixiangAppHome extends HTMLElement {
   getCardSize() { return 22; }
 
   disconnectedCallback() {
+    if (this._scrollCleanups) {
+      for (const fn of this._scrollCleanups) { try { fn(); } catch (e) {} }
+      this._scrollCleanups = null;
+    }
     if (this._cleanupScroll) { this._cleanupScroll(); this._cleanupScroll = null; }
     if (this._poll) { clearInterval(this._poll); this._poll = null; }
+  }
+
+  /** 当前滚动量。
+   *  ★ 2026-10-09：HA 里滚动常常发生在【外层容器】而不是文档
+   *  （此时 window.scrollY 恒为 0）——所以优先读 scroll 事件目标的 scrollTop。
+   *  scroll 不冒泡，但带 capture 的监听能收到子容器的 scroll 事件。 */
+  _scrollTopOf(ev) {
+    const t = ev && ev.target;
+    if (t && t.nodeType === 1 && typeof t.scrollTop === "number") return t.scrollTop;
+    return window.scrollY || document.documentElement.scrollTop || 0;
   }
 
   _st(id) { return (id && this._hass) ? this._hass.states[id] : null; }
@@ -540,6 +566,26 @@ class LixiangAppHome extends HTMLElement {
     `;
     this.appendChild(root);
 
+    // ★ 2026-10-09（用户要求）：抬头固定。
+    //   .head 用 position:sticky 粘顶；这里判断"是否已粘顶"以收紧头部。
+    //   ⚠️ 用真实滚动量判断，不用 IntersectionObserver：
+    //     HA 的滚动常发生在外层滚动容器里（视口 root 的 IO 会误判为"仍可见"），
+    //     而 scroll 事件带 capture 能拿到容器，事件目标就是那个容器的 scrollTop。
+    this._scrollCleanups = this._scrollCleanups || [];
+    {
+      let stuck = false;
+      const onStuck = (ev) => {
+        const next = this._scrollTopOf(ev) > 4;
+        if (next !== stuck) { stuck = next; root.classList.toggle("stuck", stuck); }
+      };
+      window.addEventListener("scroll", onStuck, { passive: true });
+      document.addEventListener("scroll", onStuck, { passive: true, capture: true });
+      this._scrollCleanups.push(() => {
+        window.removeEventListener("scroll", onStuck);
+        document.removeEventListener("scroll", onStuck, { capture: true });
+      });
+    }
+
     const b3 = this.querySelector("#big3d"), mini = this.querySelector("#mini");
     // 3D URL：自动加 minimal=1（隐藏 3D 页里重复的按钮/HUD）
     let url3d = c.car_iframe || "";
@@ -583,13 +629,14 @@ class LixiangAppHome extends HTMLElement {
 
     // ★ 上拉自动收起 3D（对齐 App 交互）
     //   App 用滚动驱动：页面下滑 → 3D 收起；回到顶部 → 3D 展开
-    //   HA 是文档级滚动，监听 window 的 scroll 即可
+    //   ★ 2026-10-09：改为读【事件目标】的 scrollTop —— HA 的滚动常在外层容器里，
+    //     只看 window.scrollY（恒为 0）会导致这里永不触发。
     if (c.car_scroll_collapse !== false) {
       const THRESHOLD = Number(c.car_scroll_threshold || 60);
       let lastY = 0, scheduled = false;
-      const apply = () => {
+      const apply = (ev) => {
         scheduled = false;
-        const y = window.scrollY || document.documentElement.scrollTop || 0;
+        const y = this._scrollTopOf(ev);
         if (Math.abs(y - lastY) < 4) return;
         lastY = y;
         const collapsed = root.classList.contains("collapsed3d");
@@ -602,14 +649,14 @@ class LixiangAppHome extends HTMLElement {
         }
       };
       // 不用 rAF（无头/后台标签下可能被节流），直接同步执行 + 微任务合并
-      const onScroll = () => apply();   // 直接执行（scroll 本身已节流）
+      const onScroll = (ev) => apply(ev);   // 直接执行（scroll 本身已节流）
       window.addEventListener("scroll", onScroll, { passive: true });
       document.addEventListener("scroll", onScroll, { passive: true, capture: true });
-      this._cleanupScroll = () => {
+      this._scrollCleanups = this._scrollCleanups || [];
+      this._scrollCleanups.push(() => {
         window.removeEventListener("scroll", onScroll);
         document.removeEventListener("scroll", onScroll, { capture: true });
-      };
-
+      });
     }
 
     const q = this.querySelector("#quick");
