@@ -363,3 +363,24 @@ def test_docs_no_real_vin():
         txt = f.read_text(encoding="utf-8")
         hits = pat.findall(txt)
         assert not hits, f"{f.name} 含疑似真实 VIN: {hits[:2]}"
+
+
+def test_home_card_header_is_sticky():
+    """★ 2026-10-09（用户要求）：主界面抬头固定。
+
+    要求：
+      ① `.head` 粘顶（position:sticky + top:0，否则滚走了）
+      ② 粘顶后收紧（.root.stuck …），否则固定的抬头会占掉半屏
+      ③ 粘顶判定用真实滚动量（_scrollTopOf）——HA 的滚动常发生在外层容器里，
+         window.scrollY 恒为 0，只看 window 会导致状态永远不切换
+      ④ 监听器要在 disconnectedCallback 里清理（否则每次重渲染都叠加监听）
+    """
+    src = (CARDS / "lixiang-app-home.js").read_text(encoding="utf-8")
+    assert "position:sticky" in src, "抬头未设置 position:sticky（不会固定）"
+    assert "top:0" in src, "粘顶缺少 top:0"
+    assert ".root.stuck .head" in src, "缺少粘顶后的收紧样式"
+    assert 'classList.toggle("stuck"' in src, "未切换 .stuck 状态"
+    assert "_scrollTopOf" in src, "粘顶判定未使用真实滚动量（外层容器滚动会失效）"
+    assert "scrollTop" in src, "未读取滚动容器的 scrollTop"
+    # 监听器清理
+    assert "_scrollCleanups" in src and "removeEventListener" in src, "滚动监听未清理"
