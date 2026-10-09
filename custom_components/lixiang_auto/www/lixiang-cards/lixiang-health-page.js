@@ -33,6 +33,10 @@ const STYLE = `
     :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-tire:#3A3A3E; }
   }
+    .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+            --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
+    .root[data-theme="light"] { --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
+            --lx-card:#F5F5F7; --lx-bg:#FFF; --lx-line:#EDEDF0; --lx-blue:#0A58F6; }
   .root { background:var(--lx-bg); color:var(--lx-t1); padding-bottom:24px;
     font-family:"Licium",-apple-system,"PingFang SC",sans-serif; }
 
@@ -140,7 +144,7 @@ class LixiangHealthPage extends HTMLElement {
     while (this.firstChild) this.removeChild(this.firstChild);
     const st = document.createElement("style"); st.textContent = STYLE; this.appendChild(st);
     const root = document.createElement("div");
-    root.className = "root";
+    root.className = "root"; root.dataset.theme = (this._config && this._config.theme) || "light";
     const cell = (id, pos) => `<div class="tcell" id="${id}">
         <div class="v"><span class="p">—</span><small>bar</small></div>
         <div class="t"><span class="tt">—</span>°C</div></div>`;
