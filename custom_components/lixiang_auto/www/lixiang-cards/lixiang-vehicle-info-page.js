@@ -31,6 +31,10 @@ const STYLE = `
     :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
+    .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+            --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
+    .root[data-theme="light"] { --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
+            --lx-card:#F5F5F7; --lx-bg:#FFF; --lx-line:#EDEDF0; --lx-blue:#0A58F6; }
   .root { background:var(--lx-bg); color:var(--lx-t1); padding-bottom:24px;
     font-family:"Licium",-apple-system,"PingFang SC",sans-serif; }
 
@@ -120,7 +124,7 @@ class LixiangVehicleInfoPage extends HTMLElement {
     while (this.firstChild) this.removeChild(this.firstChild);
     const st = document.createElement("style"); st.textContent = STYLE; this.appendChild(st);
     const root = document.createElement("div");
-    root.className = "root";
+    root.className = "root"; root.dataset.theme = (this._config && this._config.theme) || "light";
     root.innerHTML = `
       <div class="topbar">
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
