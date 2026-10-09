@@ -5,7 +5,7 @@
 [![Validate](https://github.com/C3H3-AI/ha-lixiang/actions/workflows/validate.yml/badge.svg)](https://github.com/C3H3-AI/ha-lixiang/actions/workflows/validate.yml)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Version](https://img.shields.io/badge/version-1.4.1-blue.svg)
+![Version](https://img.shields.io/badge/version-1.4.5-blue.svg)
 
 > ⚠️ **Beta 阶段** —— 功能可用，但边界场景尚未覆盖，不建议用于关键场景。
 > 当前仅 **理想 L6** 长期验证；L7 / L8 / L9 / MEGA / i 系列**未验证**。
@@ -33,6 +33,7 @@
 - [技术说明](#技术说明)
 - [开发](#开发)
 - [更新日志](#更新日志)
+- [赞助](#赞助)
 - [许可](#许可)
 
 ---
@@ -466,10 +467,12 @@ App 按 `relationType` 区分账号（车主 / 家人共享 / 试驾），实测
 - `1.x` —— Beta（当前）：功能持续补齐，边界场景逐步覆盖
 - `2.x` —— 稳定版（条件：多车型验证 + 长期观察）
 
-### 反馈
+### 反馈与交流
 
 遇到问题请提 [Issue](https://github.com/C3H3-AI/ha-lixiang/issues)，
 并附上「设备 → 下载诊断」导出的 JSON（已脱敏）。
+
+也欢迎加入 QQ 群交流：**1094493886**
 
 ---
 
@@ -549,7 +552,17 @@ PYTHONUTF8=1 python -m pytest tests/ -q
 
 ## 更新日志
 
-见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v1.4.1**。
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v1.4.5**。
+
+---
+
+## 赞助
+
+如果这个集成帮到了你，欢迎请我喝杯咖啡 ☕
+
+| 微信支付 | 支付宝 |
+|:--------:|:------:|
+| ![微信](sponsor/wechat.jpg) | ![支付宝](sponsor/alipay.jpg) |
 
 ---
 
