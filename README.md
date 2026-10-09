@@ -420,7 +420,7 @@ HA 的实体注册表**不会**因为平台或名称变化而自动改名 ——
 | 信号语义 | ✅ **已用 App 官方 spec 全量审计**（150 信号 × 1563 路径，2026-09-28）<br>发现并修正 2 处语义错误 |
 | 车控（新增两路）| ✅ **充电盖（`cpCtrl`）· 后视镜加热（`rmCtrl`）实车实测通过**（2026-10-09，开/关均生效）|
 | 首次登录 | ⚠️ 辅助页面方案**刚验证 1 次**，不同网络/浏览器未测 |
-| 单元测试 | ✅ **1178 个通过**（signals / rendering / policy / coordinator / features / vehicle_role / task_master / 卡片绑定）<br>❓ 实车端到端仍需手工验证 |
+| 单元测试 | ✅ **1188 个通过**（signals / rendering / policy / coordinator / features / vehicle_role / task_master / 卡片绑定 / 发布流程）<br>❓ 实车端到端仍需手工验证 |
 
 ### 2026-10-09 实车新增验证：充电盖 / 后视镜加热
 
