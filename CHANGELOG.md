@@ -4,6 +4,45 @@
 
 ---
 
+## [1.5.0] — 2026-10-09
+
+> 新增「刷新渠道」选项：会话失效时可选择恢复策略；密码重登仍是保底，任何渠道失败都自动回退。
+
+### Added
+
+- **集成选项新增「刷新渠道」**（`refresh_channel`，默认「自动回退」）：
+  会话失效时按所选顺序尝试恢复，任何渠道失败都会回退到密码重登，
+  最坏情况与原行为一致。
+  · **主渠道**（`primary`）：用已保存的 `refresh_token` 走
+    `POST id.lixiang.com/api/token` 续期（`pake_login.refresh()` 早已实现但
+    从未被调用，本次接通）；
+  · **理想同学渠道**（`livis`）：按理想同学 App `assets/m01config.json` 的
+    `subTokenData` 条目 `livis_login_refresh`（audience `5KLfKAqTUjRFNVjPVAWpKJ`、
+    scope `login`、redirect `https://app.lixiang.com/login/subidaas/livis/login/refresh`）
+    换 token，并附带主 Bearer（实验性路径）；
+  · **探测硬门槛**：每个渠道尝试后立即用已实证的 `saos_vehicle` 换一次真实
+    scope token，换不到就不算成功、继续回退 —— 渠道"看似受理"但会话仍不可用
+    不会被误判为成功；
+  · **仅密码重登**（`password`）：保持引入本选项前的行为，供回退；
+  · 选项以零参 callable 注入 `LiApiClient`，修改后无需重启即对下次恢复生效。
+- **`app_config/sub_token_data.json` 补录 `livis_login_refresh` 权威条目**
+  （来源：理想同学 APK `assets/m01config.json`；理想汽车 APK 无此条目）。
+- **`_travel_bearer` 强制换 Bearer 的路径同步接入渠道序列**，与会话恢复一致，
+  不再绕过渠道直接密码重登。
+
+### Verified
+
+- 离线验证（本机）：`py_compile` 全量通过；`custom_components` 全部 JSON 可解析；
+  `strings.json` 与 `translations/zh-Hans.json` 字节一致（CI 同款检查）。
+- 新增 `tests/test_refresh_channel.py`：行为断言（渠道序列 / 回退顺序 /
+  探测硬门槛 / 仅密码重登与原行为等价）+ AST 接线断言（`_get_scoped`、
+  `_ensure_session`、`_travel_bearer` 均经 `_obtain_session`；`config_flow` /
+  `__init__` 注入点存在）+ 权威表与 `const` 常量一致性断言；
+  已做变异测试（删掉接线 → 对应测试失败）。
+- ⚠️ **两条刷新渠道的服务端实际效果尚未真机实测**（结论来自 APK 离线逆向 +
+  单测级验证）。渠道失败会自动回退密码重登，风险可控；实机 `./li-verify.sh`
+  7 项验证需在 HA 测试机上执行后再合并。
+
 ## [1.4.6] — 2026-10-09
 
 > 实车确认「充电盖」「后视镜加热」两路车控可用并接进卡片；主界面抬头固定，

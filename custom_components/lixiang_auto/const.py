@@ -20,6 +20,30 @@ LIVIS_CLIENT_ID = "6qxd1MLZhAtdWipnmXe1dd"
 LIVIS_AUDIENCE = "rZgT0SETDNueMVAhfRN10"
 LIVIS_SCOPE = "super offline_access"
 
+# ---------- 理想同学刷新渠道（subTokenData type=livis_login_refresh）----------
+# 来源: 理想同学(com.chehejia.livis) APK assets/m01config.json（理想汽车 APK 无此条目）
+#   {"type":"livis_login_refresh","client":"","audience":"5KLfKAqTUjRFNVjPVAWpKJ",
+#    "disableIAM":1,"scope":["login"],"responseType":["token"],
+#    "urls":["https://app.lixiang.com/login/subidaas/livis/login/refresh"]}
+AUD_LIVIS_LOGIN_REFRESH = "5KLfKAqTUjRFNVjPVAWpKJ"
+SCOPE_LIVIS_LOGIN_REFRESH = "login"
+URL_LIVIS_LOGIN_REFRESH = "https://app.lixiang.com/login/subidaas/livis/login/refresh"
+
+# ---------- 刷新渠道选择（选项 refresh_channel）----------
+# 会话失效时的恢复顺序；任何渠道失败都回退到密码重登（现状行为）。
+CONF_REFRESH_CHANNEL = "refresh_channel"
+CH_AUTO = "auto"            # 主渠道 → 理想同学渠道 → 密码重登（默认）
+CH_PRIMARY = "primary"      # 仅主渠道（m01 refresh_token）→ 密码重登
+CH_LIVIS = "livis"          # 仅理想同学渠道 → 密码重登
+CH_PASSWORD = "password"    # 仅密码重登（= 引入本选项前的原行为）
+DEFAULT_REFRESH_CHANNEL = CH_AUTO
+REFRESH_CHANNEL_LABELS = {
+    CH_AUTO: "自动回退（主渠道→理想同学→密码重登）",
+    CH_PRIMARY: "主渠道（理想汽车 refresh_token 续期）",
+    CH_LIVIS: "理想同学渠道（livis_login_refresh）",
+    CH_PASSWORD: "仅密码重登（原行为）",
+}
+
 # ---------- 车辆 API 域名 ----------
 API_APP = "https://api-app.lixiang.com"   # 车辆主网关（强制 x-chj-sign）
 

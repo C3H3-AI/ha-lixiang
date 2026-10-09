@@ -26,6 +26,7 @@ from .const import (
     CONF_MAIN_BEARER,
     CONF_PASSWORD,
     CONF_PHONE,
+    CONF_REFRESH_CHANNEL,
     CONF_REFRESH_TOKEN,
     CONF_VIN,
     CONF_XDEV,
@@ -33,9 +34,11 @@ from .const import (
     DEFAULT_DEVICE_ID,
     DEFAULT_HAC_KEY,
     DEFAULT_KEY_ID,
+    DEFAULT_REFRESH_CHANNEL,
     DEFAULT_XDEV,
     DOMAIN,
     LOGGER_NAME,
+    REFRESH_CHANNEL_LABELS,
 )
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
@@ -860,6 +863,8 @@ class LiCarOptionsFlow(config_entries.OptionsFlow):
         current = self.config_entry.options.get(
             CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL_SECONDS)
         cur_ctrl = self.config_entry.options.get("enable_control", True)
+        cur_ch = self.config_entry.options.get(
+            CONF_REFRESH_CHANNEL, DEFAULT_REFRESH_CHANNEL)
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
@@ -868,5 +873,14 @@ class LiCarOptionsFlow(config_entries.OptionsFlow):
                     vol.All(vol.Coerce(int),
                             vol.Range(min=MIN_SCAN_INTERVAL_SECONDS,
                                       max=MAX_SCAN_INTERVAL_SECONDS)),
+                vol.Required(CONF_REFRESH_CHANNEL, default=cur_ch):
+                    selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(value=k, label=v)
+                                for k, v in REFRESH_CHANNEL_LABELS.items()
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )),
             }),
         )

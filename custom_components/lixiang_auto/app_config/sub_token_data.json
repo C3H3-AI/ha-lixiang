@@ -3,6 +3,7 @@
   "_source": "APK assets/m01config.json → configList[code=app] → subTokenData",
   "_usage": "换 token 时按 type 查 audience/scope/urls，不要自己编 scope 名",
   "_warning": "多请求 App 没有的 scope 会导致服务端【整批降级】（实测：14 个 → 只给 8 个）",
+  "_extra": "livis_login_refresh 条目来自理想同学(com.chehejia.livis) APK 的 assets/m01config.json（理想汽车 APK 无此条目）",
   "tokens": {
     "Anonymous": {
       "client": "",
@@ -585,6 +586,20 @@
       ],
       "urls": [
         "/saos-agent-bridge-service"
+      ]
+    },
+    "livis_login_refresh": {
+      "client": "",
+      "audience": "5KLfKAqTUjRFNVjPVAWpKJ",
+      "disableIAM": 1,
+      "scope": [
+        "login"
+      ],
+      "responseType": [
+        "token"
+      ],
+      "urls": [
+        "https://app.lixiang.com/login/subidaas/livis/login/refresh"
       ]
     }
   }

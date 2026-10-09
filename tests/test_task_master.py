@@ -72,15 +72,17 @@ class TestLiApiTaskEndpoints:
 
         2026-10-08 真机教训：误判导致「每分钟 _login + _tokens.clear()」
         风暴（87 次/1.5h，账号风控风险）。
+        2026-10-09（1.5.0）：恢复入口改为 _obtain_session（刷新渠道序列，
+        密码重登在其内部兜底）——判别必须仍然排在它【之前】。
         """
         s = _src("li_api.py")
         i = s.find("def _get_scoped")
-        blk = s[i:i + 900]
+        blk = s[i:i + 1400]
         pos_guard = blk.find("if _is_scope_denied(err)")
-        pos_login = blk.find("self._login()")   # 真实调用（注释里的字样不算）
+        pos_login = blk.find("self._obtain_session()")   # 恢复入口（真实调用）
         assert pos_guard > 0, "_get_scoped 未使用 scope 拒绝判别"
         assert pos_login > 0 and pos_guard < pos_login, (
-            "必须在重登分支之前拦截")
+            "必须在恢复/重登分支之前拦截")
         i2 = s.find("def _is_scope_denied")
         helper = s[i2:i2 + 400]
         assert "access_denied" in helper and "HTTP 300" in helper

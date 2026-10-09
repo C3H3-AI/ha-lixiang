@@ -36,6 +36,16 @@ from .policy import (
     is_token_expired,
     run_with_retry,
 )
+from .const import (
+    AUD_LIVIS_LOGIN_REFRESH,
+    CH_AUTO,
+    CH_LIVIS,
+    CH_PASSWORD,
+    CH_PRIMARY,
+    DEFAULT_REFRESH_CHANNEL,
+    SCOPE_LIVIS_LOGIN_REFRESH,
+    URL_LIVIS_LOGIN_REFRESH,
+)
 from .pake_login import (
     APP_VERSION as LOGIN_APP_VERSION,
     BASE_ID,
@@ -456,6 +466,7 @@ class LiApiClient:
         app_token: str,
         device_id: str | None = None,
         refresh_token: str = "",
+        refresh_channel: str | object | None = None,
         on_token_update=None,
     ) -> None:
         self._phone = str(phone) if phone is not None else ""
@@ -489,6 +500,8 @@ class LiApiClient:
         #   此前缺陷：新 token 只存内存，重启后读回首次登录的旧值
         #   → refresh_token 轮换即失效 → 每次重启都要密码重登（有风控风险）。
         self._on_token_update = on_token_update
+        # ★ 刷新渠道：str 或零参 callable（注入式读取 HA 选项，运行时可变）
+        self._refresh_channel = refresh_channel
 
     # ---------- 登录会话 ----------
 
@@ -526,15 +539,140 @@ class LiApiClient:
             _LOGGER.debug("token 回写回调失败（不影响运行）: %s", err)
 
     def _ensure_session(self) -> LixiangDirectLogin:
-        """保证登录会话可用 (尝试换取 token 探测会话有效性)."""
+        """保证登录会话可用 (按刷新渠道获取, 密码登录兜底)."""
         if self._cli is not None:
             return self._cli
-        self._login()
+        self._obtain_session()
+        if self._cli is None:  # pragma: no cover — _obtain_session 成功或抛错
+            raise LiApiError("获取登录会话失败")
         return self._cli
+
+    # ---------- 刷新渠道（refresh_channel 选项）----------
+
+    def _channel_steps(self) -> list[str]:
+        """当前选项允许的刷新渠道序列（密码重登是兜底, 不在序列内）."""
+        ch = self._refresh_channel
+        if callable(ch):
+            try:
+                ch = ch()
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("读取刷新渠道选项失败, 用默认值: %s", err)
+                ch = None
+        ch = str(ch or DEFAULT_REFRESH_CHANNEL)
+        if ch == CH_PRIMARY:
+            return [CH_PRIMARY]
+        if ch == CH_LIVIS:
+            return [CH_LIVIS]
+        if ch == CH_PASSWORD:
+            return []
+        return [CH_PRIMARY, CH_LIVIS]  # auto
+
+    def _make_cli(self) -> LixiangDirectLogin:
+        """与 _login 相同的设备身份（xchj 签名设备优先）."""
+        return LixiangDirectLogin(device_id=self._xdev or self._device_id, debug=False)
+
+    def _attempt_primary(self) -> None:
+        """主渠道: m01 refresh_token → POST /api/token 续期 (pake_login.refresh)."""
+        if not self._refresh_token:
+            raise LiApiError("无 refresh_token, 跳过主渠道")
+        cli = self._cli or self._make_cli()
+        tok = cli.refresh(self._refresh_token)
+        access = str(tok.get("access_token") or "")
+        if not access:
+            raise LiApiError("主渠道续期响应缺 access_token")
+        self._cli = cli
+        self._main_bearer = access
+        # refresh_token 轮换: 立即持久化旧值已失效
+        self._refresh_token = str(tok.get("refresh_token") or self._refresh_token)
+        self._tokens.clear()
+        self._notify_token_update()
+
+    def _attempt_livis(self) -> None:
+        """理想同学渠道: subTokenData livis_login_refresh 换 token（实验性）.
+
+        来源: 理想同学 APK assets/m01config.json → type=livis_login_refresh
+              (aud=5KLfK…, scope=login, redirect=…/livis/login/refresh)。
+        与常规换 token 的差异: 附带主 Bearer —— auth.py 的 bearer-only 换 token
+        主张未在本代码路径实证过，故成败交给随后的 _probe_session 真实换 token 判定。
+        """
+        if not self._main_bearer and self._cli is None:
+            # 既无 bearer 又无会话对象时先建会话（仅设备 cookie, 无登录态）
+            self._cli = self._make_cli()
+        cli = self._cli or self._make_cli()
+        headers = {
+            "idaas-data": (
+                f"model_name=OpenHarmony;device_id={self._device_id};"
+                f"app_version={LOGIN_APP_VERSION};client_id={CLIENT_ID};"
+                f"sdk_version={SDK_VERSION};timestamp={int(time.time() * 1000)}"
+            ),
+            "origin": "https://account.lixiang.com",
+            "referer": "https://account.lixiang.com/",
+            "x-requested-with": "XMLHttpRequest",
+            "User-Agent": f"m01/{LOGIN_APP_VERSION}",
+            "content-type": "application/x-www-form-urlencoded",
+        }
+        if self._main_bearer:
+            headers["Authorization"] = f"Bearer {self._main_bearer}"
+        r = cli._sess.post(
+            f"{BASE_ID}/api/auth",
+            data={
+                "prompt": "none", "offline_access": "true",
+                "redirect_uri": URL_LIVIS_LOGIN_REFRESH,
+                "scope": SCOPE_LIVIS_LOGIN_REFRESH,
+                "response_type": "token",
+                "device_id": self._device_id,
+                "audience": AUD_LIVIS_LOGIN_REFRESH,
+                "client_id": CLIENT_ID,
+            },
+            headers=headers, allow_redirects=False, timeout=20,
+        )
+        loc = r.headers.get("location", "")
+        params = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(loc).fragment))
+        if not params.get("access_token"):
+            raise LiApiError(
+                f"livis 渠道未受理: HTTP {r.status_code} "
+                f"{(loc or r.text)[:120]}")
+        self._cli = cli
+
+    def _probe_session(self) -> None:
+        """用已实证的 scope 换 token 验证会话真的可用（失败抛 LiApiError）."""
+        if self._cli is None:
+            raise LiApiError("探测失败: 无会话对象")
+        # saos_vehicle (aud=7gbe…, scope=login) 2026-09-23 实测稳定可换
+        self._do_exchange(self._cli, SCOPE_SAOS_VEHICLE, AUD_SAOS_VEHICLE)
+
+    def _obtain_session(self) -> None:
+        """按刷新渠道序列获取会话; 全部失败后密码重登兜底（现状行为）.
+
+        每个渠道尝试后立即用真实换 token 探测 —— 尝试"成功"但会话仍不可用
+        的渠道不算数, 继续回退。最坏情况 = 引入本机制前的行为（密码重登）。
+        """
+        steps = self._channel_steps()
+        for name in steps:
+            try:
+                if name == CH_PRIMARY:
+                    self._attempt_primary()
+                else:
+                    self._attempt_livis()
+                self._probe_session()
+                _LOGGER.info("刷新渠道 %s 获取会话成功", name)
+                return
+            except Exception as err:  # noqa: BLE001 — 渠道失败必须逐个回退
+                _LOGGER.debug("刷新渠道 %s 未成功（继续回退）: %s", name, err)
+        # 所有渠道失败 → 旧会话不可信, 清掉后密码重登
+        self._cli = None
+        if self._password:
+            self._login()
+            return
+        raise LiApiError("刷新渠道全部失败且未配置密码登录")
 
     def _exchange(self, scope: str, audience: str) -> str:
         """用登录会话 cookie 换 scope token (response_type=token)."""
         cli = self._ensure_session()
+        return self._do_exchange(cli, scope, audience)
+
+    def _do_exchange(self, cli: LixiangDirectLogin, scope: str, audience: str) -> str:
+        """在指定会话上换 scope token（不触发 _ensure_session, 供渠道探测复用）."""
         r = cli._sess.post(
             f"{BASE_ID}/api/auth",
             data={
@@ -583,13 +721,12 @@ class LiApiClient:
             #   风暴（真机实测 87 次/1.5h，有账号风控风险）→ 直接抛出。
             if _is_scope_denied(err):
                 raise
-            if self._password:
-                _LOGGER.info("会话失效, 重新登录 (%s)", name)
-                self._cli = None
-                self._login()
-                tok = self._exchange(scope, audience)
-            else:
+            if not self._password and not self._refresh_token:
                 raise
+            _LOGGER.info("会话失效, 经刷新渠道恢复 (%s)", name)
+            self._cli = None
+            self._obtain_session()
+            tok = self._exchange(scope, audience)
         self._tokens[name] = (tok, time.monotonic() + ttl)
         return tok
 
@@ -786,12 +923,14 @@ class LiApiClient:
           调用方收到 100105 时用 force_login=True 重登一次再试。
         ★ 2026-10-02 修正：_login() 里 `if self._cli is not None` 之类的短路会让
           force_login 无效 —— 这里强制清空 _cli 再登录，确保真的换新 token。
+        ★ 2026-10-09：改走 _obtain_session()（刷新渠道序列），与会话恢复路径
+          一致；渠道全部失败仍由密码重登兜底，行为不回退。
         """
         if force_login or not getattr(self, "_main_bearer", ""):
             self._main_bearer = ""
             self._cli = None            # ★ 关键：清掉旧 session，强制重新登录
             self._tokens.clear()
-            self._login()
+            self._obtain_session()
         return getattr(self, "_main_bearer", "") or self._app_token
 
     def get_travel_months(self) -> dict:

@@ -4,7 +4,7 @@
       服务端整批降级，只授权 8 个。权威来源是 APK 内置的 subTokenData。
 
 本测试守卫：
-  · 配置表能正常加载（40 项）
+  · 配置表能正常加载（41 项）
   · 端点 → audience/type/scope 反查正确
   · ★ 关键端点的 audience 与集成常量一致（防止再猜错）
 """
@@ -40,8 +40,10 @@ class TestConfigFiles:
     def test_app_config_exists(self):
         assert (_CFG / "app_config.json").is_file()
 
-    def test_40_token_types(self):
-        assert len(ac.all_types()) == 40, f"实际 {len(ac.all_types())}"
+    def test_token_type_count(self):
+        # 1.5.0 补录 livis_login_refresh（理想同学刷新渠道）→ 41 项。
+        # 数量被钉死：表是权威来源，意外增删都必须显式改这里。
+        assert len(ac.all_types()) == 41, f"实际 {len(ac.all_types())}"
 
 
 class TestTokenConfig:

@@ -5,7 +5,7 @@
 [![Validate](https://github.com/C3H3-AI/ha-lixiang/actions/workflows/validate.yml/badge.svg)](https://github.com/C3H3-AI/ha-lixiang/actions/workflows/validate.yml)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Version](https://img.shields.io/badge/version-1.4.6-blue.svg)
+![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)
 
 > ⚠️ **Beta 阶段** —— 功能可用，但边界场景尚未覆盖，不建议用于关键场景。
 > 当前仅 **理想 L6** 长期验证；L7 / L8 / L9 / MEGA / i 系列**未验证**。
@@ -116,6 +116,22 @@ cp -r custom_components/lixiang_auto /path/to/homeassistant/config/custom_compon
 ### 轮询间隔
 
 默认 60 秒（可在集成选项里改，30~3600 秒）。
+
+### 刷新渠道
+
+登录会话过期后，集成按所选渠道恢复（**设置 → 设备与服务 → 理想汽车 → 选项 → 刷新渠道**）：
+
+| 选项 | 恢复顺序 |
+|---|---|
+| 自动回退（默认） | 主渠道 → 理想同学渠道 → 密码重登 |
+| 主渠道 | `refresh_token` 续期 → 密码重登 |
+| 理想同学渠道 | `livis_login_refresh` 换 token → 密码重登 |
+| 仅密码重登 | 直接密码重登（引入该选项前的行为） |
+
+每个渠道尝试后都会用真实换 token 请求探测会话是否可用，失败自动进入下一环——
+**任何情况下最坏结果都等于「仅密码重登」**。渠道回退会记录在日志中（搜索「刷新渠道」），
+若观察到频繁回退可改回「仅密码重登」，或反馈 Issue 帮助完善。
+
 
 ---
 
@@ -574,7 +590,7 @@ PYTHONUTF8=1 python -m pytest tests/ -q
 
 ## 更新日志
 
-见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v1.4.6**。
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v1.5.0**。
 
 ---
 

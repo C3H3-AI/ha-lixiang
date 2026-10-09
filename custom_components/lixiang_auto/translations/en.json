@@ -90,10 +90,11 @@
     "step": {
       "init": {
         "title": "Li Auto options",
-        "description": "Adjust polling and control behaviour.",
+        "description": "Adjust polling interval (default 60s, min 30s) and control behaviour.\n\n**Refresh channel**: recovery order when the session expires. Any channel failure falls back to password re-login, so the worst case matches the original behaviour.",
         "data": {
           "scan_interval": "Polling interval (seconds)",
-          "enable_control": "Enable remote control"
+          "enable_control": "Enable remote control",
+          "refresh_channel": "Refresh channel"
         }
       }
     }

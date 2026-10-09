@@ -31,12 +31,14 @@ from .const import (
     CONF_KEY_ID,
     CONF_PASSWORD,
     CONF_PHONE,
+    CONF_REFRESH_CHANNEL,
     CONF_VIN,
     CONF_XDEV,
     DEFAULT_APP_TOKEN,
     DEFAULT_DEVICE_ID,
     DEFAULT_HAC_KEY,
     DEFAULT_KEY_ID,
+    DEFAULT_REFRESH_CHANNEL,
     DEFAULT_XDEV,
     DOMAIN,
     LOGGER_NAME,
@@ -200,6 +202,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hac_key=hac_key, key_id=key_id, xdev=xdev,
             app_token=app_token, device_id=device_id,
             on_token_update=_persist_tokens,
+            # 刷新渠道：注入零参 callable，选项修改后无需重启即生效
+            refresh_channel=lambda: entry.options.get(
+                CONF_REFRESH_CHANNEL, DEFAULT_REFRESH_CHANNEL),
         )
     else:
         _LOGGER.warning(
