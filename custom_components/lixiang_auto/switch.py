@@ -32,6 +32,13 @@
   来源: 理想 App 8.27.0 APK → XVehicleJobHelper.handleCmdKey /
         remoteVehChrgPorLidControl / remoteVehRearMirroHeatControl。
 
+★ 2026-10-09 实车实测通过（用户实测：两路开/关均生效）:
+  · 充电盖     —— 开/关指令均作用于车辆，与状态回读（ChrgPorLidStsV2）一致
+  · 后视镜加热 —— 开/关均生效；660s 长命令按 App 语义到期自动停止
+  ⇒ 二者由「仅 APK 实证」升级为「实车验证」，实体属性标注验证日期。
+  （注：2026-09-26 曾判定 cpCtrl 的 VAT scope 被服务端 access_denied；
+     实车结果说明该 cmdKey 的车控分发不受此 scope 判定影响。）
+
 ⚠️ 车控会真实作用于车辆。
 """
 
@@ -208,11 +215,13 @@ SWITCHES = (
      "sentry_switch", "__SENTRY__", "哨兵"),
 
     # ═══ 2026-10-07 新增：cmdKey+cmdData 均经 APK 反编译实证 ═══
+    #     ★ 2026-10-09 两者均已实车实测通过（开/关均生效）
     #
     # 充电盖：
     #   cmdKey=cpCtrl —— XVehicleJobHelper.handleCmdKey 分发
     #   cmdData = {"cpOpen": "ON"(开) / "OFF"(关)}
     #   状态源：charge_port_lid = ChrgPorLidStsV2（-1无效/0关/非0开）
+    #   ✅ 实车实测：开/关均生效，状态回读一致
     ("charge_port_lid", "充电盖", "mdi:ev-plug-type2",
      "charge_port_lid", "__CP_CTRL__", None),
 
@@ -221,6 +230,7 @@ SWITCHES = (
     #   cmdData = {ctrlType:"HEAT", ctrlValue:"ON"/"OFF"}
     #   ⚠️ 长命令（App TimeOut=660s），li_api.LONG_RUNNING_CMD_KEYS 已含 rmCtrl
     #   状态源：左/右后视镜加热（RearMirro.LHeatSts/RHeatSts）任一非 0 → on
+    #   ✅ 实车实测：开/关均生效（660s 后按 App 语义自动停止）
     ("mirror_heat", "后视镜加热", "mdi:mirror",
      "mirror_heat_left", "__RM_CTRL__", None),
 )
@@ -400,18 +410,20 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
             "control_type": self._control_type,
         }
         if self._control_type == "__CP_CTRL__":
-            # ★ 充电盖（2026-10-07 APK 反编译实证，见 _send 分支注释）
+            # ★ 充电盖（2026-10-07 APK 反编译实证；2026-10-09 实车实测通过）
             attrs.update({
                 "cmd_key": "cpCtrl",
                 "cmd_data_协议": '开={"cpOpen":"ON"} / 关={"cpOpen":"OFF"}',
                 "cmd_data_来源": "APK 反编译 XVehicleJobHelper.handleCmdKey（理想 App 8.27.0）",
+                "实车验证": "2026-10-09 实测开/关均生效",
             })
         elif self._control_type == "__RM_CTRL__":
-            # ★ 后视镜加热（2026-10-07 APK 反编译实证，见 _send 分支注释）
+            # ★ 后视镜加热（2026-10-07 APK 反编译实证；2026-10-09 实车实测通过）
             attrs.update({
                 "cmd_key": "rmCtrl",
                 "cmd_data_协议": '开={"ctrlType":"HEAT","ctrlValue":"ON"} / 关="OFF"',
                 "cmd_data_来源": "APK 反编译 XVehicleJobHelper.remoteVehRearMirroHeatControl（有效期 660s 长命令）",
+                "实车验证": "2026-10-09 实测开/关均生效（660s 后自动停止）",
             })
         elif self._control_type == "__CHARGING__":
             # ★ 2026-09-24 充电开关特例：
