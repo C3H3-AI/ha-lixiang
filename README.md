@@ -5,7 +5,7 @@
 [![Validate](https://github.com/C3H3-AI/ha-lixiang/actions/workflows/validate.yml/badge.svg)](https://github.com/C3H3-AI/ha-lixiang/actions/workflows/validate.yml)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Version](https://img.shields.io/badge/version-1.4.8-blue.svg)
+![Version](https://img.shields.io/badge/version-1.4.6-blue.svg)
 
 > ⚠️ **Beta 阶段** —— 功能可用，但边界场景尚未覆盖，不建议用于关键场景。
 > 当前仅 **理想 L6** 长期验证；L7 / L8 / L9 / MEGA / i 系列**未验证**。
@@ -574,7 +574,7 @@ PYTHONUTF8=1 python -m pytest tests/ -q
 
 ## 更新日志
 
-见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v1.4.8**。
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v1.4.6**。
 
 ---
 
