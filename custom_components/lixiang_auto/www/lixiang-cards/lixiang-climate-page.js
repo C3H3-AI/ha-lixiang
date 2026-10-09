@@ -68,7 +68,9 @@ const STYLE = `
   .dial .lbl { font-size:12.5px; color:var(--lx-t3); margin-top:8px; }
 
   /* ── 4 个圆按钮 ── */
-  .modes { display:grid; grid-template-columns:repeat(4,1fr); gap:8px;
+  /* ★ 2026-10-09：由固定 4 列改为自适应（新增第 5 个「后视镜加热」后
+     宽屏一行 5 个、窄屏自动换行，图标 54px 不会被压缩）*/
+  .modes { display:grid; grid-template-columns:repeat(auto-fit,minmax(64px,1fr)); gap:8px;
            padding:22px 16px 0; }
   .m { display:flex; flex-direction:column; align-items:center; gap:7px;
        cursor:pointer; padding:4px 0; border-radius:14px;
@@ -241,10 +243,13 @@ class LixiangClimatePage extends HTMLElement {
 
     // 4 个模式按钮
     const MODES = [
-      { key:"ac",      name:"空调",     icon:"ic_home_fan_on.webp",     kind:"climate" },
-      { key:"cool",    name:"极速制冷", icon:"ic_home_ice_cool.webp",   kind:"switch" },
-      { key:"heat",    name:"极速制热", icon:"ic_home_fan_off.webp",    kind:"switch" },
-      { key:"defrost", name:"除雪除冰", icon:"ic_home_ice_heat.webp", kind:"switch" },
+      { key:"ac",      name:"空调",       icon:"ic_home_fan_on.webp",       kind:"climate", field:"ac" },
+      { key:"cool",    name:"极速制冷",   icon:"ic_home_ice_cool.webp",     kind:"switch",  field:"ac_fast_cold" },
+      { key:"heat",    name:"极速制热",   icon:"ic_home_fan_off.webp",      kind:"switch",  field:"ac_fast_hot" },
+      { key:"defrost", name:"除雪除冰",   icon:"ic_home_ice_heat.webp",     kind:"switch",  field:"ac_defrost" },
+      // ★ 2026-10-09 新增：后视镜加热（switch rmCtrl，实车实测可用）
+      { key:"mirror",  name:"后视镜加热", icon:"ic_home_rearmirroheat_on_lisa.png",
+        kind:"switch", field:"mirror" },
     ];
     const box = this.querySelector("#modes");
     MODES.forEach(m => {
@@ -295,12 +300,18 @@ class LixiangClimatePage extends HTMLElement {
     const el = this.querySelector(`.m[data-k="${m.key}"]`);
     let eid = null, dom = null, svc = null;
     if (m.kind === "climate") {
-      eid = this._eid("ac"); dom = "climate"; svc = this._on(eid) ? "turn_off" : "turn_on";
+      eid = this._eid(m.field || "ac"); dom = "climate"; svc = this._on(eid) ? "turn_off" : "turn_on";
     } else {
-      eid = this._eid(m.key === "cool" ? "ac_fast_cold" : (m.key === "heat" ? "ac_fast_hot" : "ac_defrost"));
+      // ★ 2026-10-09：字段名由 MODES 显式给出（此前按 key 三元判断，新增项易错绑）
+      eid = this._eid(m.field);
       if (eid) { dom = eid.split(".")[0]; svc = this._on(eid) ? "turn_off" : "turn_on"; }
     }
     if (!eid) { this._toast(`${m.name} 未接入`, "err"); return; }
+    // switch 域只有 turn_on/turn_off/toggle；非可控域直接说明，别发不存在的服务
+    if (dom !== "climate" && dom !== "switch" && dom !== "input_boolean" && dom !== "fan") {
+      this._toast(`${m.name} 当前为只读（${dom}），无法远程控制`, "err");
+      return;
+    }
     this._busy[m.key] = true; el.classList.add("busy");
     try {
       await this._hass.callService(dom, svc, { entity_id: eid });
@@ -337,12 +348,13 @@ class LixiangClimatePage extends HTMLElement {
       if (inc) inc.disabled = ts.attributes.max != null && t != null && t >= ts.attributes.max;
     }
 
-    // 4 个模式状态
+    // 5 个模式状态
     const MAP = {
       ac: this._eid("ac"),
       cool: this._eid("ac_fast_cold"),
       heat: this._eid("ac_fast_hot"),
       defrost: this._eid("ac_defrost"),
+      mirror: this._eid("mirror"),
     };
     Object.entries(MAP).forEach(([k, eid]) => {
       const el = q(`.m[data-k="${k}"]`); if (!el) return;
