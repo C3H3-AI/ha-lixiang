@@ -76,9 +76,11 @@ jobs:
       #   · 去掉 --target：tag 已在上一 IP 步显式创建，release 只需引用它
       #   · 加 --verify-tag：tag 远程不可见时直接失败，而不是静默建坏草稿
       - name: Create draft release
+        id: create
         if: steps.check.outputs.compare_result == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           VERSION: ${{ steps.check.outputs.version }}
           COMMIT_TITLE: ${{ steps.check.outputs.commit_title }}
           IS_PRERELEASE: ${{ steps.check.outputs.is_prerelease }}
@@ -87,6 +89,14 @@ jobs:
           TAG="v${VERSION}"
           PRERELEASE_FLAG=""
           if [[ "${IS_PRERELEASE}" == "true" ]]; then PRERELEASE_FLAG="--prerelease"; fi
+
+          # ★ 2026-10-09 修：先记下创建【之前】的 Release id 集合，
+          #   创建后再取一次 —— 差集就是"本次新建的那个"，拿到它的 id。
+          #   后续校验/修复一律按这个 id 操作，绝不全局搜索草稿。
+          #   （Release 列表是最终一致性的，所以差集要重试。）
+          list_ids() { gh api "repos/${REPO}/releases?per_page=100" --jq '.[].id' 2>/dev/null | sort || true; }
+          BEFORE="$(list_ids)"
+
           gh release create "${TAG}" \
             --draft \
             --verify-tag \
@@ -95,6 +105,21 @@ jobs:
             ${PRERELEASE_FLAG} \
             "lixiang_auto.zip"
           echo "草稿 Release ${TAG} 已建"
+
+          NEW_ID=""
+          for _ in 1 2 3 4 5; do
+            AFTER="$(list_ids)"
+            NEW_ID="$(comm -13 <(printf '%s\n' "$BEFORE") <(printf '%s\n' "$AFTER") \
+                      | grep -E '^[0-9]+$' | head -n1 || true)"
+            [[ -n "$NEW_ID" ]] && break
+            sleep 3
+          done
+          if [[ -z "$NEW_ID" ]]; then
+            echo "::error::草稿建出来了，但在列表里找不到它的 release id —— 中止（不猜、不动其他 Release）"
+            exit 1
+          fi
+          echo "本次新建的 release id=${NEW_ID}"
+          echo "release_id=${NEW_ID}" >> "$GITHUB_OUTPUT"
 
       # ── 校验① tag 存在 ─────────────────────────────────────────────────
       - name: Verify tag exists
@@ -111,51 +136,28 @@ jobs:
       #   tag 存在 ≠ Release 绑定正确。两道校验缺一不可 —— 这正是
       #   v1.2.4 漏过的：tag v1.2.4 存在，但 Release 绑的是 untagged-…。
       #
+      #   ★ 2026-10-09 重写：改为【按 release id】校验/修复。
+      #     旧实现是"在列表里找第一个 tag_name 以 untagged- 开头的草稿"再 PATCH，
+      #     而列表是最终一致性的 → 会抓错对象，把两个草稿的绑定互相串掉
+      #     （v1.4.6/v1.4.7 实测踩过）。现在只认"本次 create 步骤记下的 id"。
+      #
       #   ★ 两个 API 陷阱（都实测过）：
       #     1. GET /releases/tags/{tag} 对【草稿】返回 404 ——
       #        草稿不参与 tag 索引。用它校验会永远误判"未绑定"。
       #     2. GET /releases 列表是最终一致性的，刚建完可能查不到
-      #        （实测 3 次里有 1 次丢失）—— 必须重试。
+      #        （实测 3 次里有 1 次丢失）—— 脚本内已带重试。
       - name: Verify release bound to tag
         if: steps.check.outputs.compare_result == 'success'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
           VERSION: ${{ steps.check.outputs.version }}
+          RELEASE_ID: ${{ steps.create.outputs.release_id }}
         run: |
           set -euo pipefail
           TAG="v${VERSION}"
-          REPO="${{ github.repository }}"
-          LIST="repos/${REPO}/releases?per_page=50"
-
-          # 在列表里找绑定 / 未绑定的 release id，带重试（列表有抖动）
-          find_id() {
-            local jq_filter="$1" out=""
-            for _ in 1 2 3 4 5; do
-              out="$(gh api "$LIST" --jq "$jq_filter" 2>/dev/null || true)"
-              if [ -n "$out" ] && [ "$out" != "null" ]; then echo "$out"; return 0; fi
-              sleep 3
-            done
-            echo ""
-          }
-
-          REL_ID="$(find_id "[.[] | select(.tag_name == \"${TAG}\")][0].id")"
-          if [ -n "$REL_ID" ]; then
-            echo "Release 已正确绑定 $TAG (id=${REL_ID})"
-            exit 0
-          fi
-
-          echo "::warning::找不到绑定 $TAG 的 Release — 尝试修复"
-          REL_ID="$(find_id '[.[] | select(.tag_name | startswith("untagged-"))][0].id')"
-          if [ -z "$REL_ID" ]; then
-            echo "::error::既没有绑定 $TAG 的 Release，也没有 untagged 草稿 — 无法修复"
+          if [[ -z "${RELEASE_ID}" ]]; then
+            echo "::error::create 步骤没有给出 release id —— 无法按 id 校验（拒绝猜测）"
             exit 1
           fi
-
-          gh api -X PATCH "repos/${REPO}/releases/${REL_ID}" -f tag_name="$TAG" >/dev/null
-          sleep 3
-          REL_ID="$(find_id "[.[] | select(.tag_name == \"${TAG}\")][0].id")"
-          if [ -z "$REL_ID" ]; then
-            echo "::error::修复失败 — 仍找不到绑定 $TAG 的 Release"
-            exit 1
-          fi
-          echo "已修复并确认绑定 $TAG (id=${REL_ID})"
+          bash scripts/gh-release-bind.sh "${REPO}" "${TAG}" "${RELEASE_ID}"
