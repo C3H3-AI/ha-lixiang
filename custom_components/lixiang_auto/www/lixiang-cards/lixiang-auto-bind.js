@@ -131,19 +131,31 @@ const AUTO_BIND = {
     lock:           { domain: "lock" },
     window:         { name: "车窗", domain: "cover" },
     trunk:          { name: "尾门", domain: "cover" },
-    auth:           { name: "车辆授权", domain: "binary_sensor" },
+    /* ★ 2026-10-09 修正：首页「授权驾驶」按钮此前绑到 binary_sensor（车辆授权，只读）
+       → 点击只会弹「只读，无法控制」。集成里真实的可执行实体是
+       button.<车名>_授权驾驶（cmdKey=remoteVehAuth），状态显示另用 auth_state。 */
+    auth:           { name: "授权驾驶", domain: "button" },
+    auth_state:     { name: "车辆授权", domain: "binary_sensor" },
     find:           { name: "寻车", domain: "button" },
-    mirror:         { any: ["后视镜"], domain: "binary_sensor" },
+    /* ★ 2026-10-09 修正：后视镜加热此前绑 binary_sensor 且用 any 分支（会命中只读的
+       sensor「左后视镜」）→ 按钮点不动。真正的控制在 switch「后视镜加热」（rmCtrl）。 */
+    mirror:         { name: "后视镜加热", domain: "switch" },
+    /* ★ 2026-10-09 新增：充电口盖控制（cpCtrl）。注意与只读的
+       binary_sensor「充电口盖」（port_cover，用于充电页展示）区分开。 */
+    port:           { name: "充电盖", domain: "switch" },
     /* 设置（可控制）*/
     sentry:         { name: "哨兵模式", domain: "switch" },
     ac_fast_hot:    { name: "快速制热", domain: "switch" },
     ac_fast_cold:   { name: "快速制冷", domain: "switch" },
-    ac_defrost:     { any: ["除霜"], domain: "switch" },   // 无 switch 时降级为只读
+    /* ★ 2026-10-09 修正：switch 实体名是「除雪除冰」，不是「除霜」；
+       原 any:["除霜"] 会命中只读的 sensor「除霜模式」→ 空调页按钮点不动。 */
+    ac_defrost:     { name: "除雪除冰", domain: "switch" },
     steer_heat:     { name: "方向盘加热", domain: "switch" },
     batt_warm:      { name: "电池保温", domain: "switch" },
     /* 远程操作 */
     btn_find:       { name: "寻车", domain: "button" },
-    btn_start:      { any: ["远程启动"], domain: "button" },   // 部分车型无
+    /* ★ 2026-10-09 修正：button 实体名是「授权驾驶」（旧规则找「远程启动」永远无命中）*/
+    btn_start:      { name: "授权驾驶", domain: "button" },
     btn_flash:      { name: "闪灯", domain: "button" },
     btn_horn:       { name: "鸣笛", domain: "button" },
     btn_photo:      { name: "远程拍照", domain: "button" },
@@ -231,8 +243,12 @@ class LixiangAutoBind {
     }
 
     // { any: [...] } —— 必须同时包含
+    //   ★ 2026-10-09 修复：此前忽略 rule.domain，导致 { any:["后视镜"], domain:"binary_sensor" }
+    //     命中只读的 sensor「左后视镜」，卡片按钮点不动（真事故）。
     if (rule && typeof rule === "object" && rule.any) {
-      const cands = pool.filter((x) => rule.any.every((w) => x.name.includes(w)));
+      const cands = pool.filter((x) =>
+        (!rule.domain || x.domain === rule.domain) &&
+        rule.any.every((w) => x.name.includes(w)));
       if (cands.length) return cands[0].id;
       return null;
     }

@@ -31,6 +31,9 @@ const I18N = {
   acGun: "交流枪",
   dcGun: "直流枪",
   portCover: "充电口盖",
+  coverOpen: "开",
+  coverClose: "关",
+  coverTapHint: "点开合",
   fault: "充电故障",
   monthKwh: "本月充电量",
   monthTimes: "本月次数",
@@ -114,6 +117,23 @@ const STYLE = `
   .pill .d { width:6px; height:6px; border-radius:50%; background:var(--lx-t3); }
   .pill.on .d { background:var(--lx-green); }
   .pill.warn .d { background:var(--lx-orange); }
+  /* ★ 2026-10-09：充电口盖胶囊可点开合（switch cpCtrl 实车实测可用）*/
+  .pill.act { cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .pill.act:hover { background:var(--lx-line); }
+  .pill.act:focus-visible { outline:2px solid var(--lx-blue); outline-offset:2px; }
+  .pill.busy { opacity:.55; }
+  .pill.ro { opacity:.75; }
+  .pill .hint { font-size:10px; color:var(--lx-t3); }
+
+  /* ★ 2026-10-09 新增：本卡片此前没有 toast 能力（无 .toast 元素/方法），
+     而充电口盖开合必须给出明确反馈（下发中/失败原因），故补齐。 */
+  .toast { position:fixed; left:50%; bottom:90px; transform:translate(-50%,14px);
+           background:rgba(0,0,0,.84); color:#fff; font-size:13px; padding:10px 18px;
+           border-radius:11px; opacity:0; pointer-events:none; transition:.22s; z-index:9;
+           max-width:80%; text-align:center; }
+  .toast.show { opacity:1; transform:translate(-50%,0); }
+  .toast.ok { background:rgba(28,150,70,.92); }
+  .toast.err { background:rgba(200,40,40,.92); }
 
   /* ── 记录（年折叠）── */
   .sect { padding:18px 20px 0; }
@@ -325,7 +345,8 @@ class LixiangChargePage extends HTMLElement {
       <div class="pills">
         <span class="pill" id="p-ac"><span class="d"></span>${I18N.acGun} <b id="v-ac">—</b></span>
         <span class="pill" id="p-dc"><span class="d"></span>${I18N.dcGun} <b id="v-dc">—</b></span>
-        <span class="pill" id="p-cover"><span class="d"></span>${I18N.portCover} <b id="v-cover">—</b></span>
+        <span class="pill" id="p-cover" role="button" tabindex="0"
+              aria-label="${I18N.portCover} ${I18N.coverTapHint}"><span class="d"></span>${I18N.portCover} <b id="v-cover">—</b></span>
         <span class="pill" id="p-appt"><span class="d"></span>${I18N.appt} <b id="v-appt">—</b></span>
         <span class="pill" id="p-fault"><span class="d"></span>${I18N.fault} <b id="v-fault">—</b></span>
       </div>
@@ -334,6 +355,7 @@ class LixiangChargePage extends HTMLElement {
         <div id="years"><div class="empty">${I18N.loading}</div></div>
       </div>
       <div class="list" id="list"></div>
+      <div class="toast" role="status" aria-live="polite"></div>
     `;
     this.appendChild(root);
 
@@ -348,6 +370,14 @@ class LixiangChargePage extends HTMLElement {
     const doRefresh2 = () => this._refreshAll();
     this._a11y(rf2, "刷新数据", doRefresh2);
     rf2.addEventListener("click", doRefresh2);
+
+    // ★ 2026-10-09：充电口盖胶囊可点开合（switch cpCtrl，实车实测可用）
+    const pcv = this.querySelector("#p-cover");
+    if (pcv) {
+      const doCover = () => this._toggleCover();
+      this._a11y(pcv, `${I18N.portCover} ${I18N.coverTapHint}`, doCover);
+      pcv.addEventListener("click", doCover);
+    }
 
     
     // ── 下拉刷新（触摸手势，对齐 App）──
@@ -377,7 +407,7 @@ class LixiangChargePage extends HTMLElement {
         if (h >= TH * 0.5) {
           ptr.style.height = "44px";
           ptr.querySelector(".tx").textContent = "刷新中…";
-          Promise.resolve(this.this._refreshAll()).finally(() => {
+          Promise.resolve(this._refreshAll()).finally(() => {
             setTimeout(() => { ptr.style.height = "0px"; }, 500);
           });
         } else {
@@ -388,6 +418,47 @@ class LixiangChargePage extends HTMLElement {
     })();
 
     this._built = true;
+  }
+
+  /** 轻提示（★ 2026-10-09 新增：充电口盖开合需要"已下发/失败原因"的明确反馈） */
+  _toast(msg, kind) {
+    const t = this.querySelector(".toast");
+    if (!t) return;
+    t.textContent = msg;
+    t.className = "toast show" + (kind ? " " + kind : "");
+    clearTimeout(this._tt);
+    this._tt = setTimeout(() => { t.className = "toast"; }, 2600);
+  }
+
+  /** ★ 2026-10-09：开合充电口盖（switch 域，cmdKey=cpCtrl；实车实测可用）。
+   *  不可控时（旧版本 / 车型无此实体）给出明确说明，不静默失败。 */
+  async _toggleCover() {
+    const sw = this._eid("port");
+    if (!sw) {
+      this._toast(`${I18N.portCover}控制未接入（仅显示状态）`, "err");
+      return;
+    }
+    const st = this._st(sw);
+    if (!st) { this._toast("实体不存在", "err"); return; }
+    if (this._coverBusy) return;
+    const on = ["on", "open", "opening", "开启", "true"].some(
+      (v) => String(st.state).includes(v));
+    this._coverBusy = true;
+    const el = this.querySelector("#p-cover");
+    if (el) el.classList.add("busy");
+    try {
+      await this._hass.callService("switch", on ? "turn_off" : "turn_on", { entity_id: sw });
+      // 开合需要数秒，服务端状态回读更慢 → 用 12s 乐观值
+      this._coverOptim = !on; this._coverOptimUntil = Date.now() + 12000;
+      this._toast(`${I18N.portCover}${on ? "关闭" : "开启"}指令已下发`, "ok");
+      this._update();
+      setTimeout(() => { this._coverOptim = null; this._update(); }, 12000);
+    } catch (e) {
+      this._toast(`${I18N.portCover}操作失败：` + ((e && e.message) || "未知"), "err");
+    } finally {
+      this._coverBusy = false;
+      if (el) el.classList.remove("busy");
+    }
   }
 
   /** 手动刷新 */
@@ -402,6 +473,37 @@ class LixiangChargePage extends HTMLElement {
     } finally {
       if (rf) rf.classList.remove("spin");
       this._renderYears(); this._renderList();
+    }
+  }
+
+  /** ★ 2026-10-09：充电口盖胶囊 = 可点开合（有 switch 时）+ 状态显示。
+   *  状态优先取可控制的 switch（cpCtrl），无则退到只读 binary_sensor（旧版本）。 */
+  _updateCover() {
+    const q = (s) => this.querySelector(s);
+    const sw = this._eid("port");
+    const ro = this._eid("port_cover");
+    let on = null;
+    if (this._coverOptim != null && Date.now() < (this._coverOptimUntil || 0)) {
+      on = this._coverOptim;                       // 乐观值（开合需数秒）
+    } else {
+      const src = (sw && this._st(sw)) ? sw : ro;
+      const v = this._txt(src);
+      if (v != null) {
+        on = ["on", "open", "opening", "开启", "true"].some(
+          (x) => String(v).includes(x));
+      }
+    }
+    const val = q("#v-cover");
+    if (val) {
+      val.textContent = on == null ? "—" : (on ? I18N.coverOpen : I18N.coverClose);
+    }
+    const el = q("#p-cover");
+    if (el) {
+      el.className = "pill" + (on === true ? " on" : "")
+                   + (sw ? " act" : " ro")
+                   + (this._coverBusy ? " busy" : "");
+      el.setAttribute("aria-pressed", on === true ? "true" : "false");
+      el.title = sw ? `${I18N.portCover}${I18N.coverTapHint}` : "该版本仅支持查看状态";
     }
   }
 
@@ -594,7 +696,7 @@ class LixiangChargePage extends HTMLElement {
     };
     set("#p-ac", "#v-ac", this._eid("ac_gun"));
     set("#p-dc", "#v-dc", this._eid("dc_gun"));
-    set("#p-cover", "#v-cover", this._eid("port_cover"));
+    this._updateCover();
     set("#p-appt", "#v-appt", this._eid("appointment"));
     const fv = this._txt(this._eid("fault"));
     q("#v-fault").textContent = fv == null ? "—" : (fv === "off" ? "正常" : fv);

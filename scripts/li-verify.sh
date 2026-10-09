@@ -86,11 +86,14 @@ done
 # ───────────────────────────────────────────────────────────────────────────
 log "[2/7] 单元测试"
 if [[ -x "$VENV" ]]; then
-  TEST_OUT=$("$VENV" -m pytest "$REPO_DIR/tests/" -q 2>&1 | tail -3)
-  if echo "$TEST_OUT" | grep -qE "[0-9]+ passed" && ! echo "$TEST_OUT" | grep -q "failed"; then
+  # ★ 2026-10-09 修正：原判断只排除 "failed"，**漏掉 "error"** ——
+  #   venv 里缺 requests 时 37 个用例 error，脚本仍报 ✓ 通过（假绿）。
+  TEST_OUT=$("$VENV" -m pytest "$REPO_DIR/tests/" -q 2>&1 | tail -5)
+  if echo "$TEST_OUT" | grep -qE "[0-9]+ passed" \
+     && ! echo "$TEST_OUT" | grep -qE "failed|error"; then
     pass "$(echo "$TEST_OUT" | grep -oE '[0-9]+ passed')"
   else
-    fail "测试未通过"
+    fail "测试未通过（含 failed / error）"
     echo "$TEST_OUT" | sed 's/^/      /'
   fi
 else
