@@ -44,6 +44,54 @@ from .const import (
 from .coordinator import LiCarCoordinator
 from .signer import LiCarSigner
 
+# ★ 2026-10-09：服务端按【账号角色】限制的功能（实测：家人账号拿不到）
+#   · 任务大师（task-master）
+#   · 充电记录 / 充电量（chargeRecords / monthlyStatistics）
+#   非车主调用时返回可读原因，而不是让服务端回 401/100105 ——
+#   那是服务端限制、用户改不了，不该伪装成可修复的故障。
+_OWNER_ONLY_NOTICE = "仅车主账号可用（服务端按账号角色限制）"
+
+
+def _owner_only_hint(result) -> str:
+    """任务/充电服务在「结果为空」时给出准确原因。
+
+    ★ 2026-10-09：空结果有两种成因，对用户是完全不同的指引 ——
+      · 非车主账号 → 服务端按角色限制，用户改不了（不该让他去查配置）
+      · 真的没配置 / vin 不匹配 → 集成侧问题
+    """
+    if result:
+        return ""
+    try:
+        from . import vehicle_role as _vr
+        for d in (hass.data.get(DOMAIN) or {}).values():
+            if isinstance(d, dict) and _is_non_owner(d.get("li_api")):
+                return _OWNER_ONLY_NOTICE
+    except Exception:  # noqa: BLE001
+        pass
+    return "未找到 lixiang_auto 配置项（或 vin 不匹配）"
+
+
+def _is_non_owner(api) -> bool:
+    """当前 API 所属账号是否【确定不是车主】。
+
+    角色探测失败一律返回 False（按"可试"处理），
+    避免因车辆列表读取失败而误伤车主账号。
+    """
+    try:
+        from . import vehicle_role as _vr
+        veh = _vr.current_vehicle(api)
+        if not veh:
+            return False
+        rel = _vr.relation_of(veh)
+        # ★ 只有【明确是】家人/试驾/邀请中等才拦截。
+        #   REL_NONE = 关系未确定（如车主车辆尚在 Registered 未完成）
+        #   → 必须放行，否则新车车主会被误判成"非车主"而看不到任务大师。
+        if rel in (None, _vr.REL_NONE, _vr.REL_OWNER):
+            return False
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
 PLATFORMS: list[Platform] = [
     Platform.SENSOR, Platform.BINARY_SENSOR, Platform.DEVICE_TRACKER,
     Platform.LOCK, Platform.SWITCH, Platform.BUTTON, Platform.NUMBER,
@@ -437,6 +485,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
         参数：
           · dt ("年-月") + charging_type → 某月明细
           · 都不传 → 按月统计（次数 + 总电量）
+
+        ★ 2026-10-09：服务端按账号角色限制 —— 家人/试驾账号调用会返回明确原因，
+          而不是让服务端回 401/100105（用户改不了，不该伪装成故障）。
         """
         import json as _json  # noqa: PLC0415
 
@@ -453,6 +504,11 @@ def _async_register_services(hass: HomeAssistant) -> None:
             if api is None or entry is None:
                 continue
             if target_vin and (entry.data.get(CONF_VIN) or "") != target_vin:
+                continue
+            # ★ 2026-10-09 角色守卫：非车主直接给出可读原因
+            if _is_non_owner(api):
+                result[entry.data.get(CONF_VIN) or eid] = {
+                    "error": _OWNER_ONLY_NOTICE}
                 continue
             try:
                 if dt:
@@ -695,7 +751,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 _LOGGER.error("创建任务失败 (%s): %s", vin, err)
                 result[vin] = {"error": f"{type(err).__name__}: {err}"[:300]}
         if not result:
-            raise HomeAssistantError("未找到 lixiang_auto 配置项（或 vin 不匹配）")
+            raise HomeAssistantError(_owner_only_hint(result))
         if errors and errors == len(result):
             first = next(iter(result.values()))
             raise HomeAssistantError(f"创建任务失败: {first.get('error')}")
@@ -704,7 +760,10 @@ def _async_register_services(hass: HomeAssistant) -> None:
     # ---- 任务大师服务套件（2026-10-07：查询/更新/删除，按需调用的"接口"）----
 
     def _li_task_entries(target_vin):
-        """→ [(vin, api, coordinator)]，按可选 vin 过滤配置条目。"""
+        """→ [(vin, api, coordinator)]，按可选 vin 过滤配置条目。
+
+        ★ 2026-10-09：非车主账号的条目会被过滤（服务端仅车主可用任务大师）。
+        """
         out = []
         for eid, d in (hass.data.get(DOMAIN) or {}).items():
             if not isinstance(d, dict):
@@ -715,6 +774,13 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 continue
             vin = entry.data.get(CONF_VIN) or eid
             if target_vin and vin != target_vin:
+                continue
+            # ★ 2026-10-09 角色守卫：服务端仅对【车主】开放任务大师
+            #   （实测家人账号拿不到）。非车主条目不返回，
+            #   由各 handler 给出「仅车主可用」的可读原因，
+            #   避免服务端 401/100105 被当成可修复故障反复重试。
+            if _is_non_owner(api):
+                _LOGGER.info("非车主账号，跳过任务大师请求（服务端按角色限制）")
                 continue
             out.append((vin, api, d.get("coordinator")))
         return out
@@ -739,7 +805,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 errors += 1
                 _LOGGER.error("查询任务失败 (%s): %s", vin, err)
                 result[vin] = {"error": f"{type(err).__name__}: {err}"[:300]}
-        _task_fail("未找到 lixiang_auto 配置项（或 vin 不匹配）" if not result else None)
+        _task_fail((_owner_only_hint(result) if not result else None))
         if errors and errors == len(result):
             raise HomeAssistantError(
                 f"查询任务失败: {next(iter(result.values())).get('error')}")
@@ -812,7 +878,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 errors += 1
                 _LOGGER.error("更新任务失败 (%s): %s", vin, err)
                 result[vin] = {"error": f"{type(err).__name__}: {err}"[:300]}
-        _task_fail("未找到 lixiang_auto 配置项（或 vin 不匹配）" if not result else None)
+        _task_fail((_owner_only_hint(result) if not result else None))
         if errors and errors == len(result):
             raise HomeAssistantError(
                 f"更新任务失败: {next(iter(result.values())).get('error')}")
@@ -840,7 +906,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 errors += 1
                 _LOGGER.error("删除任务失败 (%s): %s", vin, err)
                 result[vin] = {"error": f"{type(err).__name__}: {err}"[:300]}
-        _task_fail("未找到 lixiang_auto 配置项（或 vin 不匹配）" if not result else None)
+        _task_fail((_owner_only_hint(result) if not result else None))
         if errors and errors == len(result):
             raise HomeAssistantError(
                 f"删除任务失败: {next(iter(result.values())).get('error')}")

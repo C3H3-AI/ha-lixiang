@@ -11,6 +11,15 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import scan_interval_seconds, DOMAIN, LOGGER_NAME, SCAN_INTERVAL_SECONDS
 from .signals import VSS_PATHS_COMPAT as VSS_PATHS
 from .signals import SIGNALS as _SIGNALS
+from . import vehicle_role as _vr
+
+# ★ 2026-10-09：服务端按【账号角色】限制的功能（实测：家人账号拿不到）
+#   · 任务大师（task-master）
+#   · 充电记录 / 充电量（chargeRecords / monthlyStatistics）
+#   这些不是"权限不足"的提示问题，而是服务端直接拒绝。若不加守卫，
+#   家人账号会陷入「拉取失败 → 60s 重试 → 无限刷屏」的循环，
+#   且用户无法自行解决（属服务端限制，非配置问题）。
+_OWNER_ONLY_NOTICE = "仅车主账号可用（服务端按账号角色限制）"
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -151,6 +160,41 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                 self._route_id = "default"
         return self._route_id
 
+    def _is_owner_account(self) -> bool | None:
+        """当前账号是否车主。
+
+        返回 True=车主可用；False=非车主（家人/试驾，服务端会拒）；
+        **None=角色未知**（取车辆列表失败）——此时一律按"可试"处理，
+        避免因角色探测失败而误伤车主账号。
+        """
+        try:
+            veh = _vr.current_vehicle(self.li_api)
+        except Exception:  # noqa: BLE001
+            return None
+        if not veh:
+            return None
+        rel = _vr.relation_of(veh)
+        if rel == _vr.REL_OWNER:
+            return True
+        if rel is None:
+            return None          # 关系未知 → 不拦截
+        return False             # 家人共享 / 试驾 / 邀请中等
+
+    def _owner_only_skip(self, rid: str) -> bool:
+        """车主专属功能的统一守卫：非车主直接跳过请求并写入原因。
+
+        ★ 意义：避免家人账号陷入「服务端拒绝 → 60s 重试 → 无限刷屏」，
+          同时在传感器属性里如实告知原因（用户改不了，不该伪装成故障）。
+        """
+        owner = self._is_owner_account()
+        if owner is False:
+            if not self._task_error.get(rid):
+                _LOGGER.info(
+                    "当前账号非车主，跳过任务大师/充电记录拉取（服务端按角色限制）")
+            self._task_error[rid] = _OWNER_ONLY_NOTICE
+            return True
+        return False
+
     # ★ 在线探测信号（借自 huawei-auto-cloud 的在线驱动轮询策略）
     #   先只查 2 个连接状态字段，离线时跳过大轮询 → 省流量、降低风控风险
     PRESENCE_PATHS = [
@@ -268,19 +312,22 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             _rid2 = self._rid()
             _now2 = _t2.time()          # ★ 绝对时间（monotonic 语义不稳）
             _last2 = self._charge_total_ts.get(_rid2, 0.0)
-            # ★ 成功 → 24h 后再拉；失败 → 10 分钟后重试（避免一次失败卡 24h）
-            if (_now2 - _last2) > 24 * 3600 or _last2 == 0.0:
-                if self.li_api is not None and hasattr(self.li_api, "get_charge_total_kwh"):
-                    _fetched = await self.hass.async_add_executor_job(
-                        self.li_api.get_charge_total_kwh)
-                    if _fetched is not None:
-                        self._charge_total_cache[_rid2] = _fetched
-                        self._charge_total_ts[_rid2] = _now2
-                        _LOGGER.info("充电累计量更新: %s kWh", _fetched)
-                    else:
-                        # 失败：10 分钟冷却后重试
-                        self._charge_total_ts[_rid2] = _now2 - 24 * 3600 + 600
-                        _LOGGER.warning("充电累计量拉取失败（10 分钟后重试）")
+            # ★ 2026-10-09：非车主账号跳过充电记录拉取（服务端按角色限制）
+            #   与任务大师同一守卫，避免「拒绝 → 10 分钟后重试」反复刷屏
+            if not self._owner_only_skip(_rid2):
+                # ★ 成功 → 24h 后再拉；失败 → 10 分钟后重试（避免一次失败卡 24h）
+                if (_now2 - _last2) > 24 * 3600 or _last2 == 0.0:
+                    if self.li_api is not None and hasattr(self.li_api, "get_charge_total_kwh"):
+                        _fetched = await self.hass.async_add_executor_job(
+                            self.li_api.get_charge_total_kwh)
+                        if _fetched is not None:
+                            self._charge_total_cache[_rid2] = _fetched
+                            self._charge_total_ts[_rid2] = _now2
+                            _LOGGER.info("充电累计量更新: %s kWh", _fetched)
+                        else:
+                            # 失败：10 分钟冷却后重试
+                            self._charge_total_ts[_rid2] = _now2 - 24 * 3600 + 600
+                            _LOGGER.warning("充电累计量拉取失败（10 分钟后重试）")
             _charge_kwh = self._charge_total_cache.get(_rid2)
         except Exception as _err2:  # noqa: BLE001
             _LOGGER.warning("充电累计量拉取异常: %s", _err2)
@@ -351,7 +398,11 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             _rid5 = self._rid()
             _now5 = _t5.time()
             _last5 = self._task_ts.get(_rid5, 0.0)
-            if (_now5 - _last5) > 120 or _last5 == 0.0:
+            # ★ 2026-10-09：非车主账号直接跳过（服务端按角色限制任务大师）
+            #   不跳过的话会「服务端拒绝 → 60s 重试」无限循环刷屏，用户无法解决
+            if self._owner_only_skip(_rid5):
+                _tasks = self._task_cache.get(_rid5) or []
+            elif (_now5 - _last5) > 120 or _last5 == 0.0:
                 _api5 = self.li_api
                 if _api5 is not None and hasattr(_api5, "get_tasks"):
                     try:
