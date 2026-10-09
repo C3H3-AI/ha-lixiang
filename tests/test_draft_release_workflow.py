@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import stat
 from pathlib import Path
 
 import pytest
@@ -217,17 +218,48 @@ class TestReleaseTagBinding:
         )
 
     def test_binding_check_retries_list_api(self):
-        """列表接口是最终一致性的（实测 3 次丢 1 次）—— 必须重试。"""
+        """列表接口是最终一致性的（实测 3 次丢 1 次）—— 必须重试。
+
+        ★ 2026-10-09 改：重试发生在 create 步骤的「id 差集」与绑定脚本内部，
+        不再是"在列表里找第一个 untagged 草稿"。
+        """
         src = _wf()
-        idx = src.index("Verify release bound to tag")
-        seg = src[idx:]
-        assert "for _ in 1 2 3 4 5" in seg, (
-            "绑定校验必须对列表接口重试 —— 它是最终一致性的，刚建完可能查不到"
+        assert "for _ in 1 2 3 4 5" in src, (
+            "取新建 Release 的 id 必须重试 —— 列表接口是最终一致性的，刚建完可能查不到"
         )
-        assert "startswith(\"untagged-\")" in seg, (
-            "找未绑定草稿要认 untagged- 前缀 —— 不能用 name 前缀匹配"
-            "（'v1.2.4' 会误匹配 'v1.2.40'）"
+        script = (ROOT / "scripts/gh-release-bind.sh").read_text(encoding="utf-8")
+        assert 'for _ in $(seq 1 "$RETRIES")' in script, "绑定脚本内部也必须带重试"
+
+    def test_binding_check_targets_release_id_not_first_untagged(self):
+        """★★ 回归核心（2026-10-09 真事故）。
+
+        旧实现：「在列表里找第一个 tag_name 以 untagged- 开头的草稿」再 PATCH。
+        列表是最终一致性的 → 抓错对象 → 两个草稿的 tag 绑定互相串掉
+        （v1.4.6 被标成 untagged、v1.4.7 也跟着变成 untagged；v1.2.4 同类）。
+
+        现在必须：create 步骤记下「新建的那个」release id，校验/修复只认这个 id。
+        """
+        src = _wf()
+        assert 'startswith("untagged-")' not in src, (
+            "工作流不得再全局搜索 untagged 草稿 —— 一定会抓错对象"
         )
+        assert "release_id=${NEW_ID}" in src, "create 步骤必须输出本次新建的 release id"
+        assert "steps.create.outputs.release_id" in src, "校验步骤必须使用该 id"
+        assert "gh-release-bind.sh" in src, (
+            "校验/修复必须走 scripts/gh-release-bind.sh（可按 id 定位）"
+        )
+        assert "comm -13" in src, "新建 Release 的 id 应由「创建前后 id 差集」确定"
+
+    def test_bind_script_exists_and_is_executable(self):
+        script = ROOT / "scripts/gh-release-bind.sh"
+        assert script.exists(), "缺 scripts/gh-release-bind.sh"
+        assert script.stat().st_mode & stat.S_IXUSR, "脚本必须可执行"
+
+    def test_bind_script_avoids_draft_404_endpoints(self):
+        """草稿不参与 tag 索引：/releases/tags/{tag} 与 `gh release view` 都会 404。"""
+        script = (ROOT / "scripts/gh-release-bind.sh").read_text(encoding="utf-8")
+        assert "/releases/tags/" not in script, "不能用 /releases/tags/{tag}（草稿 404）"
+        assert "gh release view" not in script, "不能用 gh release view（草稿 404）"
 
 
 class TestZIPArtifact:
