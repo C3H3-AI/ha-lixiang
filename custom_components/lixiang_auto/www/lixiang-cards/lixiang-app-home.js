@@ -43,10 +43,17 @@ const STYLE = `
     --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
 
   /* ★ 2026-10-09（用户要求）：抬头固定 —— 滚动时头部（车型/续航/状态）不再消失。
-     · .head 粘顶（任何滚动容器都成立，HA 卡片外层滚动也可）
-     · 粘顶后收紧成单行 + 隐藏缩略 3D，避免固定头部占掉半屏 */
-  .head { position:sticky; top:0; z-index:30; background:var(--lx-bg);
-          padding:8px 20px 0; transition:box-shadow .2s, padding .2s, background .2s; }
+     · .head 粘顶；粘顶后收紧成单行 + 隐藏缩略 3D，避免固定头部占掉半屏
+     · ★★ 避让 HA 顶栏：HA 的顶栏是 position:fixed 覆盖在内容之上的
+       （窄屏尤其明显，内容会滑到顶栏下面）。若只写 top:0，我们的抬头会
+       **被 HA 顶栏盖住**（用户反馈："抬头还是会被遮挡"）。
+       所以粘顶位置取 --lx-head-top，由 JS 按实测布局算出：
+         · 滚动容器顶边在视口顶端（=顶栏覆盖式布局）→ 需要避让 --header-height
+         · 顶栏被 HA 自动隐藏时（窄屏下滚）→ 归零，否则会留一条空白
+         · 滚动容器顶边已在顶栏之下（桌面布局）→ 归零，不需要避让 */
+  .head { position:sticky; top:var(--lx-head-top, 0px); z-index:30; background:var(--lx-bg);
+          padding:8px 20px 0;
+          transition:top .18s ease, box-shadow .2s, padding .2s, background .2s; }
   .root.stuck .head { padding-bottom:8px; border-bottom:1px solid var(--lx-line);
           box-shadow:0 6px 16px rgba(0,0,0,.06); }
   .root.stuck .head .hrow { align-items:baseline; }
@@ -426,6 +433,42 @@ class LixiangAppHome extends HTMLElement {
     return window.scrollY || document.documentElement.scrollTop || 0;
   }
 
+  /** 真正的滚动祖先（没有则返回文档滚动元素）。 */
+  _scrollRoot() {
+    let n = this.parentElement || (this.getRootNode && this.getRootNode().host) || null;
+    while (n && n.nodeType === 1) {
+      const cs = getComputedStyle(n);
+      if (/(auto|scroll|overlay)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 2) return n;
+      n = n.parentElement || (n.getRootNode && n.getRootNode().host) || null;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+
+  /** 抬头粘顶位置（px）—— 避开 HA 固定顶栏。
+   *
+   *  HA 的顶栏（`app-header`）是 position:fixed 覆盖在内容之上，高度由
+   *  `--header-height` 给出（实测 56px）。两种布局：
+   *    · 覆盖式（窄屏/移动端）：滚动容器顶边 = 视口顶端（0）
+   *      → 抬头若只写 top:0 会被顶栏盖住（用户实测："抬头被遮挡"）→ 下移一个顶栏高度
+   *    · 预留式（宽屏桌面）：滚动容器顶边已在顶栏之下（≈56）
+   *      → 它的 top:0 本来就等于顶栏底边 → 不能下移，否则会露出空白
+   *  两种情形用「滚动容器顶边 vs --header-height」自动区分，不用猜屏宽。
+   */
+  _headTopOffset() {
+    try {
+      const docEl = document.documentElement;
+      const hh = parseFloat(getComputedStyle(docEl).getPropertyValue("--header-height")) || 0;
+      if (!hh) return 0;                                     // 非 HA 环境（如卡片预览）不避让
+      const sc = this._scrollRoot();
+      const isDoc = !sc || sc === docEl || sc === document.body ||
+                    sc === document.scrollingElement;
+      const scTop = isDoc ? 0 : Math.round(sc.getBoundingClientRect().top);
+      return scTop < hh - 2 ? Math.round(hh) : 0;            // 覆盖式才避让
+    } catch (e) {
+      return 0;
+    }
+  }
+
   _st(id) { return (id && this._hass) ? this._hass.states[id] : null; }
   _num(id) {
     const s = this._st(id);
@@ -573,16 +616,33 @@ class LixiangAppHome extends HTMLElement {
     //     而 scroll 事件带 capture 能拿到容器，事件目标就是那个容器的 scrollTop。
     this._scrollCleanups = this._scrollCleanups || [];
     {
-      let stuck = false;
-      const onStuck = (ev) => {
-        const next = this._scrollTopOf(ev) > 4;
-        if (next !== stuck) { stuck = next; root.classList.toggle("stuck", stuck); }
+      // 浏览器可能恢复上次滚动位置：初始就按当前滚动量定"已粘顶"
+      const y0 = this._scrollTopOf(null);
+      let stuck = y0 > 4, lastY = y0, lastTop = null;
+      const applyHeadTop = () => {
+        const top = this._headTopOffset();
+        if (top === lastTop) return;
+        lastTop = top;
+        root.style.setProperty("--lx-head-top", top + "px");
+        root.dataset.headTop = String(top);   // 诊断可见：实际避让了多少 px
       };
+      const onStuck = (ev) => {
+        const y = this._scrollTopOf(ev);
+        if (Math.abs(y - lastY) < 2) return;      // 抖动过滤
+        lastY = y;
+        const next = y > 4;
+        if (next !== stuck) { stuck = next; root.classList.toggle("stuck", stuck); }
+        applyHeadTop();
+      };
+      applyHeadTop();                       // 首屏先算一次
       window.addEventListener("scroll", onStuck, { passive: true });
       document.addEventListener("scroll", onStuck, { passive: true, capture: true });
+      const onResize = () => applyHeadTop();
+      window.addEventListener("resize", onResize, { passive: true });
       this._scrollCleanups.push(() => {
         window.removeEventListener("scroll", onStuck);
         document.removeEventListener("scroll", onStuck, { capture: true });
+        window.removeEventListener("resize", onResize);
       });
     }
 
