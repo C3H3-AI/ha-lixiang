@@ -88,6 +88,13 @@ CONF_MAIN_BEARER = "main_bearer"
 #   lixiang = 理想汽车 App 身份（主 App KID 派生签名）
 #   livis   = 理想同学身份（理想同学 KID 派生签名）
 CONF_APP_TYPE = "app_type"
+# ★ 2026-10-10：签名身份来源标记 —— 用于识别「v1.4.7 之前建的条目」。
+#   老条目的身份来自已删除的内置抓包值（每台设备都一样的 iPad 身份），
+#   这类条目应在下次拿到新鲜会话时迁移成【本设备现场派生】的身份。
+#   用标记而不是比对旧值：把抓包身份写回代码里正是「去 iPad 化」要避免的。
+CONF_IDENTITY_SOURCE = "identity_source"
+IDENTITY_SOURCE_DERIVED = "derived"     # 由 key_suite 现场派生（本设备）
+IDENTITY_SOURCE_MANUAL = "manual"       # 用户在手动流程里自填四件套
 APP_LIXIANG = "lixiang"
 APP_LIVIS = "livis"
 

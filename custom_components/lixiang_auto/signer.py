@@ -70,6 +70,18 @@ class LiCarSigner:
         self._device_id = device_id
         self._app_version = app_version
 
+    def update_identity(self, hac_key: str | bytes, key_id: str,
+                        device_id: str) -> None:
+        """运行时更新签名身份（★ 2026-10-10 身份迁移用）。
+
+        老条目从「内置抓包身份」迁移到「本设备派生身份」后，
+        已按旧身份构造的签名器必须同步更新，否则它会继续用旧身份签名
+        （实测影响：coordinator 的 client.update() 走的就是这个签名器）。
+        """
+        self._hac_key = normalize_hac_key(hac_key)
+        self._key_id = key_id
+        self._device_id = device_id
+
     @property
     def app_version(self) -> str:
         return self._app_version

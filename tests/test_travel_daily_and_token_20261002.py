@@ -33,14 +33,31 @@ def test_li_api_accepts_token_callback():
     assert "self._on_token_update = on_token_update" in src, "未保存回调"
 
 
+def _func_src(cls_name: str, fn_name: str) -> str:
+    """取某个类方法的源码（★ 只用该方法本体，避开其它方法里的同名调用）。
+
+    2026-10-10：原来用全文 `src.find(...)` 定位 —— 当别处（如身份迁移
+    方法）也出现 `_notify_token_update()` 时会取到错的那个，测试随即失真。
+    """
+    import ast
+
+    tree = ast.parse(_read("li_api.py"))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == cls_name:
+            for sub in node.body:
+                if (isinstance(sub, ast.FunctionDef)
+                        and sub.name == fn_name):
+                    return ast.get_source_segment(_read("li_api.py"), sub) or ""
+    raise AssertionError(f"找不到 {cls_name}.{fn_name}")
+
+
 def test_login_notifies_token_update():
     """_login() 成功后必须触发回调（否则重启读回旧 token）。"""
-    src = _read("li_api.py")
-    # 找到 _login 里保存 token 后的调用点
-    assert "_notify_token_update()" in src, "未调用回调"
+    body = _func_src("LiApiClient", "_login")
+    assert "_notify_token_update()" in body, "未调用回调"
     # 回调必须在设置 _main_bearer 之后
-    idx_bearer = src.find('self._main_bearer = str(tok.get("access_token")')
-    idx_notify = src.find("self._notify_token_update()")
+    idx_bearer = body.find('self._main_bearer = str(tok.get("access_token")')
+    idx_notify = body.find("self._notify_token_update()")
     assert idx_bearer > 0 and idx_notify > idx_bearer, "回调调用点位置错误"
 
 
