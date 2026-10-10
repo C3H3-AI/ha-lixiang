@@ -1085,6 +1085,53 @@ class LiApiClient:
         except Exception:  # noqa: BLE001
             raise
 
+    def probe_realtime_state(self) -> dict:
+        """诊断：探测「老平台车型（如理想ONE / M01）」的 real-time-state 通道。
+
+        ★ 为什么需要它（2026-10-11，理想ONE 车主日志实证）：
+          VSS（`vss:get-batch`）对该车返回 `access_denied` —— 该车型没有开通
+          VSS 信号服务；而本项目文档早就记录
+          `/ssp-as-mobile-api/v3-0/vehicles/{vin}/real-time-state`
+          是社区方案（hasscc）的**默认数据源**，**新车型（L6）反而报 100035**。
+          → 老车型应走 real-time-state，但必须先拿到**真实响应**才能建字段映射。
+
+        ★ 铁律 2（对照组）：同时打一条**已知可用**的接口（travel 月里程，
+          与本次探测共用同一套签名 + 主 Bearer）—— 否则分不清
+          「端点不可用」与「会话/权限/签名问题」。
+
+        只读：不触发任何车控。
+        """
+        out: dict = {"vin": self._vin, "attempts": {}}
+        bearer = self._travel_bearer()
+
+        def _try(path: str) -> dict:
+            try:
+                r = self._signed_call_travel("GET", path, "", bearer)
+            except Exception as err:  # noqa: BLE001
+                return {"ok": False, "error": str(err)[:200]}
+            code = r.get("code")
+            data = r.get("data")
+            return {
+                "ok": code == 0,
+                "code": code,
+                "message": r.get("message") or r.get("msg"),
+                "data_type": type(data).__name__,
+                "data_keys": (sorted(str(k) for k in data.keys())[:60]
+                              if isinstance(data, dict) else None),
+                "raw": r,
+            }
+
+        # 对照组（已知可用）：travel 月里程 —— 同一套签名/主 Bearer
+        out["attempts"]["control_travel_months"] = _try(
+            f"/ssp-travel-x-service/v1-0/travel/months/{self._vin}")
+        # 目标①：hasscc 默认数据源（v3-0，带 vin）
+        out["attempts"]["realtime_state_v3"] = _try(
+            f"/ssp-as-mobile-api/v3-0/vehicles/{self._vin}/real-time-state")
+        # 目标②：文档中出现过的 v1-0 变体（不带 vin）—— 一并试，省一轮往返
+        out["attempts"]["realtime_state_v1"] = _try(
+            "/ssp-as-mobile-api/v1-0/vehicles/real-time-state")
+        return out
+
     def _refresh_main_bearer(self) -> bool:
         """用 refresh_token **免密**续期主 Bearer；成功返回 True。
 
