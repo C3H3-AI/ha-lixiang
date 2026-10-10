@@ -43,7 +43,9 @@ import os
 from pathlib import Path
 from typing import Any
 
-_LOGGER = logging.getLogger("lixiang_auto")
+# ★ 2026-10-10：const.py 反过来 import 本模块 → 这里不能导入 LOGGER_NAME，
+#   用 __package__ 拼出同一命名空间（custom_components.lixiang_auto.secrets）。
+_LOGGER = logging.getLogger(f"{__package__}.secrets")
 
 # 集成目录（本文件所在目录）
 _INTEGRATION_DIR = Path(__file__).resolve().parent
