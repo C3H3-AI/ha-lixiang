@@ -104,6 +104,11 @@ APP_PUBLIC_PREFIXES = (
     "13bfce38f577",   # DEFAULT_XDEV
     "50dbc95ceba8",   # DEFAULT_APP_TOKEN 主体（const.py 里 "APP-" 之后那段）
     "app-",           # DEFAULT_APP_TOKEN 前缀形式
+    # ★ 2026-10-10：keySuite 的 KID（getPriId 硬编码，App 公共常量，
+    #   libfOpenGLUtils.so 静态提取；每台设备安装即内置）
+    "020026d02bf8",   # MAIN_DEVICE_KEY_ID（理想汽车 App）
+    "02003dbe871b",   # LIVIS_DEVICE_KEY_ID（理想同学）
+    "aabbccdd",       # 测试占位符（tests/test_key_suite.py）
 )
 
 
