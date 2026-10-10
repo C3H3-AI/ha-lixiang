@@ -3,18 +3,20 @@
     "step": {
       "user": {
         "title": "Li Auto",
-        "description": "Enter your Li Auto account phone number and password.\n\n**What happens next?**\n\n1. The integration signs in to Li Auto's servers with your credentials\n2. If this is the **first time** signing in from this device, Li Auto will require **SMS verification** (with a slider captcha you must complete in your browser)\n3. The integration opens a helper page where you complete the verification\n4. Once verified, this device is marked **trusted** and no further verification is needed\n\n> ⚠️ Signing in invalidates the Li Auto App session (sign in again in the App if needed).",
+        "description": "Enter your Li Auto account phone number and password, then choose a sign-in identity.\n\n**What happens next?**\n\n1. The integration signs in to Li Auto's servers with your credentials\n2. If this is the **first time** signing in from this device, Li Auto will require **SMS verification** (with a slider captcha you must complete in your browser)\n3. The integration opens a helper page where you complete the verification\n4. Once verified, this device is marked **trusted** and no further verification is needed\n\n> ⚠️ The \"Li Auto\" identity shares the Li Auto App sign-in session (the phone App may be signed out); \"Li Auto Assistant\" uses an independent signing identity.",
         "data": {
           "phone": "Phone number",
-          "password": "Password"
+          "password": "Password",
+          "app_type": "Sign-in identity"
         }
       },
       "password_login": {
         "title": "Li Auto login",
-        "description": "Enter your Li Auto account phone number and password.\n\n**First login** requires SMS verification (including a slider captcha); the integration will guide you through it in your browser. Once verified, this device is trusted and no further verification is needed.\n\n> ⚠️ Signing in invalidates the Li Auto App session.",
+        "description": "Enter your Li Auto account phone number and password, then choose a sign-in identity.\n\n**Sign-in identity:**\n- **Li Auto** — the same sign-in session as the Li Auto App (the phone App may be signed out)\n- **Li Auto Assistant** — an independent identity (signing key derived from the Assistant app)\n\n**First login** requires SMS verification (including a slider captcha); the integration will guide you through it in your browser. Once verified, this device is trusted and no further verification is needed.",
         "data": {
           "phone": "Phone number",
-          "password": "Password"
+          "password": "Password",
+          "app_type": "Sign-in identity"
         }
       },
       "browser": {
@@ -83,7 +85,8 @@
       "reauth_successful": "Re-authentication successful",
       "reauth_entry_not_found": "Could not find the config entry to re-authenticate. Delete it and add it again.",
       "vin_already_configured": "This vehicle (VIN {vin}) is already configured with account ****{phone}.\n\nTo switch accounts: delete the existing entry first (Settings → Devices & Services → Li Auto → Delete), then add it again.",
-      "missing_credentials": "Missing signing credentials: {fields}\n\nThese credentials are unique to each device and cannot be bundled. Use the \"Manual credentials\" entry to fill them in."
+      "missing_credentials": "Missing signing credentials: {fields}\n\nThese credentials are unique to each device and cannot be bundled. Use the \"Manual credentials\" entry to fill them in.",
+      "identity_derive_failed": "Failed to derive the signing identity: {detail}\n\nCheck the HA logs (Settings → System → Logs, filter lixiang_auto) and try again."
     }
   },
   "options": {

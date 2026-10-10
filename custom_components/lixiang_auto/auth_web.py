@@ -42,7 +42,7 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, LOGGER_NAME, ACCOUNT_BASE, AUDIENCE, CLIENT_ID
+from .const import DOMAIN, LOGGER_NAME, ACCOUNT_BASE, AUDIENCE
 
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
@@ -58,12 +58,14 @@ def _gc() -> None:
         _SESSIONS.pop(k, None)
 
 
-def create_session(phone: str, password: str, device_id: str) -> str:
+def create_session(phone: str, password: str, device_id: str,
+                   app_type: str = "lixiang") -> str:
     """创建一个登录会话，返回 token。
 
     ★ 2026-09-24（整合 shinnaluo 的 PR）：
       device_id 不能为空 —— 空值会让理想官方登录页一直转圈（loading）。
       若调用方传空，这里自动生成一个。
+    ★ 2026-10-10：app_type 决定登录 client（livis 理想同学独立 client）。
     """
     _gc()
     device_id = str(device_id or "").strip()
@@ -76,6 +78,7 @@ def create_session(phone: str, password: str, device_id: str) -> str:
         "phone": phone,
         "password": password,
         "device_id": device_id,
+        "app_type": app_type or "lixiang",
         "created_at": time.time(),
         "trusted": False,
     }
@@ -141,15 +144,21 @@ class LiXiangLoginView(HomeAssistantView):
         from urllib.parse import urlencode
 
         from .const import ACCOUNT_BASE
+        from .pake_login import APP_LOGIN_PARAMS
 
         dev = s["device_id"]
+        # ★ 2026-10-10：登录链接按 app_type 取 client（livis 独立 client）
+        client_id, scope, redirect = (
+            APP_LOGIN_PARAMS.get(s.get("app_type") or "lixiang")
+            or APP_LOGIN_PARAMS["lixiang"]
+        )
         # 主链接：H5 模式 + 完整授权参数
         login_url = ACCOUNT_BASE + "/app-auth?" + urlencode({
             "mode": "h5",
-            "client_id": CLIENT_ID,
-            "redirect_uri": f"{ACCOUNT_BASE}/app-auth",
+            "client_id": client_id,
+            "redirect_uri": redirect,
             "response_type": "code",
-            "scope": "iam:client:type:app openid",
+            "scope": scope,
             "audience": AUDIENCE,
             "device_id": dev,
         })
@@ -157,8 +166,8 @@ class LiXiangLoginView(HomeAssistantView):
         #   （authorize 参数异常导致卡住时用这条 → 走纯登录流程）
         alt_url = ACCOUNT_BASE + "/app-auth?" + urlencode({
             "mode": "h5",
-            "client_id": CLIENT_ID,
-            "redirect_uri": f"{ACCOUNT_BASE}/app-auth",
+            "client_id": client_id,
+            "redirect_uri": redirect,
             "response_type": "code",
             "device_id": dev,
         })
@@ -226,17 +235,19 @@ async def async_register_login_views(hass: HomeAssistant) -> None:
     _LOGGER.debug("已注册 /lixiang-login 辅助页面")
 
 
-def try_login(phone: str, password: str, device_id: str) -> bool:
+def try_login(phone: str, password: str, device_id: str,
+              app_type: str = "lixiang") -> bool:
     """尝试用 device_id + 密码 登录（用于检测设备是否已受信任）。
 
     返回 True 表示登录成功（设备已受信任）。
+    ★ app_type 需与最终 _do_direct_login 一致，否则轮询成功也不代表目标 client 可登。
     """
     try:
         from .pake_login import LixiangDirectLogin
     except ImportError:
         return False
     try:
-        cli = LixiangDirectLogin(device_id=device_id)
+        cli = LixiangDirectLogin(device_id=device_id, app_type=app_type)
         tok = cli.login(phone, password)
         if tok.get("access_token"):
             _LOGGER.info("设备已受信任，登录成功: %s", device_id[:12])
