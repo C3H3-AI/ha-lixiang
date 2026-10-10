@@ -150,14 +150,16 @@ def _warning_if_node():
 
     ★ 必须用 AST 而不是子串：子串断言挡不住「把条件改成 if True」
       （每个版本都警告）—— 那正是本文件要防的退化（见技能 §19 假测试）。
+    ★ 判据再加一条：分支体里必须真的有 `_LOGGER.warning` ——
+      因为同一个标志还出现在「是否补拉 real-time-state」的合并分支里，
+      只按标志名匹配会挑错节点（2026-10-11 踩到）。
     """
     src = COORD.read_text(encoding="utf-8")
     for node in ast.walk(ast.parse(src)):
-        if isinstance(node, ast.If):
-            dump = ast.dump(node.test)
-            if "_vss_denied_notified" in dump:
+        if isinstance(node, ast.If) and "_vss_denied_notified" in ast.dump(node.test):
+            if "warning" in _log_calls(node.body):
                 return node
-    raise AssertionError("找不到基于 _vss_denied_notified 的分支")
+    raise AssertionError("找不到「基于标记 + 内含 warning」的降噪分支")
 
 
 def _log_calls(nodes) -> set[str]:

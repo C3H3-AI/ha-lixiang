@@ -1085,6 +1085,17 @@ class LiApiClient:
         except Exception:  # noqa: BLE001
             raise
 
+    def get_realtime_state(self) -> dict:
+        """老平台车型（M 系 / 理想ONE）实时状态 → 返回 `DynamicInfoRes` 本体。
+
+        ★ 端点来自 App 逆向：`NetApiConst.GET_VEHICLE_STATE(vin)` →
+          `GET /ssp-as-mobile-api/v3-0/vehicles/{vin}/real-time-state`（方法 get）。
+          这些车型 `vss:get-batch` 恒返 `access_denied`，只能走这条。
+        """
+        path = f"/ssp-as-mobile-api/v3-0/vehicles/{self._vin}/real-time-state"
+        r = self._signed_call_travel("GET", path, "", self._travel_bearer())
+        return (r or {}).get("data") or {}
+
     def probe_realtime_state(self) -> dict:
         """诊断：探测「老平台车型（如理想ONE / M01）」的 real-time-state 通道。
 
