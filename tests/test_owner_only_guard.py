@@ -28,6 +28,9 @@ def _src(name: str) -> str:
 
 def _func_block(src: str, name: str) -> str:
     i = src.find(f"def {name}(")
+    ia = src.find(f"async def {name}(")
+    if 0 <= ia and (i < 0 or i > ia):
+        i = ia
     assert i > 0, f"缺少 {name}"
     j = src.find("\n    def ", i + 10)
     j2 = src.find("\n    async def ", i + 10)
@@ -58,8 +61,12 @@ class TestOwnerOnlyGuard:
     def test_task_entries_filters_non_owner(self):
         """★ 任务大师的公共入口必须过滤非车主（覆盖 4 个服务）。"""
         blk = _func_block(_src("__init__.py"), "_li_task_entries")
-        assert "_is_non_owner(" in blk, "_li_task_entries 未做角色过滤"
-        assert "continue" in blk.split("_is_non_owner(")[1][:200], "过滤后应 continue 跳过"
+        assert "_is_non_owner(" in blk or "_is_non_owner_async(" in blk, (
+            "_li_task_entries 未做角色过滤")
+        # 找到角色过滤调用点之后 200 字符内应有 continue（跳过非车主）
+        marker = "_is_non_owner_async(" if "_is_non_owner_async(" in blk else "_is_non_owner("
+        seg = blk.split(marker)[1] if marker in blk else ""
+        assert "continue" in seg[:300], "过滤后应 continue 跳过"
 
     def test_coordinator_skips_owner_only(self):
         """★ coordinator 必须对两项车主专属能力加守卫（不再发请求）。"""
@@ -87,7 +94,8 @@ class TestOwnerOnlyGuard:
         i = s.find("async def _handle_get_charge(call)")
         j = s.find("\n    async def ", i+10)
         body = s[i:j]
-        assert "_is_non_owner(" in body, "充电服务未做角色守卫"
+        assert "_is_non_owner(" in body or "_is_non_owner_async(" in body, (
+            "充电服务未做角色守卫")
 
     def test_notice_is_user_readable(self):
         """文案必须说明是服务端限制（用户改不了），而非配置错误。"""

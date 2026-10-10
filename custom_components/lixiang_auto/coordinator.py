@@ -80,6 +80,10 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
         self._task_ts: dict[str, float] = {}
         self._task_cache: dict[str, list] = {}
         self._task_error: dict[str, str] = {}   # route_id → 最近一次拉取错误
+        # ★ 2026-10-10：账号角色缓存（True=车主 False=非车主 None=未知）。
+        #   角色判定要走同步 HTTP（get_vehicles），不能在事件循环里调 ——
+        #   否则触发 HA blocking-call 告警（实测）。缓存 6 小时。
+        self._owner_cache: tuple[bool | None, float] | None = None
         # 主 route（当前唯一支持的车；多车时扩展为遍历）
         self._route_id: str = ""
 
@@ -160,13 +164,8 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                 self._route_id = "default"
         return self._route_id
 
-    def _is_owner_account(self) -> bool | None:
-        """当前账号是否车主。
-
-        返回 True=车主可用；False=非车主（家人/试驾，服务端会拒）；
-        **None=角色未知**（取车辆列表失败）——此时一律按"可试"处理，
-        避免因角色探测失败而误伤车主账号。
-        """
+    def _is_owner_account_sync(self) -> bool | None:
+        """同步判定车主角色（内部走 HTTP，只能在 executor 线程调用）。"""
         try:
             veh = _vr.current_vehicle(self.li_api)
         except Exception:  # noqa: BLE001
@@ -180,13 +179,41 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             return None          # 关系未知 → 不拦截
         return False             # 家人共享 / 试驾 / 邀请中等
 
-    def _owner_only_skip(self, rid: str) -> bool:
+    _OWNER_TTL = 6 * 3600.0       # 角色缓存 6 小时（角色极少变化）
+
+    async def _is_owner_account(self) -> bool | None:
+        """当前账号是否车主（异步包装：executor 调用 + 缓存）。
+
+        返回 True=车主可用；False=非车主（家人/试驾，服务端会拒）；
+        **None=角色未知**（取车辆列表失败）——此时一律按"可试"处理，
+        避免因角色探测失败而误伤车主账号。
+
+        ★ 2026-10-10 修：旧版在事件循环里直接调同步 HTTP（get_vehicles），
+          触发 HA blocking-call 告警（实测，栈：coordinator._is_owner_account
+          → vehicle_role.current_vehicle → li_api.get_vehicles → pake_login）。
+          现改为 executor 执行 + 6h 缓存（角色判定每轮询都要用，不能每次都打）。
+        """
+        import time as _time
+        now = _time.monotonic()
+        if self._owner_cache is not None:
+            owner, ts = self._owner_cache
+            if owner is not None and (now - ts) < self._OWNER_TTL:
+                return owner
+        owner = None
+        if self.li_api is not None:
+            owner = await self.hass.async_add_executor_job(
+                self._is_owner_account_sync)
+        self._owner_cache = (owner, now)
+        return owner
+
+    async def _owner_only_skip(self, rid: str) -> bool:
         """车主专属功能的统一守卫：非车主直接跳过请求并写入原因。
 
         ★ 意义：避免家人账号陷入「服务端拒绝 → 60s 重试 → 无限刷屏」，
           同时在传感器属性里如实告知原因（用户改不了，不该伪装成故障）。
+        ★ 2026-10-10：改为 async（内部角色判定走 executor + 缓存）。
         """
-        owner = self._is_owner_account()
+        owner = await self._is_owner_account()
         if owner is False:
             if not self._task_error.get(rid):
                 _LOGGER.info(
@@ -314,7 +341,7 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             _last2 = self._charge_total_ts.get(_rid2, 0.0)
             # ★ 2026-10-09：非车主账号跳过充电记录拉取（服务端按角色限制）
             #   与任务大师同一守卫，避免「拒绝 → 10 分钟后重试」反复刷屏
-            if not self._owner_only_skip(_rid2):
+            if not await self._owner_only_skip(_rid2):
                 # ★ 成功 → 24h 后再拉；失败 → 10 分钟后重试（避免一次失败卡 24h）
                 if (_now2 - _last2) > 24 * 3600 or _last2 == 0.0:
                     if self.li_api is not None and hasattr(self.li_api, "get_charge_total_kwh"):
@@ -400,7 +427,7 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             _last5 = self._task_ts.get(_rid5, 0.0)
             # ★ 2026-10-09：非车主账号直接跳过（服务端按角色限制任务大师）
             #   不跳过的话会「服务端拒绝 → 60s 重试」无限循环刷屏，用户无法解决
-            if self._owner_only_skip(_rid5):
+            if await self._owner_only_skip(_rid5):
                 _tasks = self._task_cache.get(_rid5) or []
             elif (_now5 - _last5) > 120 or _last5 == 0.0:
                 _api5 = self.li_api
@@ -576,12 +603,17 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                 #   不从 VSS 取，而是用其他信号算。
                 #   典型用例：range_total = PureElec + Fuel
                 #   （App 反编译证实服务端不返回 EnduranceMil 路径）。
+                #   ★ 2026-10-10 修：compute 字符串里的函数（如 _sum_range）
+                #     定义在 signals 模块 —— eval 必须带上它的 globals，
+                #     否则 NameError（实测：range_total_cltc/wltc 一直 unknown）。
+                import math as _math
+                from . import signals as _signals_mod
+                _eval_globals = {**_signals_mod.__dict__, "math": _math}
                 for _k, _spec in _SIGNALS.items():
                     _compute = getattr(_spec, "compute", None)
                     if _compute and _k not in data["vss"]:
                         try:
-                            import math
-                            _fn = eval(_compute)
+                            _fn = eval(_compute, _eval_globals)
                             _raw = _fn(data["vss"])
                             data["vss"][_k] = {"value": _raw, "computed": True}
                         except Exception as _err:  # noqa: BLE001

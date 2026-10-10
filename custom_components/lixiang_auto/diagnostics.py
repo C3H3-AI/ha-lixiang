@@ -70,6 +70,10 @@ def _mask_vin(v: Any) -> str | None:
     return "***" + s[-6:]
 
 
+# manifest.json 只在模块导入后读一次（后续走内存缓存）
+_MANIFEST_CACHE: dict[str, Any] = {}
+
+
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
@@ -84,15 +88,19 @@ async def async_get_config_entry_diagnostics(
     vss = coord_data.get("vss") or {}
 
     # ---- 集成版本 ----
-    manifest: dict[str, Any] = {}
-    try:
-        import json as _json
-        import os as _os
-        mp = _os.path.join(_os.path.dirname(__file__), "manifest.json")
-        with open(mp, encoding="utf-8") as fh:
-            manifest = _json.load(fh)
-    except Exception:  # noqa: BLE001
-        pass
+    # ★ 2026-10-10 修：manifest.json 在模块导入时读一次并缓存。
+    #   此前在事件循环里 open() 文件 → HA blocking-call 告警（实测）。
+    manifest: dict[str, Any] = _MANIFEST_CACHE
+    if not manifest:
+        try:
+            import json as _json
+            import os as _os
+            mp = _os.path.join(_os.path.dirname(__file__), "manifest.json")
+            with open(mp, encoding="utf-8") as fh:
+                manifest = _json.load(fh)
+            _MANIFEST_CACHE.update(manifest)
+        except Exception:  # noqa: BLE001
+            pass
 
     # ---- coordinator 状态 ----
     coord_info: dict[str, Any] = {

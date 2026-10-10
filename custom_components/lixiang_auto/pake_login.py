@@ -59,6 +59,33 @@ DEFAULT_UA = (
     "Chrome/132.0.0.0 Safari/537.36  ArkWeb/6.1.0.117 Mobile m01/8.22.0"
 )
 
+# ------------------------------------------------------------------
+# 理想同学（Livis）独立 OAuth client —— 2026-10-10 静态逆向 + 实测
+#
+# 静态来源（理想同学 APK smali, /tmp/livis_dec）：
+#   ApiConfig.smali:37  LOGIN_CLIENT_ID = "40amUDKOdqQTaGDONZC1oY"
+#   MainApplication     启动时覆写 IDaasConfig.RELEASE_KEY = LOGIN_CLIENT_ID
+#                       （IDaasConfig 静态默认 2AQCl... 是死值）
+#   jk/a.smali (LoginWebViewConst)
+#                       登录 URL "%sapp-auth/livis" + scope "iam:client:type:lisa"
+#   audience 与主 App 相同（ApiConfig.LOGIN_AUDIENCE = 5iIapSf...）
+#
+# 实测（2026-10-10 V5/V6）：
+#   · PAKE 登录成功 → 返回 LISA- 前缀独立 token（90 天，非 JWT）
+#   · LISA token 可驱动 keySuite 派生（livis KID, code:0）
+#   · 派生身份调业务接口 code:0（端到端全通）
+#   · 与主 App（2AQCl...）互为独立登录位
+# ------------------------------------------------------------------
+LIVIS_LOGIN_CLIENT_ID = "40amUDKOdqQTaGDONZC1oY"
+LIVIS_LOGIN_SCOPE = "iam:client:type:lisa"
+LIVIS_REDIRECT_URI = BASE_ACCT + "/app-auth/livis"
+
+# app_type → (client_id, scope, redirect_uri)；audience 两分支相同
+APP_LOGIN_PARAMS = {
+    "lixiang": (CLIENT_ID, LOGIN_SCOPE, REDIRECT_URI),
+    "livis": (LIVIS_LOGIN_CLIENT_ID, LIVIS_LOGIN_SCOPE, LIVIS_REDIRECT_URI),
+}
+
 # createSeed 的模数 (登录页 JS: new BigNumber("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFF61", 16))
 SEED_MOD = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF61
 # bcrypt 自定义 base64 字母表 (登录页 JS chunk 702, bcryptjs)
@@ -138,11 +165,18 @@ class LixiangDirectLogin:
     """手机号 + 密码直接登录理想账号, 获取主 Bearer / refresh_token."""
 
     def __init__(self, device_id: str | None = None, user_agent: str = DEFAULT_UA,
-                 timeout: int = 20, debug: bool = False) -> None:
+                 timeout: int = 20, debug: bool = False,
+                 app_type: str = "lixiang") -> None:
         self.device_id = device_id or uuid.uuid4().hex
         self.user_agent = user_agent
         self.timeout = timeout
         self.debug = debug
+        # ★ 2026-10-10：登录身份参数化（"lixiang" 主 App / "livis" 理想同学）
+        #   两分支 audience 相同，仅 client_id / scope / redirect_uri 不同。
+        self.app_type = app_type
+        self.client_id, self.login_scope, self.redirect_uri = (
+            APP_LOGIN_PARAMS.get(app_type) or APP_LOGIN_PARAMS["lixiang"]
+        )
         self._sess = requests.Session()
         self._sess.headers.update({"User-Agent": self.user_agent,
                                    "x-requested-with": "XMLHttpRequest"})
@@ -180,7 +214,7 @@ class LixiangDirectLogin:
         return {
             "idaas-data": (
                 f"model_name=OpenHarmony;device_model=;device_id={self.device_id};"
-                f"app_version={APP_VERSION};client_id={CLIENT_ID};"
+                f"app_version={APP_VERSION};client_id={self.client_id};"
                 f"sdk_version={SDK_VERSION};timestamp={int(time.time() * 1000)}"
             ),
             "idaas-data-x": "source_url=registerAction=&pageUrl=&eventID=",
@@ -210,10 +244,10 @@ class LixiangDirectLogin:
         r = self._sess.post(
             f"{BASE_ID}/api/auth",
             data={
-                "client_id": CLIENT_ID, "device_id": self.device_id,
-                "response_type": "code", "redirect_uri": REDIRECT_URI,
+                "client_id": self.client_id, "device_id": self.device_id,
+                "response_type": "code", "redirect_uri": self.redirect_uri,
                 "offline_access": "true", "state": state,
-                "audience": LOGIN_AUDIENCE, "scope": LOGIN_SCOPE,
+                "audience": LOGIN_AUDIENCE, "scope": self.login_scope,
                 "code_challenge": code_challenge, "code_challenge_method": "S256",
             },
             headers={**self._idaas_headers(),
@@ -224,13 +258,13 @@ class LixiangDirectLogin:
 
         # 2. 打开登录页 (初始化页面会话)
         self._sess.get(f"{BASE_ACCT}/login", params={
-            "client_id": CLIENT_ID, "redirect_uri": REDIRECT_URI},
+            "client_id": self.client_id, "redirect_uri": self.redirect_uri},
             headers={"accept": "text/html", "referer": BASE_ACCT + "/app-auth"},
             timeout=self.timeout)
 
         # 3. 设备注册
         r = self._sess.post(f"{BASE_ID}/api/devices", json={
-            "client_id": CLIENT_ID, "device_id": self.device_id,
+            "client_id": self.client_id, "device_id": self.device_id,
             "user_agent": self.user_agent, "model": "", "manufacturer": "",
             "os": "OpenHarmony", "os_version": "6.1", "screen_height": 843,
             "screen_width": 374, "app_version": APP_VERSION,
@@ -251,7 +285,7 @@ class LixiangDirectLogin:
         # 5. proof → 授权码
         proof = create_v2_proof(password, t_login_use)
         r = self._sess.post(f"{BASE_ID}/api/login", json={
-            "client_id": CLIENT_ID, "connection": "LI_USER",
+            "client_id": self.client_id, "connection": "LI_USER",
             "user_tip": phone_tip, "proof": proof,
         }, headers=self._idaas_headers(), timeout=self.timeout, allow_redirects=False)
         if r.status_code not in (200, 300, 302):
@@ -268,7 +302,7 @@ class LixiangDirectLogin:
 
         # 6. 授权码 + PKCE verifier 换 token
         r = self._sess.post(f"{BASE_ID}/api/token", data={
-            "client_id": CLIENT_ID, "grant_type": "authorization_code",
+            "client_id": self.client_id, "grant_type": "authorization_code",
             "code": code, "code_verifier": code_verifier,
         }, headers={**self._idaas_headers(),
                     "content-type": "application/x-www-form-urlencoded"},
@@ -282,7 +316,7 @@ class LixiangDirectLogin:
     def refresh(self, refresh_token: str) -> dict:
         """用 refresh_token 换新 access_token (免密码)."""
         r = self._sess.post(f"{BASE_ID}/api/token", data={
-            "client_id": CLIENT_ID, "grant_type": "refresh_token",
+            "client_id": self.client_id, "grant_type": "refresh_token",
             "refresh_token": refresh_token,
         }, headers={**self._idaas_headers(),
                     "content-type": "application/x-www-form-urlencoded"},
@@ -301,15 +335,20 @@ def _query_param(url: str, name: str) -> str:
 # ---------------------------------------------------------------- scope 换取
 
 def exchange_scope_token(main_bearer: str, scope: str, audience: str,
-                         device_id: str, timeout: int = 20) -> dict:
+                         device_id: str, timeout: int = 20,
+                         app_type: str = "lixiang") -> dict:
     """主 Bearer → POST /api/auth (response_type=token) 换服务 scope token.
 
     见 auth.py LiBearerTokenMgr — 此处为独立函数供脚本/集成复用.
+    ★ app_type：livis 分支用理想同学 client_id/redirect_uri（2026-10-10）。
     """
+    client_id, _, redirect_uri = (
+        APP_LOGIN_PARAMS.get(app_type) or APP_LOGIN_PARAMS["lixiang"]
+    )
     r = requests.post(f"{BASE_ID}/api/auth", data={
-        "prompt": "none", "offline_access": "true", "redirect_uri": REDIRECT_URI,
+        "prompt": "none", "offline_access": "true", "redirect_uri": redirect_uri,
         "scope": scope, "response_type": "token", "device_id": device_id,
-        "audience": audience, "client_id": CLIENT_ID,
+        "audience": audience, "client_id": client_id,
     }, headers={
         "Authorization": f"Bearer {main_bearer}",
         "Content-Type": "application/x-www-form-urlencoded",

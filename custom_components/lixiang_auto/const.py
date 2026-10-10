@@ -15,16 +15,20 @@ CLIENT_ID = "2AQClOaegaA7XecMSFx1p"
 AUDIENCE = "5iIapSfVJlln0vU0OzUCH9"
 SCOPE = "iam:client:type:app offline_access"
 
-# livis 侧门客户端（已验证可用，设备码流程）
-LIVIS_CLIENT_ID = "6qxd1MLZhAtdWipnmXe1dd"
-LIVIS_AUDIENCE = "rZgT0SETDNueMVAhfRN10"
-LIVIS_SCOPE = "super offline_access"
+# ★ 2026-10-10：删除旧「livis 侧门」常量（6qxd1MLZ.../rZgT0SET.../super offline_access）。
+#   该组值为早期设备码流程猜测，无任何调用方，且与本次静态逆向结论冲突：
+#   理想同学真实登录 client = 40amUDKOdqQTaGDONZC1oY，
+#   scope = iam:client:type:lisa，redirect = /app-auth/livis，
+#   见 pake_login.LIVIS_LOGIN_CLIENT_ID / APP_LOGIN_PARAMS（V5/V6 实测通过）。
 
 # ---------- 车辆 API 域名 ----------
 API_APP = "https://api-app.lixiang.com"   # 车辆主网关（强制 x-chj-sign）
 
 # ---------- API 端点 ----------
 EP_KEY_SUITE = "/aisp-app-api/v1-0/keySuite"          # 密钥套件（登录后获取）
+# ★ 2026-10-10：真正的设备身份派生端点（ddes 通道，key_suite.py 用）
+#   实测：新装机用随机 hac 引导签名即可调通（无需任何旧凭据）
+EP_KEY_SUITE_DDES = "/ddes/v1-1/app/key-suite"
 EP_VEHICLES = "/aisp-account-api/v1-0/vehicles"       # 车辆列表（X-CHJ-TOKEN 已过期，240225）
 # ★ 可用的车辆列表端点（2026-09-23 实测成功）
 #   audience=7gbeHMwBPMZA5SU1b2awIo, scope=login
@@ -80,28 +84,31 @@ CONF_VIN = "vin"
 # 主Bearer(登录后签发的JWT, client=2AQ...). 任意车主登录一次可得, 用它换各scope token
 CONF_MAIN_BEARER = "main_bearer"
 
-# ---------- x-chj 签名身份默认值 (自有车辆 iPad 捕获, 密码登录流程直接复用;
-# 手动凭据流程可覆盖) ----------
+# ★ 登录身份来源（2026-10-10 新增，用户在配置表单选择）
+#   lixiang = 理想汽车 App 身份（主 App KID 派生签名）
+#   livis   = 理想同学身份（理想同学 KID 派生签名）
+CONF_APP_TYPE = "app_type"
+APP_LIXIANG = "lixiang"
+APP_LIVIS = "livis"
+
+# ---------- 签名身份默认值 ----------
 #
-# ★ 2026-09-24 说明：
-#   这些是【API 签名常量】（非用户私有凭据），随集成一起分发以便开箱即用。
-#   优先级：config entry 里的用户值 > 这里的默认值。
+# ★ 2026-10-10「去 iPad 化」（Phase A 实测 V2/V4b/V4c/V4d 定案）：
+#   曾内置的 xdev/hac_key/key_id 是抓包抄来的【单台 iPad 的运行时值】，
+#   属于每台设备各自生成/服务端下发的身份，已全部删除：
+#     · xdev（x_chj_deviceid）← 新条目直接用 identity store 的登录 device_id
+#     · hac_key / key_id       ← 由 key_suite.derive_identity() 现场派生
+#   老条目 config entry 自带这些值，取值顺序不变，零迁移。
 #
-#   如果不想用内置值，可在 HA 里通过「手动凭据」入口填写自己的；
-#   或创建 .secrets.json（优先级低于 config entry，高于这里的默认值）。
+#   保留的唯一内置常量是 APP token：2026-10-10 实测（v2_identity_chain）
+#   它不绑设备（旧 token 配全新派生身份业务接口 code:0），性质同客户端常量。
 try:
     from .secrets import (  # noqa: E402
         DEFAULT_APP_TOKEN as _S_APP_TOKEN,
-        DEFAULT_HAC_KEY as _S_HAC_KEY,
-        DEFAULT_KEY_ID as _S_KEY_ID,
-        DEFAULT_XDEV as _S_XDEV,
     )
 except ImportError:  # pragma: no cover
-    _S_APP_TOKEN = _S_HAC_KEY = _S_KEY_ID = _S_XDEV = ""
+    _S_APP_TOKEN = ""
 
-DEFAULT_HAC_KEY = _S_HAC_KEY or "2020a7738b35f7d253741a88963ea2902b770ac508d89a78ae9036ee8aeb5d8a"
-DEFAULT_KEY_ID = _S_KEY_ID or "22004e67c0f7a60a1561980000b7440f"
-DEFAULT_XDEV = _S_XDEV or "13BFCE38F5774D0DBE21B625AA179AE0"
 DEFAULT_APP_TOKEN = _S_APP_TOKEN or "APP-50dbc95ceba84c05ac159ea96f2e6ffe"
 # ★ 默认登录 device_id（留空 = 由 identity store 自动生成/复用）
 #   说明：不要硬编码他人的 device_id —— 那会把所有用户绑到同一设备身份。
