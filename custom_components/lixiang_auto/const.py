@@ -213,4 +213,11 @@ def scan_interval_seconds(options=None) -> int:
     return max(MIN_SCAN_INTERVAL_SECONDS, min(MAX_SCAN_INTERVAL_SECONDS, sec))
 
 # 日志
-LOGGER_NAME = "lixiang_auto"
+# ★ 2026-10-10：logger 必须在 `custom_components.` 命名空间下。
+#   实测：HA 默认只把 custom_components.* / homeassistant.* 记为 INFO，
+#   裸 logger 名（原 "lixiang_auto"）继承 root(WARNING) → 集成的 INFO 日志
+#   用户**一条都看不到**（排障时「什么都没看到」，也看不到
+#   「身份来源=」「已派生签名身份」这类关键信息）。
+#   改成 custom_components.lixiang_auto 后，与其它自定义集成一致：
+#   默认可见 INFO，DEBUG 仍需用户显式开启。
+LOGGER_NAME = "custom_components.lixiang_auto"

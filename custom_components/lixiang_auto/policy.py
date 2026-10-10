@@ -42,10 +42,22 @@ return run_with_retry(
 from __future__ import annotations
 
 import logging
+
 from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
 
-_LOGGER = logging.getLogger("lixiang_auto")
+# ★ 2026-10-10：logger 必须落在 custom_components.* 命名空间（HA 默认只有
+#   `custom_components.*` / `homeassistant.*` 记 INFO；裸名继承 root=WARNING
+#   → 集成的 INFO 日志用户看不到）。
+#   ★ 为什么用 try：本模块会被测试以【顶层模块】方式导入
+#     （tests/conftest.py 把集成目录加进 sys.path → `from policy import ...`），
+#     此时相对导入会抛 "attempted relative import with no known parent package"。
+try:  # 正常运行（HA 内以包形式导入）
+    from .const import LOGGER_NAME as _LOGGER_NAME
+except ImportError:  # 顶层导入（测试 / 独立脚本）
+    _LOGGER_NAME = "custom_components.lixiang_auto"
+
+_LOGGER = logging.getLogger(_LOGGER_NAME)
 
 T = TypeVar("T")
 
