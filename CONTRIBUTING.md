@@ -23,7 +23,7 @@
      ./li-pr.sh submit
      
 ⑤ 人在 GitHub 上 review + 合并
-     https://github.com/c3h3-ci/ha-lixiang/pulls
+     https://github.com/C3H3-AI/ha-lixiang/pulls
 ```
 
 ---
@@ -107,7 +107,7 @@
 ```bash
 # 看 jobs 数：0 说明 GitHub 根本没启动工作流
 curl -s -H "Authorization: token $TOKEN" \
-  "https://api.github.com/repos/c3h3-ci/ha-lixiang/actions/runs/<RUN_ID>/jobs" \
+  "https://api.github.com/repos/C3H3-AI/ha-lixiang/actions/runs/<RUN_ID>/jobs" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['total_count'])"
 ```
 
@@ -181,7 +181,7 @@ git branch -r --merged origin/main | grep "$(git branch --show-current)"
 - ❌ 直接推 `main`
   > ✅ **2026-09-27 起 main 已真正开启分支保护**（此前只有文档声称、实际未开）：
   > ```
-  > GET /repos/c3h3-ci/ha-lixiang/branches/main → protected: true
+  > GET /repos/C3H3-AI/ha-lixiang/branches/main → protected: true
   >   必需状态检查：lint & security / hassfest / HACS validate（strict）
   >   允许强推：false    允许删除：false
   > ```
@@ -298,7 +298,7 @@ git push origin v1.1.1
 TOKEN=$(sed -n 's|https://[^:]*:\([^@]*\)@github.com|\1|p' ~/.git-credentials | head -1)
 curl -X POST -H "Authorization: token $TOKEN" \
      -H "Accept: application/vnd.github+json" \
-     https://api.github.com/repos/c3h3-ci/ha-lixiang/releases \
+     https://api.github.com/repos/C3H3-AI/ha-lixiang/releases \
      -d '{"tag_name":"v1.1.1","name":"v1.1.1","body":"...","draft":false,"prerelease":false}'
 ```
 
@@ -476,7 +476,7 @@ git tag -f v1.0.0 <main上的对应commit>
 git push --force origin --tags
 
 # ★ 必须从公开仓库验证（本地看不算）
-cd /tmp && git clone --depth=1 --branch v1.0.0 https://github.com/c3h3-ci/ha-lixiang.git chk
+cd /tmp && git clone --depth=1 --branch v1.0.0 https://github.com/C3H3-AI/ha-lixiang.git chk
 # 用你自己知道的敏感值去查（不要把真实值写进本文档或提交）
 grep -rn "<你的手机号>\|<你的VIN>" chk/ || echo "干净"
 ```

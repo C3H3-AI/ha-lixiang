@@ -38,7 +38,7 @@ PROXY_ARGS=(-x "$PROXY")
 if ! curl -s -o /dev/null --max-time 3 -x "$PROXY" https://api.github.com/ 2>/dev/null; then
   PROXY_ARGS=(--noproxy '*')
 fi
-GH_REPO="${LI_GH_REPO:-c3h3-ci/ha-lixiang}"
+GH_REPO="${LI_GH_REPO:-C3H3-AI/ha-lixiang}"
 
 GRN=$'\033[32m'; YEL=$'\033[33m'; RED=$'\033[31m'; BLU=$'\033[34m'; RST=$'\033[0m'
 log()  { echo "${BLU}▸${RST} $*"; }

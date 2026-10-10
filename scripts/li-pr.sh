@@ -35,7 +35,7 @@ if [[ -z "$REPO_DIR" ]]; then
 fi
 TEST_DIR="${LI_TEST_DIR:-/media/duola/devdata/AI-workspace/home-assistant-nas/ha-test/config/custom_components/lixiang_auto}"
 REPO_SUB="custom_components/lixiang_auto"
-GH_REPO="${LI_GH_REPO:-c3h3-ci/ha-lixiang}"
+GH_REPO="${LI_GH_REPO:-C3H3-AI/ha-lixiang}"
 # 代理可用 → 走代理；不可用 → 【显式】直连。
 #
 # ★ 只把 -x 去掉是不够的：环境变量里的 https_proxy / ALL_PROXY 仍会被
@@ -513,7 +513,7 @@ cmd_status() {
     git diff --stat origin/main...HEAD 2>/dev/null | tail -10 | sed 's/^/    /'
     echo
     local pr
-    pr=$(gh_api GET "/repos/$GH_REPO/pulls?head=c3h3-bi:$cur&state=open" \
+    pr=$(gh_api GET "/repos/$GH_REPO/pulls?head=${GH_REPO%%/*}:$cur&state=open" \
          | python3 -c "
 import json,sys
 d = json.load(sys.stdin)
