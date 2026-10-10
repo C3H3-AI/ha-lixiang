@@ -193,11 +193,49 @@ class LixiangVehicleInfoPage extends HTMLElement {
     this._tt = setTimeout(() => { t.className = "toast"; }, 3200);
   }
 
+  /**
+   * 按需加载共享资源模块（`lixiang-assets.js`，与本页同目录）。
+   * ★ 加载失败只影响「有没有车型图」，页面其余部分照常 —— 所以直接吞掉异常。
+   */
+  async _ensureAssets() {
+    if (typeof window === "undefined") return null;
+    if (window.LxAssets) return window.LxAssets;
+    if (this.__assetsTried) return null;
+    this.__assetsTried = true;
+    try {
+      const base = new URL(".", import.meta.url).href.replace(/\/$/, "");
+      await import(base + "/lixiang-assets.js");
+    } catch (_) { /* 同目录没有该模块（老安装）→ 退化 */ }
+    return window.LxAssets || null;
+  }
+
   _update() {
     if (!this._built) return;
     const q = s => this.querySelector(s);
     const d = this._vehicle();
     const c = this._config || {};
+
+    // ★ 车型剪影（资源层）：用户本地图 → 车系剪影 → 通用占位。
+    //   资源模块没加载成功就什么都不显示（与改动前完全一致，绝不空屏/破图）。
+    this._ensureAssets();
+    try {
+      const A = window.LxAssets;
+      let box = q("#lx-car-box");
+      const model = (d && d.model) || c.model_name || "";
+      if (A && model) {
+        if (!box) {
+          box = document.createElement("div");
+          box.id = "lx-car-box";
+          box.style.cssText =
+            "display:flex;justify-content:center;color:var(--lx-t3);margin:2px 0 10px;";
+          this.prepend(box);
+        }
+        if (box.dataset.model !== model) {
+          box.dataset.model = model;
+          box.innerHTML = A.carImageHtml({ modelName: model });
+        }
+      }
+    } catch (_) { /* 资源层不可用 → 忽略 */ }
 
     // 昵称 / 型号
     const nick = c.nickname || (d && d.name_by_user) || (d && d.name) || "—";
