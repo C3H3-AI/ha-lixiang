@@ -33,6 +33,8 @@ VSS（`vss:get-batch`）对 M 系**恒返 `access_denied`** —— 理想ONE 车
 """
 from __future__ import annotations
 
+import json
+
 from typing import Any
 
 #: App 里 M 系的判定值（LXVehicleManagerFactory.delegateMap 的键）
@@ -172,6 +174,27 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     # 充电状态（chargeSetting.chargeStatus）
     cst = _dig(res, "chargeSetting", "chargeStatus")
     put("charge_status", _num(cst.get("chargeStatus")))
+
+    # 车内温度（temperatureStatus.indoorTemperature）
+    put("inside_temp", _num(_dig(res, "temperatureStatus").get("indoorTemperature")))
+
+    # 位置：device_tracker 读的是 **JSON 字符串**（含 v/lat/lon/alt/dir…）
+    #   —— App 侧 locationStatus = {alt, ct, dir, lat, lon}，这里拼成同结构
+    _loc = res.get("locationStatus")
+    if isinstance(_loc, dict):
+        _lat, _lon = _num(_loc.get("lat")), _num(_loc.get("lon"))
+        if _lat is not None and _lon is not None:
+            put("location", json.dumps({
+                "v": 1, "lat": _lat, "lon": _lon,
+                "alt": _num(_loc.get("alt")),
+                "dir": _num(_loc.get("dir")),
+            }, ensure_ascii=False))
+
+    # 在线状态（vehOnlineStatus.status）—— 供 coordinator 的 vehicle_status 兜底使用
+    #   ⚠️ 语义待实车确认：ONE 侧的 status 是否就是「在线」标志
+    _on = _dig(res, "vehOnlineStatus").get("status")
+    if _on is not None:
+        put("online_5g", _int01(_on))
 
     # 五门（★ App 侧：doorSwitchStatus.<门>.isOpen，类型是 String）
     doors = res.get("doorSwitchStatus")
