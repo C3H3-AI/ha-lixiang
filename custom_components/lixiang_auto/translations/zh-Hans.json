@@ -66,6 +66,15 @@
         "data": {
           "vin": "VIN（车架号，17 位）"
         }
+      },
+      "reconfigure": {
+        "title": "重配置 Li Auto",
+        "description": "修改**登录身份**或 **VIN**（当前登录身份：{current}）。\n\n· 只改 VIN：立即生效，不需要重新登录\n· 切换登录身份（理想汽车 ↔ 理想同学）：需要填写密码 —— 两个身份的签名凭据不同，切换后会重新登录并重新派生签名身份\n\n> 换账号（改手机号）请删除条目后重新添加。",
+        "data": {
+          "app_type": "登录身份",
+          "vin": "VIN（留空=自动识别）",
+          "password": "密码（切换登录身份时必填）"
+        }
       }
     },
     "error": {
@@ -78,7 +87,9 @@
       "invalid_phone": "手机号格式不正确（应为 11 位中国大陆手机号）",
       "password_too_short": "密码太短（至少 6 位）",
       "password_too_long": "密码太长（最多 64 位）",
-      "invalid_vin": "VIN 格式不正确（应为 17 位，不含字母 I / O / Q）"
+      "invalid_vin": "VIN 格式不正确（应为 17 位，不含字母 I / O / Q）",
+      "password_required": "切换登录身份需要填写密码",
+      "identity_derive_failed": "签名身份派生失败，请稍后重试（已保留原配置）"
     },
     "abort": {
       "already_configured": "该账号已配置（如需多账号请用不同手机号）",
@@ -86,7 +97,9 @@
       "reauth_entry_not_found": "找不到要重新认证的配置条目，请删除后重新添加",
       "vin_already_configured": "这辆车（VIN {vin}）已通过账号 ****{phone} 接入 HA，无需重复添加。\n\n如果你想切换账号：请先删除原有配置（设置 → 设备与服务 → 理想汽车 → 删除），然后再添加。",
       "missing_credentials": "缺少签名凭据：{fields}\n\n这些凭据每台设备独有，无法内置。请用「手动填写凭据」入口填入，提取方法见仓库的 docs/credential-guide.md。",
-      "identity_derive_failed": "签名身份派生失败：{detail}\n\n请查看 HA 日志（设置 → 系统 → 日志，过滤 lixiang_auto），稍后重试。"
+      "identity_derive_failed": "签名身份派生失败：{detail}\n\n请查看 HA 日志（设置 → 系统 → 日志，过滤 lixiang_auto），稍后重试。",
+      "reconfigure_successful": "重配置成功",
+      "reconfigure_entry_not_found": "找不到要重配置的条目"
     }
   },
   "options": {

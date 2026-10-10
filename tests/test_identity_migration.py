@@ -382,14 +382,18 @@ class TestWiring:
         """★ 重新认证必须重派生 —— 否则「成功」了但功能照旧全挂。"""
         src = _src("config_flow.py")
         body = _method_src(src, "LiCarConfigFlow", "async_step_reauth_confirm")
-        assert "_rederive_identity_on_reauth(data, src)" in body
+        assert "_rederive_identity(data, src)" in body
         assert "src != IDENTITY_SOURCE_MANUAL" in body, (
             "重新认证未排除 manual 条目（会覆盖用户自填身份）")
 
     def test_reauth_helper_never_bricks_entry_on_failure(self):
-        """★ 派生失败只告警 + 保留旧值：不得把能用的条目改成无凭据状态。"""
+        """★ 派生失败只告警 + 保留旧值：不得把能用的条目改成无凭据状态。
+
+        （本方法现被 reauth 与 reconfigure 共用；reconfigure 会额外要求 True，
+          见 tests/test_reconfigure_flow.py。）
+        """
         src = _src("config_flow.py")
-        body = _method_src(src, "LiCarConfigFlow", "_rederive_identity_on_reauth")
+        body = _method_src(src, "LiCarConfigFlow", "_rederive_identity")
         exc_i = body.find("except Exception as err")
         assert exc_i > 0, "未捕获派生异常"
         after_exc = body[exc_i:]
