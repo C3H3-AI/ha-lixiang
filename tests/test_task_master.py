@@ -75,7 +75,10 @@ class TestLiApiTaskEndpoints:
         """
         s = _src("li_api.py")
         i = s.find("def _get_scoped")
-        blk = s[i:i + 900]
+        # ★ 用「到下一个同类方法」的窗口，不用固定字符数 ——
+        #   固定窗口会随合法改动（新增守卫、注释）而误报
+        _next = s.find("\n    def ", i + 1)
+        blk = s[i:_next if _next > 0 else i + 3000]
         pos_guard = blk.find("if _is_scope_denied(err)")
         pos_login = blk.find("self._login()")   # 真实调用（注释里的字样不算）
         assert pos_guard > 0, "_get_scoped 未使用 scope 拒绝判别"
