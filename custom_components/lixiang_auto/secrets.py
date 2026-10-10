@@ -2,19 +2,18 @@
 
 背景
 ----
-2026-09-24：原实现在 const.py 里硬编码了 4 个厂商签名密钥：
-  DEFAULT_HAC_KEY / DEFAULT_KEY_ID / DEFAULT_XDEV / DEFAULT_APP_TOKEN
+2026-09-24：原实现在 const.py 里硬编码了 4 个厂商签名密钥。
+2026-10-10「去 iPad 化」：hac_key / key_id / xdev 是【每设备运行时身份】，
+已从内置默认值中全部删除（由 key_suite.derive_identity 现场派生）；
+本模块只为保留的 DEFAULT_APP_TOKEN 提供外部覆盖能力（.secrets.json/环境变量）。
 
-这些是【理想汽车的 API 签名密钥】，格式为高熵十六进制字符串，
-会被 GitHub 的 Secret Scanning 识别为"泄露的凭据"，
-也可能被判定为"绕过服务商 API 保护"（违反 ToS）。
-
-★ 本模块改为从【本地文件】读取，不进版本库。
+高熵十六进制字符串会被 GitHub 的 Secret Scanning 识别为"泄露的凭据"，
+也可能被判定为"绕过服务商 API 保护"（违反 ToS）—— 故默认值只留 APP token。
 
 加载顺序（优先级从高到低）
 --------------------------
   ① Home Assistant 配置项（config entry data）—— 用户在配置流程里填的
-  ② 环境变量（LI_HAC_KEY / LI_KEY_ID / LI_XDEV / LI_APP_TOKEN）
+  ② 环境变量（LI_APP_TOKEN）
   ③ 本地密钥文件（<集成目录>/.secrets.json 或 /config/.lixiang_secrets.json）
 
 文件格式（.secrets.json）
@@ -167,10 +166,11 @@ def missing_secrets() -> list[str]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  兼容层：替代原 const.py 的 DEFAULT_* 常量
+#  兼容层：替代原 const.py 的 DEFAULT_* 常量（2026-10-10 起仅剩 APP token）
 # ═══════════════════════════════════════════════════════════════════════════
-# 旧代码写法：from .const import DEFAULT_HAC_KEY
-# 现在改为：  from .secrets import DEFAULT_HAC_KEY
+# 旧代码写法：from .const import DEFAULT_APP_TOKEN
+# 现在改为：  from .secrets import DEFAULT_APP_TOKEN
+# （hac_key/key_id/xdev 的 DEFAULT_* 已删除 —— 每设备身份由 key_suite 派生）
 #
 # ★ 这两个模块级变量在【导入时】求值一次；若用户之后创建了 .secrets.json，
 #   需重启 HA（或调用 load_secrets(force=True)）。
@@ -210,9 +210,8 @@ class _LazySecret(str):
         return hash(str(self))
 
 
-DEFAULT_HAC_KEY: str = _LazySecret("hac_key")
-DEFAULT_KEY_ID: str = _LazySecret("key_id")
-DEFAULT_XDEV: str = _LazySecret("xdev")
+# ★ 2026-10-10「去 iPad 化」：hac_key/key_id/xdev 的 DEFAULT_* 懒加载已删除
+#   （它们是每设备运行时身份，不该内置 —— 由 key_suite.derive_identity 现场派生）。
 DEFAULT_APP_TOKEN: str = _LazySecret("app_token")
 
 # 登录 device_id 的默认值 —— 保持空（不要硬编码他人设备号）
@@ -221,6 +220,5 @@ DEFAULT_DEVICE_ID = ""
 
 __all__ = [
     "load_secrets", "get_secret", "has_required_secrets", "missing_secrets",
-    "DEFAULT_HAC_KEY", "DEFAULT_KEY_ID", "DEFAULT_XDEV", "DEFAULT_APP_TOKEN",
-    "DEFAULT_DEVICE_ID",
+    "DEFAULT_APP_TOKEN", "DEFAULT_DEVICE_ID",
 ]

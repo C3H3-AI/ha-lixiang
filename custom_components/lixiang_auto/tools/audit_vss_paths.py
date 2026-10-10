@@ -51,9 +51,10 @@ def main() -> int:
     e = [x for x in d["data"]["entries"] if x.get("domain") == "lixiang_auto"][0]["data"]
     api = LiApiClient(
         phone=e.get("phone", ""), password=e.get("password", ""), vin=e["vin"],
-        hac_key=e.get("hac_key") or C.DEFAULT_HAC_KEY,
-        key_id=e.get("key_id") or C.DEFAULT_KEY_ID,
-        xdev=e.get("x_chj_deviceid") or C.DEFAULT_XDEV,
+        # ★ 2026-10-10：条目自带签名身份（内置 DEFAULT_* 已删除）
+        hac_key=e.get("hac_key") or "",
+        key_id=e.get("key_id") or "",
+        xdev=e.get("x_chj_deviceid") or "",
         app_token=e.get("app_token") or C.DEFAULT_APP_TOKEN,
         device_id=e.get("device_id", ""), refresh_token=e.get("refresh_token", ""))
 
