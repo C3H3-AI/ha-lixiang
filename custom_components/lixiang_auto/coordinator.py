@@ -11,6 +11,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import scan_interval_seconds, DOMAIN, LOGGER_NAME, SCAN_INTERVAL_SECONDS
 from .pake_login import is_credential_rejection
+from .m01_state import map_realtime_state
 from .signals import VSS_PATHS_COMPAT as VSS_PATHS
 from .signals import SIGNALS as _SIGNALS
 from . import vehicle_role as _vr
@@ -96,6 +97,8 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
         self.client = client
         self.li_api = li_api
         self.vehicles: list[dict] = []
+        # ★ 2026-10-11：M 系（理想ONE）没有 VSS 服务 → 实时状态改走 real-time-state
+        self._use_realtime_state = False
         # ★ 按 route 分桶（多车支持）—— 单车场景等价于单值
         self._online: dict[str, bool | None] = {}       # route_id → 在线
         self._mid_freq_ts: dict[str, float] = {}        # route_id → 时间戳
@@ -353,6 +356,25 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
         配合 ``async_request_refresh()`` 使用（服务/开关写操作后）。
         """
         self._task_ts.clear()
+
+    def enable_realtime_state(self, enabled: bool = True) -> None:
+        """M 系车型（platform=='1'）没有 VSS 服务 → 实时状态改走 real-time-state。"""
+        self._use_realtime_state = bool(enabled)
+        if enabled:
+            _LOGGER.info(
+                "检测到老平台车型（M 系）：实时信号改走 real-time-state"
+                "（该车型未开通 VSS，vss:get-batch 恒返 access_denied）")
+
+    def _realtime_state_signals(self) -> dict:
+        """（executor 内）拉一次 real-time-state，映射成信号字典。"""
+        try:
+            res = self.li_api.get_realtime_state()
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("real-time-state 请求失败: %s", err)
+            return {}
+        mapped = map_realtime_state(res)
+        _LOGGER.debug("real-time-state 映射到 %d 个信号", len(mapped))
+        return mapped
 
     async def _async_update_data(self) -> dict:
         """轮询车辆数据（在线驱动）。
@@ -627,6 +649,22 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                     for key, path in VSS_PATHS.items()
                     if path in vss["vss"]
                 }
+
+                # ★ 2026-10-11：M 系（理想ONE）通道 —— VSS 对该车型恒返
+                #   access_denied，这里补拉一次 real-time-state（DynamicInfoRes），
+                #   映射进同一 signal-key 空间；只补 VSS 没拿到的键，不动已有值。
+                if self._use_realtime_state or getattr(self, "_vss_denied_notified", False):
+                    try:
+                        _mapped = await self.hass.async_add_executor_job(
+                            self._realtime_state_signals)
+                    except Exception as _err:  # noqa: BLE001
+                        # ★ 这里包的是网络调用 → 凭据失效必须能弹「重新认证」
+                        _fail_if_credential(_err)
+                        _LOGGER.debug("real-time-state 拉取失败: %s", _err)
+                        _mapped = None
+                    if _mapped:
+                        for _k, _v in _mapped.items():
+                            data["vss"].setdefault(_k, _v)
                 # ★ 2026-09-28：虚拟别名信号（path="" + alias_signal）
                 #   同一个 VSS 路径被两种消费者语义需要时（如前备箱：
                 #   lock_front_trunk 是「锁」、door_front_trunk 是「门」），
