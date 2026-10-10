@@ -77,6 +77,15 @@ def _load_li_api(derive_impl):
             self.logins += 1
             return {"access_token": "APP-fresh", "refresh_token": "rt-fresh"}
 
+        # ★ 2026-10-10：真实类新增会话 cookie 导出/装载（重启复用会话用）
+        #   假对象要跟着镜像，否则 _login() 走到这里会 AttributeError
+        def export_session_cookies(self):
+            return [{"name": "sso_token", "value": "fake", "domain": ".lixiang.com",
+                     "path": "/", "expires": 0}]
+
+        def import_session_cookies(self, cookies):
+            return len(cookies or [])
+
     # 假 key_suite，让方法里的 `from .key_suite import derive_identity` 生效
     pkg = types.ModuleType("lx_li")
     pkg.__path__ = []
@@ -95,6 +104,8 @@ def _load_li_api(derive_impl):
         "CONF_KEY_ID": "key_id",
         "CONF_XDEV": "x_chj_deviceid",
         "CONF_IDENTITY_SOURCE": "identity_source",
+        # ★ 2026-10-10：会话 cookie 持久化新增的常量
+        "CONF_SESSION_COOKIES": "session_cookies",
         "IDENTITY_SOURCE_DERIVED": "derived",
         "IDENTITY_SOURCE_MANUAL": "manual",
         "LiApiError": _LiApiError,
@@ -255,6 +266,9 @@ class TestIdentityMigration:
         assert c._main_bearer == ""
         c._login()
         assert c._main_bearer == "APP-fresh"
+        # ★ 2026-10-10：登录同时必须持久化会话 cookie（重启不再密码登录）
+        assert any("session_cookies" in p for p in c.patches), \
+            "登录后未回写会话 cookie"
         assert c._identity_source == "derived"
         assert c._key_id == "NEW-KEY-ID"
         assert c.derive_calls == [("lixiang", "dev-e2e", "APP-fresh")]
