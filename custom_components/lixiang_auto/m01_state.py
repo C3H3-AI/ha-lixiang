@@ -177,6 +177,8 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
 
     # 车内温度（temperatureStatus.indoorTemperature）
     put("inside_temp", _num(_dig(res, "temperatureStatus").get("indoorTemperature")))
+    # 空气污染指数（temperatureStatus.airPollutionIndex —— App 的 getAirQuality）
+    put("air_pollution", _num(_dig(res, "temperatureStatus").get("airPollutionIndex")))
 
     # 位置：device_tracker 读的是 **JSON 字符串**（含 v/lat/lon/alt/dir…）
     #   —— App 侧 locationStatus = {alt, ct, dir, lat, lon}，这里拼成同结构

@@ -135,6 +135,12 @@ class TestExtendedFields:
                                    "outdoorTemperature": "31"}})
         assert out["inside_temp"]["value"] == 23.5
 
+    def test_air_pollution(self):
+        """App 的 getAirQuality ← temperatureStatus.airPollutionIndex。"""
+        out = m01_state.map_realtime_state(
+            {"temperatureStatus": {"airPollutionIndex": "35"}})
+        assert out["air_pollution"]["value"] == 35
+
     def test_location_is_json_string(self):
         """★ device_tracker 解析的是 JSON 字符串，不是 dict。"""
         out = m01_state.map_realtime_state(
