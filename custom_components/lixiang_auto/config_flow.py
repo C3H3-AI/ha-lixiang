@@ -134,6 +134,17 @@ def _validate_password(raw: str) -> str:
 #   登录表单保持简洁（只手机号 + 密码），此处不再定义未使用的 schema。
 
 
+def _reconfigure_needs_relogin(old_app_type: str, new_app_type: str) -> bool:
+    """重配置时，切换登录身份是否需要「重新登录 + 重新派生身份」。
+
+    ★ 必须是 True：理想汽车与理想同学是两个独立 App 身份 ——
+      KID（getPriId）与 RSA 私钥都不同，沿用旧身份签名会直接被服务端拒。
+    ★ 只改 VIN 不需要重登（VIN 只影响查哪辆车，与身份无关）。
+    """
+    return ((old_app_type or APP_LIXIANG)
+            != (new_app_type or APP_LIXIANG))
+
+
 def _do_direct_login(phone: str, password: str, device_id: str | None = None,
                      app_type: str = APP_LIXIANG) -> dict:
     """在线程池中执行同步登录 (requests), 返回 entry data.
@@ -811,10 +822,15 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={"note": "请填写从理想 App 提取的凭据"},
         )
 
-    async def _rederive_identity_on_reauth(self, data: dict, src: str) -> None:
-        """重新认证时刷新签名身份（失败保留旧值，绝不让条目变砖）。
+    async def _rederive_identity(self, data: dict, src: str) -> bool:
+        """重新派生签名身份；返回是否成功。
 
-        ★ 为什么这里可以派生：重新认证刚刚 PAKE 登录成功 →
+        调用方语义（两者都要）：
+          · 重新认证（reauth）：失败**保留旧值**（条目还能用，别搞砖）
+          · 重配置（reconfigure）切身份：失败必须中止 ——
+            此时 app_type 已变，旧身份 100% 不可用，绝不能把半成品写进条目
+
+        ★ 为什么这里可以派生：调用方都是刚刚 PAKE 登录成功 →
           主 Bearer 一定新鲜，而 keySuite 派生需要有效 Bearer。
         """
         xdev = str(data.get(CONF_DEVICE_ID) or data.get(CONF_XDEV) or "")
@@ -822,8 +838,8 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                      or data.get(CONF_ACCESS_TOKEN) or "")
         app_type = data.get(CONF_APP_TYPE) or APP_LIXIANG
         if not xdev or not bearer:
-            _LOGGER.warning("重新认证：跳过签名身份刷新（缺设备号或 Bearer）")
-            return
+            _LOGGER.warning("签名身份刷新跳过（缺设备号或 Bearer）")
+            return False
         try:
             from .key_suite import derive_identity
 
@@ -832,16 +848,115 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         except Exception as err:  # noqa: BLE001
             # ★ 安全语义：保留旧值，只告警 —— 重新认证本身已成功，
             #   不能因为派生失败把（可能还有救的）条目变成无凭据状态。
-            _LOGGER.warning(
-                "重新认证：签名身份重新派生失败（保留原身份）: %s", err)
-            return
+            _LOGGER.warning("签名身份重新派生失败（保留原身份）: %s", err)
+            return False
         data[CONF_XDEV] = xdev          # 与登录设备对齐（v1.4.7 规则）
         data[CONF_HAC_KEY] = hac_key
         data[CONF_KEY_ID] = key_id
         data[CONF_IDENTITY_SOURCE] = IDENTITY_SOURCE_DERIVED
         _LOGGER.info(
-            "重新认证：签名身份已重新派生（原来源=%s, xdev=%s…, key_id=%s…）",
+            "签名身份已重新派生（原来源=%s, xdev=%s…, key_id=%s…）",
             src or "内置/未知", xdev[:12], str(key_id)[:12])
+        return True
+
+    # ---------------------------------------------------------------
+    # 重配置（HA 标准 reconfigure）
+    # ---------------------------------------------------------------
+
+    async def async_step_reconfigure(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """重配置：登录身份（理想汽车 / 理想同学）与 VIN。
+
+        ★ 为什么要有它：这两项以前改不了，只能【删除条目重新添加】。
+
+        分支语义：
+          · 只改 VIN（或什么都没改）→ 直接写回，**不触发登录**
+            （VIN 只决定查哪辆车，与签名身份无关）
+          · 切换登录身份 → 必须重新 PAKE 登录（新 client）并**重新派生
+            签名身份**（两个 App 的 KID 与 RSA 私钥都不同），
+            因此该分支要求输入密码；派生失败则**中止**，
+            不把「新身份 + 旧签名」的半成品写进条目。
+        """
+        entry = self._current_entry()
+        if entry is None:
+            return self.async_abort(reason="reconfigure_entry_not_found")
+
+        errors: dict[str, str] = {}
+        cur_app = entry.data.get(CONF_APP_TYPE) or APP_LIXIANG
+        cur_vin = entry.data.get(CONF_VIN) or ""
+
+        if user_input is not None:
+            new_app = user_input.get(CONF_APP_TYPE) or cur_app
+            new_vin = str(user_input.get(CONF_VIN) or "").strip()
+
+            if not _reconfigure_needs_relogin(cur_app, new_app):
+                # 仅 VIN / 无改动 → 直接更新并重载
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data_updates={CONF_VIN: new_vin, CONF_APP_TYPE: new_app},
+                    reason="reconfigure_successful",
+                )
+
+            password = str(user_input.get("password") or "").strip()
+            if not password:
+                errors["password"] = "password_required"
+            else:
+                phone = entry.data.get(CONF_PHONE) or ""
+                store = get_store()
+                device_id = (store.get_device_id(phone)
+                             or entry.data.get(CONF_DEVICE_ID)
+                             or DEFAULT_DEVICE_ID)
+                try:
+                    data = await self.hass.async_add_executor_job(
+                        _do_direct_login, phone, password, device_id, new_app)
+                except LiAuthError as e:
+                    msg = str(e)
+                    _LOGGER.warning("重配置登录失败(LiAuthError): %s", msg)
+                    if "sms_required" in msg or "短信验证" in msg:
+                        errors["base"] = "sms_required"
+                    elif "401" in msg:
+                        errors["base"] = "invalid_auth"
+                    else:
+                        errors["base"] = "cannot_connect"
+                else:
+                    data[CONF_PHONE] = phone or data.get(CONF_PHONE, "")
+                    data[CONF_APP_TYPE] = new_app
+                    data[CONF_VIN] = new_vin or cur_vin
+                    # ★ 切身份必须换签名身份：失败就中止（旧身份已不可用）
+                    if not await self._rederive_identity(data, cur_app):
+                        errors["base"] = "identity_derive_failed"
+                    else:
+                        return self.async_update_reload_and_abort(
+                            entry, data_updates=data,
+                            reason="reconfigure_successful",
+                        )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema({
+                vol.Required(CONF_APP_TYPE, default=cur_app): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(
+                                value=APP_LIXIANG, label="理想汽车"),
+                            selector.SelectOptionDict(
+                                value=APP_LIVIS, label="理想同学"),
+                        ],
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(CONF_VIN, default=cur_vin): str,
+                vol.Optional("password"): selector.TextSelector(
+                    selector.TextSelectorConfig(
+                        type=selector.TextSelectorType.PASSWORD,
+                        autocomplete="current-password",
+                    )
+                ),
+            }),
+            errors=errors,
+            description_placeholders={
+                "current": "理想同学" if cur_app == APP_LIVIS else "理想汽车",
+            },
+        )
 
     # ---------------------------------------------------------------
     # 重新认证（修复 3 个 P0）
@@ -923,7 +1038,8 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 #   · 派生失败：保留旧值 + 明确告警（不把能用的条目搞砖）
                 src = entry.data.get(CONF_IDENTITY_SOURCE) or ""
                 if src != IDENTITY_SOURCE_MANUAL:
-                    await self._rederive_identity_on_reauth(data, src)
+                    # 失败时 helper 内部只告警并保留旧身份（不让条目变砖）
+                    await self._rederive_identity(data, src)
                 # ★ 2026-10-10：保留登录身份来源（老条目无此键 → 默认理想汽车）
                 data.setdefault(
                     CONF_APP_TYPE,

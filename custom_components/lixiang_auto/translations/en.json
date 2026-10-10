@@ -66,6 +66,15 @@
         "data": {
           "password": "Password"
         }
+      },
+      "reconfigure": {
+        "title": "重配置 Li Auto",
+        "description": "修改**登录身份**或 **VIN**（当前登录身份：{current}）。\n\n· 只改 VIN：立即生效，不需要重新登录\n· 切换登录身份（理想汽车 ↔ 理想同学）：需要填写密码 —— 两个身份的签名凭据不同，切换后会重新登录并重新派生签名身份\n\n> 换账号（改手机号）请删除条目后重新添加。",
+        "data": {
+          "app_type": "登录身份",
+          "vin": "VIN（留空=自动识别）",
+          "password": "密码（切换登录身份时必填）"
+        }
       }
     },
     "error": {
@@ -78,7 +87,9 @@
       "invalid_phone": "Invalid phone number (expected an 11-digit mainland China number)",
       "password_too_short": "Password too short (at least 6 characters)",
       "password_too_long": "Password too long (at most 64 characters)",
-      "invalid_vin": "Invalid VIN (must be 17 characters, excluding I / O / Q)"
+      "invalid_vin": "Invalid VIN (must be 17 characters, excluding I / O / Q)",
+      "password_required": "切换登录身份需要填写密码",
+      "identity_derive_failed": "签名身份派生失败，请稍后重试（已保留原配置）"
     },
     "abort": {
       "already_configured": "This account is already configured (use a different phone number for a second account)",
@@ -86,7 +97,9 @@
       "reauth_entry_not_found": "Could not find the config entry to re-authenticate. Delete it and add it again.",
       "vin_already_configured": "This vehicle (VIN {vin}) is already configured with account ****{phone}.\n\nTo switch accounts: delete the existing entry first (Settings → Devices & Services → Li Auto → Delete), then add it again.",
       "missing_credentials": "Missing signing credentials: {fields}\n\nThese credentials are unique to each device and cannot be bundled. Use the \"Manual credentials\" entry to fill them in.",
-      "identity_derive_failed": "Failed to derive the signing identity: {detail}\n\nCheck the HA logs (Settings → System → Logs, filter lixiang_auto) and try again."
+      "identity_derive_failed": "Failed to derive the signing identity: {detail}\n\nCheck the HA logs (Settings → System → Logs, filter lixiang_auto) and try again.",
+      "reconfigure_successful": "重配置成功",
+      "reconfigure_entry_not_found": "找不到要重配置的条目"
     }
   },
   "options": {
