@@ -301,3 +301,21 @@ delete_task:
       example: mob_1791366893482
       selector:
         text:
+
+dump_realtime_state:
+  name: 诊断 real-time-state（老平台车型实时通道）
+  description: >-
+    探测老平台车型（如理想ONE / M01）的实时状态通道
+    `/ssp-as-mobile-api/v3-0/vehicles/{vin}/real-time-state`，并把**原始响应**
+    导出为 JSON 文件，用于补齐这些车型的字段映射。
+    同时会打一条已知可用的接口作**对照组**（travel 月里程），
+    以便区分「该端点不可用」与「会话/权限/签名问题」。
+    只读，不会触发任何车控。文件路径：<config>/lixiang_realtime_state_<vin>.json
+  fields:
+    vin:
+      name: VIN
+      description: 只处理该 VIN 的条目（留空 = 全部）
+      required: false
+      example: LW433B111M1027177
+      selector:
+        text:
