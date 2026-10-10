@@ -282,6 +282,25 @@ def is_signature_error(err_or_payload) -> bool:
     return "100005" in text or "签名错误" in text
 
 
+def _exchange_client_order(app_type: str, win: str | None) -> list[str]:
+    """决定 /api/auth 的 client 参数尝试顺序（2026-10-10 实测对照矩阵）。
+
+    · 常规：先登录身份（app_type），被拒回退主 App client（"lixiang"）
+      —— saos_vehicle(7gbe) 白名单只认主 client（A/C ❌ → B/D ✅ 实测）；
+      VSS 等 audience 在 livis client 下已通，不能一刀切全用主 client。
+    · 记忆胜出：win = 该账号上次换取成功的 client key → 直接置顶。
+    · app_type=lixiang 时主 App 即第一选择，顺序无冗余。
+    """
+    primary = app_type or APP_LIXIANG
+    if primary not in APP_LOGIN_PARAMS:
+        primary = APP_LIXIANG
+    order: list[str] = []
+    for k in (win, primary, APP_LIXIANG):
+        if k and k in APP_LOGIN_PARAMS and k not in order:
+            order.append(k)
+    return order
+
+
 def _is_scope_denied(err) -> bool:
     """换取 scope 被服务端策略拒绝（≠ 会话失效，不应触发重登）。
 
@@ -530,6 +549,8 @@ class LiApiClient:
         self._on_token_update = on_token_update
         # ★ 登录身份来源（lixiang=理想汽车 / livis=理想同学，仅日志标识用）
         self._app_type = str(app_type) if app_type else APP_LIXIANG
+        # ★ 2026-10-10：该账号上次换取胜出的 client key（access_denied 回退后记忆）
+        self._exchange_client_win: str | None = None
 
     # ---------- 身份迁移 / 签名错误自愈（★ 2026-10-10）------------------
 
@@ -680,16 +701,52 @@ class LiApiClient:
         return self._cli
 
     def _exchange(self, scope: str, audience: str) -> str:
-        """用登录会话 cookie 换 scope token (response_type=token)."""
+        """用登录会话 cookie 换 scope token (response_type=token).
+
+        ★ 2026-10-10 client 参数回退（实测对照矩阵 B/D ✅ vs A/C ❌）：
+          audience↔client 是白名单配对 —— saos_vehicle(7gbe) 只认主 App client，
+          而 VSS 等 audience 在 livis client 下本来就通（集成日志实证）。
+          故不能一刀切：先按登录身份（app_type）取参，仅当被服务端
+          access_denied 时回退主 App client 重试一次；回退成功后该实例
+          记忆胜出参数，后续换取直接使用（避免每次先撞一次失败）。
+
+        ★ 去掉 offline_access（2026-10-10 实测 B 组）：不带照样换到 token，
+          且不签发无人使用的 refresh_token —— 对主 App 凭据零接触。
+        """
         cli = self._ensure_session()
-        # ★ 2026-10-10：client_id/redirect_uri 按登录身份取（livis 独立 client）
+        order = _exchange_client_order(self._app_type, self._exchange_client_win)
+        last_err: LiApiError | None = None
+        for idx, key in enumerate(order):
+            try:
+                tok = self._do_exchange(cli, key, scope, audience)
+            except LiApiError as err:
+                last_err = err
+                # 仅 access_denied 才值得换 client 重试（网络错/参数错换也没用）
+                if "access_denied" in str(err) and idx < len(order) - 1:
+                    _LOGGER.info(
+                        "换token被拒(%s, client=%s)，回退 %s 重试",
+                        scope, key, order[idx + 1])
+                    continue
+                raise
+            if key != order[0]:
+                # 记忆胜出参数：该 audience 下次直接用回退后的 client
+                self._exchange_client_win = key
+                _LOGGER.debug(
+                    "换token胜出参数已记忆: aud=%s client=%s", audience, key)
+            return tok
+        raise last_err if last_err else LiApiError(f"换 token 失败 ({scope})")
+
+    def _do_exchange(self, cli, client_key: str,
+                     scope: str, audience: str) -> str:
+        """单次 /api/auth 换取（client 参数由 client_key 指定，失败抛 LiApiError）。"""
+        # ★ client_id/redirect_uri：lixiang=主 App，livis=理想同学独立 client
         client_id, _, redirect_uri = (
-            APP_LOGIN_PARAMS.get(self._app_type) or APP_LOGIN_PARAMS["lixiang"]
+            APP_LOGIN_PARAMS.get(client_key) or APP_LOGIN_PARAMS["lixiang"]
         )
         r = cli._sess.post(
             f"{BASE_ID}/api/auth",
             data={
-                "prompt": "none", "offline_access": "true",
+                "prompt": "none",
                 "redirect_uri": redirect_uri, "scope": scope,
                 "response_type": "token", "device_id": self._device_id,
                 "client_id": client_id, "audience": audience,
