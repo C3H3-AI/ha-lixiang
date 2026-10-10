@@ -25,7 +25,10 @@ from homeassistant.helpers import (
 
 from .client import LiCarClient
 from .const import (
+    APP_LIVIS,
+    APP_LIXIANG,
     CONF_APP_TOKEN,
+    CONF_APP_TYPE,
     CONF_DEVICE_ID,
     CONF_HAC_KEY,
     CONF_KEY_ID,
@@ -35,9 +38,6 @@ from .const import (
     CONF_XDEV,
     DEFAULT_APP_TOKEN,
     DEFAULT_DEVICE_ID,
-    DEFAULT_HAC_KEY,
-    DEFAULT_KEY_ID,
-    DEFAULT_XDEV,
     DOMAIN,
     LOGGER_NAME,
 )
@@ -52,19 +52,20 @@ from .signer import LiCarSigner
 _OWNER_ONLY_NOTICE = "仅车主账号可用（服务端按账号角色限制）"
 
 
-def _owner_only_hint(result) -> str:
+async def _owner_only_hint(hass, result) -> str:
     """任务/充电服务在「结果为空」时给出准确原因。
 
     ★ 2026-10-09：空结果有两种成因，对用户是完全不同的指引 ——
       · 非车主账号 → 服务端按角色限制，用户改不了（不该让他去查配置）
       · 真的没配置 / vin 不匹配 → 集成侧问题
+    ★ 2026-10-10：角色探测走 executor（见 _is_non_owner_async）。
     """
     if result:
         return ""
     try:
-        from . import vehicle_role as _vr
         for d in (hass.data.get(DOMAIN) or {}).values():
-            if isinstance(d, dict) and _is_non_owner(d.get("li_api")):
+            if isinstance(d, dict) and await _is_non_owner_async(
+                    hass, d.get("li_api")):
                 return _OWNER_ONLY_NOTICE
     except Exception:  # noqa: BLE001
         pass
@@ -91,6 +92,35 @@ def _is_non_owner(api) -> bool:
         return True
     except Exception:  # noqa: BLE001
         return False
+
+_OWNER_ROLE_TTL = 6 * 3600.0     # 角色缓存 6 小时（与 coordinator 侧一致）
+
+
+async def _is_non_owner_async(hass, api) -> bool:
+    """_is_non_owner 的异步包装：探测走 executor + 模块级缓存。
+
+    ★ 2026-10-10 修：服务 handler 里此前直接调同步 `_is_non_owner`，
+      内部 `get_vehicles()` 是同步 HTTP —— 在事件循环里执行会触发
+      HA blocking-call 告警，且**抛出的异常会中断服务 handler 的
+      条目遍历**（实测：get_charge/get_travel/get_tasks 全部返回空 `[]`）。
+    """
+    if api is None:
+        return False
+    import time as _time
+    # ★ 缓存必须放独立 dict：DOMAIN 容器会被各服务 handler 遍历，
+    #   遍历期间加键会抛 "dictionary changed size during iteration"（实测 500）
+    cache = hass.data.setdefault(f"{DOMAIN}__owner_role", {})
+    key = getattr(api, "_phone", "") or "default"
+    now = _time.monotonic()
+    ent = cache.get(key)
+    if ent is not None:
+        value, ts = ent
+        if value is not None and (now - ts) < _OWNER_ROLE_TTL:
+            return bool(value)
+    value = await hass.async_add_executor_job(_is_non_owner, api)
+    cache[key] = (value, now)
+    return bool(value)
+
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR, Platform.BINARY_SENSOR, Platform.DEVICE_TRACKER,
@@ -146,12 +176,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     session = aiohttp_client.async_get_clientsession(hass)
 
-    hac_key = entry.data.get(CONF_HAC_KEY) or DEFAULT_HAC_KEY
-    key_id = entry.data.get(CONF_KEY_ID) or DEFAULT_KEY_ID
-    xdev = entry.data.get(CONF_XDEV) or DEFAULT_XDEV
+    # ★ 2026-10-10「去 iPad 化」：不再回填内置 DEFAULT_*（已删除）；
+    #   条目自带签名身份，缺失=数据损坏 → 告警（不静默回填他人身份）。
+    hac_key = entry.data.get(CONF_HAC_KEY) or ""
+    key_id = entry.data.get(CONF_KEY_ID) or ""
+    xdev = entry.data.get(CONF_XDEV) or ""
     app_token = entry.data.get(CONF_APP_TOKEN) or DEFAULT_APP_TOKEN
     device_id = entry.data.get(CONF_DEVICE_ID) or DEFAULT_DEVICE_ID
     vin = entry.data.get(CONF_VIN)
+    if not (hac_key and key_id and xdev):
+        _LOGGER.error(
+            "条目 %s 缺少签名身份（hac_key/key_id/x_chj_deviceid）—— "
+            "请删除该条目后重新添加以重新派生", entry.entry_id)
+    app_type = entry.data.get(CONF_APP_TYPE) or APP_LIXIANG
 
     signer = LiCarSigner(hac_key=hac_key, key_id=key_id, device_id=xdev)
     client = LiCarClient(session, signer, app_token=app_token, vin=vin)
@@ -161,6 +198,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     password = entry.data.get(CONF_PASSWORD)
     if phone and password:
         from .li_api import LiApiClient
+        _LOGGER.info(
+            "条目 %s 身份来源=%s", entry.entry_id[:8],
+            "理想同学" if app_type == APP_LIVIS else "理想汽车")
 
         # ★ 2026-10-02 持久化：token 轮换后回写 config entry
         #   此前缺陷：_login()/refresh() 的新 token 只存内存，
@@ -200,6 +240,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hac_key=hac_key, key_id=key_id, xdev=xdev,
             app_token=app_token, device_id=device_id,
             on_token_update=_persist_tokens,
+            app_type=app_type,
         )
     else:
         _LOGGER.warning(
@@ -506,7 +547,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
             if target_vin and (entry.data.get(CONF_VIN) or "") != target_vin:
                 continue
             # ★ 2026-10-09 角色守卫：非车主直接给出可读原因
-            if _is_non_owner(api):
+            #   ★ 2026-10-10：探测走 executor（事件循环里同步 HTTP 会
+            #     中断整个条目遍历 → 服务返回空 []，实测事故）
+            if await _is_non_owner_async(hass, api):
                 result[entry.data.get(CONF_VIN) or eid] = {
                     "error": _OWNER_ONLY_NOTICE}
                 continue
@@ -751,7 +794,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 _LOGGER.error("创建任务失败 (%s): %s", vin, err)
                 result[vin] = {"error": f"{type(err).__name__}: {err}"[:300]}
         if not result:
-            raise HomeAssistantError(_owner_only_hint(result))
+            raise HomeAssistantError(await _owner_only_hint(hass, result))
         if errors and errors == len(result):
             first = next(iter(result.values()))
             raise HomeAssistantError(f"创建任务失败: {first.get('error')}")
@@ -759,8 +802,10 @@ def _async_register_services(hass: HomeAssistant) -> None:
 
     # ---- 任务大师服务套件（2026-10-07：查询/更新/删除，按需调用的"接口"）----
 
-    def _li_task_entries(target_vin):
+    async def _li_task_entries(target_vin):
         """→ [(vin, api, coordinator)]，按可选 vin 过滤配置条目。
+
+        ★ 2026-10-10：改为 async（角色探测走 executor，见 _is_non_owner_async）。
 
         ★ 2026-10-09：非车主账号的条目会被过滤（服务端仅车主可用任务大师）。
         """
@@ -779,7 +824,8 @@ def _async_register_services(hass: HomeAssistant) -> None:
             #   （实测家人账号拿不到）。非车主条目不返回，
             #   由各 handler 给出「仅车主可用」的可读原因，
             #   避免服务端 401/100105 被当成可修复故障反复重试。
-            if _is_non_owner(api):
+            #   ★ 2026-10-10：探测走 executor（同上，实测事故）。
+            if await _is_non_owner_async(hass, api):
                 _LOGGER.info("非车主账号，跳过任务大师请求（服务端按角色限制）")
                 continue
             out.append((vin, api, d.get("coordinator")))
@@ -797,7 +843,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         target_vin = (call.data or {}).get("vin")
         result: dict = {}
         errors = 0
-        for vin, api, _coord in _li_task_entries(target_vin):
+        for vin, api, _coord in await _li_task_entries(target_vin):
             try:
                 tasks = await hass.async_add_executor_job(api.get_tasks)
                 result[vin] = {"count": len(tasks), "tasks": tasks}
@@ -805,7 +851,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 errors += 1
                 _LOGGER.error("查询任务失败 (%s): %s", vin, err)
                 result[vin] = {"error": f"{type(err).__name__}: {err}"[:300]}
-        _task_fail((_owner_only_hint(result) if not result else None))
+        _task_fail((await _owner_only_hint(hass, result) if not result else None))
         if errors and errors == len(result):
             raise HomeAssistantError(
                 f"查询任务失败: {next(iter(result.values())).get('error')}")
@@ -832,7 +878,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         target_vin = data.get("vin")
         result: dict = {}
         errors = 0
-        for vin, api, coord in _li_task_entries(target_vin):
+        for vin, api, coord in await _li_task_entries(target_vin):
             try:
                 tasks = await hass.async_add_executor_job(api.get_tasks)
                 cur = next((t for t in tasks
@@ -878,7 +924,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 errors += 1
                 _LOGGER.error("更新任务失败 (%s): %s", vin, err)
                 result[vin] = {"error": f"{type(err).__name__}: {err}"[:300]}
-        _task_fail((_owner_only_hint(result) if not result else None))
+        _task_fail((await _owner_only_hint(hass, result) if not result else None))
         if errors and errors == len(result):
             raise HomeAssistantError(
                 f"更新任务失败: {next(iter(result.values())).get('error')}")
@@ -895,7 +941,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         target_vin = data.get("vin")
         result: dict = {}
         errors = 0
-        for vin, api, coord in _li_task_entries(target_vin):
+        for vin, api, coord in await _li_task_entries(target_vin):
             try:
                 resp = await hass.async_add_executor_job(api.delete_task, config_id)
                 if coord is not None and hasattr(coord, "invalidate_task_cache"):
@@ -906,7 +952,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 errors += 1
                 _LOGGER.error("删除任务失败 (%s): %s", vin, err)
                 result[vin] = {"error": f"{type(err).__name__}: {err}"[:300]}
-        _task_fail((_owner_only_hint(result) if not result else None))
+        _task_fail((await _owner_only_hint(hass, result) if not result else None))
         if errors and errors == len(result):
             raise HomeAssistantError(
                 f"删除任务失败: {next(iter(result.values())).get('error')}")

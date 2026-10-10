@@ -61,15 +61,17 @@ class LiBearerTokenMgr:
     """主Bearer scope-token 管理器.
 
     用法:
-      mgr = LiBearerTokenMgr(main_bearer="eyJ...", device_id="13BF...")
+      mgr = LiBearerTokenMgr(main_bearer="eyJ...", device_id="<登录设备号>")
       mgr.get_service_card_token()   # service-card 状态接口用
       mgr.get_vss_token()            # vss/get-batch 用
       mgr.get_veh_ctrl_token(vin)    # 车控用
     """
 
     def __init__(self, main_bearer: str, device_id: str = "") -> None:
+        # ★ 2026-10-10：删除硬编码设备号回退（原 iPad 抓包值）——
+        #   调用方必传 device_id；空值直接暴露问题，不静默用他人身份。
         self._main = main_bearer
-        self._device_id = device_id or "13BFCE38F5774D0DBE21B625AA179AE0"
+        self._device_id = device_id or ""
         self._cache: dict[str, dict] = {}
 
     def _exchange(self, scope: str, audience: str) -> str:

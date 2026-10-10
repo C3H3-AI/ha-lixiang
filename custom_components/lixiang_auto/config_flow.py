@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 import re
 from typing import Any
@@ -18,8 +19,11 @@ from homeassistant.data_entry_flow import FlowResult
 from .auth import LiAuthError
 from .identity import get_store, get_store_async, normalize_phone
 from .const import (
+    APP_LIVIS,
+    APP_LIXIANG,
     CONF_ACCESS_TOKEN,
     CONF_APP_TOKEN,
+    CONF_APP_TYPE,
     CONF_DEVICE_ID,
     CONF_HAC_KEY,
     CONF_KEY_ID,
@@ -31,9 +35,6 @@ from .const import (
     CONF_XDEV,
     DEFAULT_APP_TOKEN,
     DEFAULT_DEVICE_ID,
-    DEFAULT_HAC_KEY,
-    DEFAULT_KEY_ID,
-    DEFAULT_XDEV,
     DOMAIN,
     LOGGER_NAME,
 )
@@ -79,6 +80,16 @@ PASSWORD_SCHEMA = vol.Schema(
                 autocomplete="current-password",
             )
         ),
+        # ★ 2026-10-10：登录身份二选一（默认理想汽车，保持现状零改动）
+        vol.Required(CONF_APP_TYPE, default=APP_LIXIANG): selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(value=APP_LIXIANG, label="理想汽车"),
+                    selector.SelectOptionDict(value=APP_LIVIS, label="理想同学"),
+                ],
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        ),
     }
 )
 
@@ -120,15 +131,17 @@ def _validate_password(raw: str) -> str:
 #   登录表单保持简洁（只手机号 + 密码），此处不再定义未使用的 schema。
 
 
-def _do_direct_login(phone: str, password: str, device_id: str | None = None) -> dict:
+def _do_direct_login(phone: str, password: str, device_id: str | None = None,
+                     app_type: str = APP_LIXIANG) -> dict:
     """在线程池中执行同步登录 (requests), 返回 entry data.
 
     device_id 用已受信任的值可跳过短信风控 (require=SMS_CODE); 随机新设备
     会被要求短信验证.
+    ★ app_type：livis 走理想同学独立 client（2026-10-10 静态逆向 + V5 实测）。
     """
     from .pake_login import LixiangDirectLogin, LoginError
 
-    cli = LixiangDirectLogin(device_id=device_id or None)
+    cli = LixiangDirectLogin(device_id=device_id or None, app_type=app_type)
     try:
         tok = cli.login(phone, password)
     except LoginError as e:
@@ -232,11 +245,13 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 "vin": user_input.get(CONF_VIN) or "",
                 "device_id": device_id,
                 "trusted": trusted,
+                "app_type": user_input.get(CONF_APP_TYPE) or APP_LIXIANG,
             }
 
             try:
                 data = await self.hass.async_add_executor_job(
-                    _do_direct_login, phone, password, device_id
+                    _do_direct_login, phone, password, device_id,
+                    self._pending.get("app_type") or APP_LIXIANG,
                 )
             except LiAuthError as e:
                 msg = str(e)
@@ -311,6 +326,7 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         phone = pending.get("phone") or ""
         password = pending.get("password") or ""
         device_id = pending.get("device_id") or DEFAULT_DEVICE_ID
+        app_type = pending.get("app_type") or APP_LIXIANG
 
         # ★ 2026-09-24 修复：device_id 为空时必须生成并【持久化】，
         #   否则 try_login("") 会让 pake_login 自己生成随机的
@@ -342,7 +358,7 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # ① 建会话（每次进入本步骤新建，避免复用过期 token）
         tok = getattr(self, "_login_token", None)
         if not tok or get_session(tok) is None:
-            tok = create_session(phone, password, device_id)
+            tok = create_session(phone, password, device_id, app_type)
             self._login_token = tok
 
         # ② 后台检测：用 device_id + 密码 试登录
@@ -360,7 +376,7 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         for _i in range(_RETRY_TOTAL):
             try:
                 ok = await self.hass.async_add_executor_job(
-                    try_login, phone, password, device_id)
+                    try_login, phone, password, device_id, app_type)
             except Exception as err:  # noqa: BLE001
                 _LOGGER.debug("检测登录异常: %s", err)
                 ok = False
@@ -386,14 +402,16 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             mark_trusted(tok)
             try:
                 data = await self.hass.async_add_executor_job(
-                    _do_direct_login, phone, password, device_id)
+                    _do_direct_login, phone, password, device_id,
+                    pending.get("app_type") or APP_LIXIANG)
             except Exception as err:  # noqa: BLE001
                 _LOGGER.warning("受信任后登录仍失败: %s", err)
                 return self.async_show_form(
                     step_id="browser",
                     data_schema=vol.Schema({vol.Optional("_retry", default=True): bool}),
                     errors={"base": "cannot_connect"},
-                    description_placeholders=self._browser_ph(tok, device_id),
+                    description_placeholders=self._browser_ph(
+                        tok, device_id, app_type),
                 )
             return await self._finish_login(data)
 
@@ -407,7 +425,7 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({
                 vol.Optional("recheck", default=True): bool,
             }),
-            description_placeholders=self._browser_ph(tok, device_id),
+            description_placeholders=self._browser_ph(tok, device_id, app_type),
         )
 
     def _current_entry_id(self) -> str:
@@ -490,7 +508,8 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         add(getattr(self.hass.config, "external_url", None))
         return urls
 
-    def _browser_ph(self, tok: str, device_id: str) -> dict[str, str]:
+    def _browser_ph(self, tok: str, device_id: str,
+                    app_type: str = APP_LIXIANG) -> dict[str, str]:
         """生成登录步骤的说明文案与链接。
 
         ★ 2026-09-24 方案 B（用户选择）：HA 弹窗【直接给完整登录链接】
@@ -507,26 +526,33 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
           链接参数（来自 auth_web 的实测值）：
             mode=h5 必须带（否则页面空白）
             scope/audience 用登录实测值
+            ★ 2026-10-10：client_id/scope/redirect 按 app_type 取
+              （livis 理想同学独立 client，V5 实测）。
         """
         from urllib.parse import urlencode
 
-        from .const import ACCOUNT_BASE, AUDIENCE, CLIENT_ID
+        from .const import ACCOUNT_BASE, AUDIENCE
+        from .pake_login import APP_LOGIN_PARAMS
+
+        client_id, scope, redirect = (
+            APP_LOGIN_PARAMS.get(app_type) or APP_LOGIN_PARAMS["lixiang"]
+        )
 
         # ① 理想官方登录链接（含 device_id）
         login_url = ACCOUNT_BASE + "/app-auth?" + urlencode({
             "mode": "h5",
-            "client_id": CLIENT_ID,
-            "redirect_uri": f"{ACCOUNT_BASE}/app-auth",
+            "client_id": client_id,
+            "redirect_uri": redirect,
             "response_type": "code",
-            "scope": "iam:client:type:app openid",
+            "scope": scope,
             "audience": AUDIENCE,
             "device_id": device_id,
         })
         # 备用：不带 audience/scope（authorize 异常时用）
         alt_login_url = ACCOUNT_BASE + "/app-auth?" + urlencode({
             "mode": "h5",
-            "client_id": CLIENT_ID,
-            "redirect_uri": f"{ACCOUNT_BASE}/app-auth",
+            "client_id": client_id,
+            "redirect_uri": redirect,
             "response_type": "code",
             "device_id": device_id,
         })
@@ -564,36 +590,55 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         pending = getattr(self, "_pending", None) or {}
         phone = pending.get("phone") or data.get(CONF_PHONE) or ""
 
-        # ① 补齐 API 签名凭据
-        #    ★ 这些凭据每台设备独有，不内置；优先用用户填的，
-        #      只有 DEFAULT_* 非空时才回填（兼容自编译版本）。
-        missing: list[str] = []
-        for conf_key, default_val in (
-            (CONF_HAC_KEY, DEFAULT_HAC_KEY),
-            (CONF_KEY_ID, DEFAULT_KEY_ID),
-            (CONF_XDEV, DEFAULT_XDEV),
-            (CONF_APP_TOKEN, DEFAULT_APP_TOKEN),
-        ):
-            if data.get(conf_key):
-                continue
-            if default_val:
-                data[conf_key] = default_val
-                _LOGGER.debug("补齐 %s（内置默认值）", conf_key)
-            elif conf_key != CONF_APP_TOKEN:
-                missing.append(conf_key)
+        # ① 登录身份来源（理想汽车 / 理想同学，2026-10-10 表单可选）
+        app_type = (pending.get(CONF_APP_TYPE)
+                    or data.get(CONF_APP_TYPE) or APP_LIXIANG)
+        data[CONF_APP_TYPE] = app_type
 
-        if missing:
-            _LOGGER.error(
-                "缺少签名凭据 %s —— 请在「手动填写凭据」里补齐。"
-                "提取方法见 docs/credential-guide.md", missing)
-            return self.async_abort(
-                reason="missing_credentials",
-                description_placeholders={
-                    "fields": "、".join(missing),
-                },
-            )
+        # ② 签名身份（2026-10-10「去 iPad 化」，Phase A 实测 V2/V4c/V4d 定案）：
+        #    · xdev = 登录 device_id（identity store 受信任值；PAKE/签名/exchange
+        #      三者天然一致 —— V4b 实测 travel 接口要求主 Bearer 设备与 x-dev 头一致）
+        #    · hac_key/key_id = keySuite → formatDK 现场派生（V4d 实测随机 hac
+        #      引导即可，无需任何旧凭据）
+        #    · 老条目 entry 自带值不受影响；manual 流程自带四件套不经过这里。
+        if not data.get(CONF_XDEV):
+            data[CONF_XDEV] = data.get(CONF_DEVICE_ID) or ""
+        if not (data.get(CONF_HAC_KEY) and data.get(CONF_KEY_ID)):
+            bearer = (data.get(CONF_ACCESS_TOKEN)
+                      or data.get(CONF_MAIN_BEARER) or "")
+            if not data.get(CONF_XDEV) or not bearer:
+                _LOGGER.error(
+                    "无法派生签名身份: xdev=%s bearer=%s",
+                    bool(data.get(CONF_XDEV)), bool(bearer))
+                return self.async_abort(
+                    reason="identity_derive_failed",
+                    description_placeholders={
+                        "detail": "缺少登录设备号或登录令牌"},
+                )
+            try:
+                from .key_suite import derive_identity
 
-        # ② VIN：优先用户手填/暂存，否则从账号名下车辆自动取
+                hac_key, key_id = await self.hass.async_add_executor_job(
+                    functools.partial(
+                        derive_identity, app_type, data[CONF_XDEV], bearer))
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.error(
+                    "签名身份派生失败（app_type=%s）: %s", app_type, err)
+                return self.async_abort(
+                    reason="identity_derive_failed",
+                    description_placeholders={"detail": str(err)[:200]},
+                )
+            data[CONF_HAC_KEY] = hac_key
+            data[CONF_KEY_ID] = key_id
+            _LOGGER.info(
+                "已派生签名身份: app_type=%s xdev=%s... key_id=%s...",
+                app_type, str(data[CONF_XDEV])[:12], str(key_id)[:12])
+
+        # ③ APP token：唯一保留的内置常量（2026-10-10 实测不绑设备）
+        if not data.get(CONF_APP_TOKEN):
+            data[CONF_APP_TOKEN] = DEFAULT_APP_TOKEN
+
+        # ④ VIN：优先用户手填/暂存，否则从账号名下车辆自动取
         #    ★ 必须在 executor 里跑（_resolve_vin 是同步 HTTP，直接调用会
         #      被 HA 判定为事件循环阻塞 → BlockingIOError）
         vin = pending.get("vin") or data.get(CONF_VIN) or ""
@@ -683,9 +728,11 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 phone=data.get(CONF_PHONE) or "",
                 password=data.get(CONF_PASSWORD) or "",
                 vin="",
-                hac_key=data.get(CONF_HAC_KEY) or DEFAULT_HAC_KEY,
-                key_id=data.get(CONF_KEY_ID) or DEFAULT_KEY_ID,
-                xdev=data.get(CONF_XDEV) or DEFAULT_XDEV,
+                # ★ 2026-10-10：四件套已由 _finish_login 派生好（或 manual 自带），
+                #   不再回填任何内置 iPad 值
+                hac_key=data.get(CONF_HAC_KEY) or "",
+                key_id=data.get(CONF_KEY_ID) or "",
+                xdev=data.get(CONF_XDEV) or "",
                 app_token=data.get(CONF_APP_TOKEN) or DEFAULT_APP_TOKEN,
                 device_id=data.get(CONF_DEVICE_ID) or DEFAULT_DEVICE_ID,
             )
@@ -806,7 +853,8 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                          or DEFAULT_DEVICE_ID)
             try:
                 data = await self.hass.async_add_executor_job(
-                    _do_direct_login, phone, user_input["password"], device_id
+                    _do_direct_login, phone, user_input["password"], device_id,
+                    entry.data.get(CONF_APP_TYPE) or APP_LIXIANG
                 )
             except LiAuthError as e:
                 msg = str(e)
@@ -825,6 +873,10 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 for k in (CONF_HAC_KEY, CONF_KEY_ID, CONF_XDEV, CONF_APP_TOKEN):
                     if entry.data.get(k):
                         data.setdefault(k, entry.data[k])
+                # ★ 2026-10-10：保留登录身份来源（老条目无此键 → 默认理想汽车）
+                data.setdefault(
+                    CONF_APP_TYPE,
+                    entry.data.get(CONF_APP_TYPE) or APP_LIXIANG)
                 # 保存新的 device_id（若变了）
                 if data.get(CONF_DEVICE_ID):
                     store.set_device_id(phone, data[CONF_DEVICE_ID])

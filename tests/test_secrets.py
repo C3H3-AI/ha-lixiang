@@ -20,8 +20,10 @@
 
 注：secrets.py 本身不内置默认值（返回空），
     真正的默认值兜底在 const.py：
-        DEFAULT_HAC_KEY = _S_HAC_KEY or "<内置值>"
+        DEFAULT_APP_TOKEN = _S_APP_TOKEN or "<内置值>"
     所以测试要针对 const.py。
+    ★ 2026-10-10：hac_key/key_id/xdev 的 DEFAULT_* 已删除（去 iPad 化，
+      每设备身份由 key_suite.derive_identity 现场派生），仅剩 APP token。
 """
 
 from __future__ import annotations
@@ -67,24 +69,20 @@ class TestLazySecretType:
     def test_str_gives_real_value(self):
         """★ str() 必须给出真实值"""
         C = _load_const()
-        v = C.DEFAULT_HAC_KEY
+        v = C.DEFAULT_APP_TOKEN
         s = str(v)
-        assert len(s) == 64, f"hac_key 应 64 字符，str() 得到 {len(s)}"
+        assert len(s) == 36, f"app_token 应 36 字符，str() 得到 {len(s)}"
 
     def test_all_defaults_nonempty(self):
-        """★ 所有 DEFAULT_* 必须非空（否则签名失败）"""
+        """★ DEFAULT_APP_TOKEN 必须非空；设备身份 DEFAULT_* 必须已删除"""
         C = _load_const()
-        expect = {
-            "DEFAULT_HAC_KEY": 64,
-            "DEFAULT_KEY_ID": 32,
-            "DEFAULT_XDEV": 32,
-            "DEFAULT_APP_TOKEN": 36,
-        }
-        for name, want in expect.items():
-            v = getattr(C, name, None)
-            assert v is not None, f"{name} 不存在"
-            got = len(str(v))
-            assert got == want, f"{name} 应 {want} 字符，实际 {got}"
+        v = getattr(C, "DEFAULT_APP_TOKEN", None)
+        assert v is not None, "DEFAULT_APP_TOKEN 不存在"
+        assert len(str(v)) == 36, f"DEFAULT_APP_TOKEN 应 36 字符，实际 {len(str(v))}"
+        # ★ 2026-10-10 去 iPad 化：这三个是【每设备运行时身份】，禁止再内置
+        for gone in ("DEFAULT_HAC_KEY", "DEFAULT_KEY_ID", "DEFAULT_XDEV"):
+            assert not hasattr(C, gone), (
+                f"{gone} 不该存在 —— 每设备身份应由 key_suite 派生，不得内置")
 
     def test_strip_trap_documented(self):
         """★ 记录陷阱：str 子类上直接 .strip() 会丢值
@@ -93,25 +91,25 @@ class TestLazySecretType:
         而 _LazySecret 的底层内容是空字符串。
         """
         C = _load_const()
-        v = C.DEFAULT_HAC_KEY
+        v = C.DEFAULT_APP_TOKEN
         # 底层内容为空 → 直接 .strip() 得到空
         direct = v.strip()
         # str() 之后才正确
         converted = str(v).strip()
-        assert len(converted) == 64, "str() 后 strip 必须有效"
+        assert len(converted) == 36, "str() 后 strip 必须有效"
         # 记录：直接 strip 的结果（可能是空，也可能非空取决于实现）
         # 关键是要有 str() 这一步
-        assert direct != converted or len(direct) == 64
+        assert direct != converted or len(direct) == 36
 
     def test_encode_after_str(self):
         """str() 后 encode 得到正确字节"""
         C = _load_const()
-        assert len(str(C.DEFAULT_HAC_KEY).encode()) == 64
+        assert len(str(C.DEFAULT_APP_TOKEN).encode()) == 36
 
     def test_bool_true(self):
         """默认值 bool() 为真"""
         C = _load_const()
-        assert bool(C.DEFAULT_HAC_KEY) is True
+        assert bool(C.DEFAULT_APP_TOKEN) is True
 
 
 class TestLiApiForcesStr:

@@ -28,6 +28,7 @@ import uuid
 from homeassistant.exceptions import HomeAssistantError
 
 
+from .const import APP_LIXIANG
 from .policy import (
     POLICY_COMMAND,
     POLICY_RESULT,
@@ -37,12 +38,11 @@ from .policy import (
     run_with_retry,
 )
 from .pake_login import (
+    APP_LOGIN_PARAMS,
     APP_VERSION as LOGIN_APP_VERSION,
     BASE_ID,
-    CLIENT_ID,
     LixiangDirectLogin,
     LoginError,
-    REDIRECT_URI,
     SDK_VERSION,
 )
 
@@ -457,6 +457,7 @@ class LiApiClient:
         device_id: str | None = None,
         refresh_token: str = "",
         on_token_update=None,
+        app_type: str = APP_LIXIANG,
     ) -> None:
         self._phone = str(phone) if phone is not None else ""
         self._password = str(password) if password is not None else ""
@@ -489,6 +490,8 @@ class LiApiClient:
         #   此前缺陷：新 token 只存内存，重启后读回首次登录的旧值
         #   → refresh_token 轮换即失效 → 每次重启都要密码重登（有风控风险）。
         self._on_token_update = on_token_update
+        # ★ 登录身份来源（lixiang=理想汽车 / livis=理想同学，仅日志标识用）
+        self._app_type = str(app_type) if app_type else APP_LIXIANG
 
     # ---------- 登录会话 ----------
 
@@ -496,7 +499,8 @@ class LiApiClient:
         """PAKE 密码登录, 建立 sso_token 会话 (cookie 13 天有效)."""
         # ★ 2026-10-02 修正：必须用 _xdev（与签名头 X-CHJ-Deviceid 同一个），
         #   否则服务端认为「token 来自别的设备」→ 100105 用户未登录。
-        cli = LixiangDirectLogin(device_id=self._xdev or self._device_id, debug=False)
+        cli = LixiangDirectLogin(device_id=self._xdev or self._device_id,
+                                 debug=False, app_type=self._app_type)
         tok = cli.login(self._phone, self._password)
         if not tok.get("access_token"):
             raise LiApiError("登录成功但无 access_token")
@@ -506,7 +510,8 @@ class LiApiClient:
         self._refresh_token = tok.get("refresh_token", "") or self._refresh_token
         self._tokens.clear()
         self._notify_token_update()
-        _LOGGER.info("li_api PAKE 登录成功 (device_id=%s)", self._device_id)
+        _LOGGER.info("li_api PAKE 登录成功 (device_id=%s, app_type=%s)",
+                     self._device_id, self._app_type)
 
     def _notify_token_update(self) -> None:
         """把最新 token 交给回调（由集成侧写入 config entry 持久化）。
@@ -535,18 +540,22 @@ class LiApiClient:
     def _exchange(self, scope: str, audience: str) -> str:
         """用登录会话 cookie 换 scope token (response_type=token)."""
         cli = self._ensure_session()
+        # ★ 2026-10-10：client_id/redirect_uri 按登录身份取（livis 独立 client）
+        client_id, _, redirect_uri = (
+            APP_LOGIN_PARAMS.get(self._app_type) or APP_LOGIN_PARAMS["lixiang"]
+        )
         r = cli._sess.post(
             f"{BASE_ID}/api/auth",
             data={
                 "prompt": "none", "offline_access": "true",
-                "redirect_uri": REDIRECT_URI, "scope": scope,
+                "redirect_uri": redirect_uri, "scope": scope,
                 "response_type": "token", "device_id": self._device_id,
-                "client_id": CLIENT_ID, "audience": audience,
+                "client_id": client_id, "audience": audience,
             },
             headers={
                 "idaas-data": (
                     f"model_name=OpenHarmony;device_id={self._device_id};"
-                    f"app_version={LOGIN_APP_VERSION};client_id={CLIENT_ID};"
+                    f"app_version={LOGIN_APP_VERSION};client_id={client_id};"
                     f"sdk_version={SDK_VERSION};timestamp={int(time.time() * 1000)}"
                 ),
                 "origin": "https://account.lixiang.com",
