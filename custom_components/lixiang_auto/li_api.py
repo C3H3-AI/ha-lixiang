@@ -1005,6 +1005,47 @@ class LiApiClient:
         except Exception:  # noqa: BLE001
             raise
 
+    def _refresh_main_bearer(self) -> bool:
+        """用 refresh_token **免密**续期主 Bearer；成功返回 True。
+
+        ★ 2026-10-10（接通 `pake_login.refresh()`，此前是死代码）：
+          会话失效分两种，代价完全不同 ——
+            · scope token 通道（VSS / 车控 / 任务大师）：换 token 必须带
+              **登录会话 cookie**，而 refresh **不会重新种 cookie**
+              → 这里救不了，只能密码重登（见 _get_scoped）。
+            · 主 Bearer 通道（travel 陪伴里程 / 充电明细与月统计）：
+              只吃 access_token → 可用 refresh_token 免密续期，
+              **省掉一次密码重登**（少一次风控风险与等待）。
+          本方法只服务后者。
+
+        ⚠️ 关键：refresh_token **会轮换** —— 新值必须回写 config entry
+           （`_notify_token_update`），否则「续期一次 → 下次重启必须密码重登」，
+           反而**制造**风控。这条有专门的回归测试。
+        """
+        if not self._refresh_token:
+            return False
+        try:
+            cli = self._cli or LixiangDirectLogin(
+                device_id=self._xdev or self._device_id,
+                debug=False, app_type=self._app_type)
+            tok = cli.refresh(self._refresh_token)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.info("refresh_token 续期失败，回退密码重登: %s", err)
+            return False
+        access = str(tok.get("access_token") or "")
+        if not access:
+            _LOGGER.info("refresh_token 续期未返回 access_token，回退密码重登")
+            return False
+        self._cli = cli
+        self._main_bearer = access
+        new_rt = str(tok.get("refresh_token") or "")
+        if new_rt and new_rt != self._refresh_token:
+            self._refresh_token = new_rt
+            _LOGGER.debug("refresh_token 已轮换，随回写持久化")
+        self._notify_token_update()
+        _LOGGER.info("主 Bearer 已用 refresh_token 免密续期（未走密码重登）")
+        return True
+
     def _travel_bearer(self, force_login: bool = False) -> str:
         """travel 接口用的主 Bearer（App 抓包里 x-chj-token = APP-xxx）。
 
@@ -1012,12 +1053,15 @@ class LiApiClient:
           调用方收到 100105 时用 force_login=True 重登一次再试。
         ★ 2026-10-02 修正：_login() 里 `if self._cli is not None` 之类的短路会让
           force_login 无效 —— 这里强制清空 _cli 再登录，确保真的换新 token。
+        ★ 2026-10-10：先试【免密续期】（refresh_token），失败才密码重登。
+          顺序等价于「最坏情况与原来一致」—— 续期不可用时行为不变。
         """
         if force_login or not getattr(self, "_main_bearer", ""):
-            self._main_bearer = ""
-            self._cli = None            # ★ 关键：清掉旧 session，强制重新登录
-            self._tokens.clear()
-            self._login()
+            if not self._refresh_main_bearer():
+                self._main_bearer = ""
+                self._cli = None        # ★ 关键：清掉旧 session，强制重新登录
+                self._tokens.clear()
+                self._login()
         return getattr(self, "_main_bearer", "") or self._app_token
 
     def get_travel_months(self) -> dict:
