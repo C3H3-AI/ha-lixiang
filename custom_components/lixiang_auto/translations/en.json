@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Li Auto",
-        "description": "Enter your Li Auto account phone number and password, then choose a sign-in identity.\n\n**What happens next?**\n\n1. The integration signs in to Li Auto's servers with your credentials\n2. If this is the **first time** signing in from this device, Li Auto will require **SMS verification** (with a slider captcha you must complete in your browser)\n3. The integration opens a helper page where you complete the verification\n4. Once verified, this device is marked **trusted** and no further verification is needed\n\n> ⚠️ The \"Li Auto\" identity shares the Li Auto App sign-in session (the phone App may be signed out); \"Li Auto Assistant\" uses an independent signing identity.",
+        "description": "Enter your Li Auto account phone number and password, then choose a sign-in identity.\n\n**What happens next?**\n\n1. The integration signs in to Li Auto's servers with your credentials\n2. If this is the **first time** signing in from this device, Li Auto will require **SMS verification** (with a slider captcha you must complete in your browser)\n3. The integration opens a helper page where you complete the verification\n4. Once verified, this device is marked **trusted** and no further verification is needed\n\n> ⚠️ **Your phone app may be signed out**: both identities sign in to the **same Li Auto account** — on the first sign-in (device verification) or when the session is lost and re-established, the Li Auto app on your phone may need to sign in again (observed with both identities).\n> The integration reuses its session wherever possible (no repeated sign-in on restart in current versions) to keep sign-ins to a minimum.",
         "data": {
           "phone": "Phone number",
           "password": "Password",
@@ -12,7 +12,7 @@
       },
       "password_login": {
         "title": "Li Auto login",
-        "description": "Enter your Li Auto account phone number and password, then choose a sign-in identity.\n\n**Sign-in identity:**\n- **Li Auto** — the same sign-in session as the Li Auto App (the phone App may be signed out)\n- **Li Auto Assistant** — an independent sign-in session (tested: it does not sign out any phone app)\n\n**First login** requires SMS verification (including a slider captcha); the integration will guide you through it in your browser. Once verified, this device is trusted and no further verification is needed.",
+        "description": "Enter your Li Auto account phone number and password, then choose a sign-in identity.\n\n**Sign-in identity:**\n- **Li Auto** — the same sign-in session as the Li Auto App\n- **Li Auto Assistant** — an independent signing/client identity\n\n> ⚠️ **Your phone app may be signed out**: both identities sign in to the **same Li Auto account** — on the first sign-in (device verification) or when the session is lost and re-established, the Li Auto app on your phone may need to sign in again (observed with both identities).\n> The integration reuses its session wherever possible (no repeated sign-in on restart in current versions) to keep sign-ins to a minimum.\n\n**First login** requires SMS verification (including a slider captcha); the integration will guide you through it in your browser. Once verified, this device is trusted and no further verification is needed.",
         "data": {
           "phone": "Phone number",
           "password": "Password",
@@ -21,7 +21,7 @@
       },
       "browser": {
         "title": "Li Auto · First-time login verification",
-        "description": "Complete the SMS verification on the Li Auto login page.\n\n## 👉 [Open the Li Auto login page]({login_url})\n\n---\n\n**①** Enter your phone number and accept the terms\n\n**②** Tap \"get code\" → drag the slider\n\n**③** Enter the SMS code → tap \"log in / register\"\n\n**④** Come back and press Submit (wait ~30 seconds for it to succeed)\n\n---\n\n> 💡 After you submit, Home Assistant signs in with the same device identity.\n> Once that succeeds, this device is marked as trusted and no longer needs SMS\n> verification.",
+        "description": "Complete the SMS verification on the Li Auto login page.\n\n## 👉 [Open the Li Auto login page]({login_url})\n\n---\n\n**①** Enter your phone number and accept the terms\n\n**②** Tap \"get code\" → drag the slider\n\n**③** Enter the SMS code → tap \"log in / register\"\n\n**④** Come back and press Submit (wait ~30 seconds for it to succeed)\n\n---\n\n> ⚠️ This step completes a device authorization using **the same client parameters as the Li Auto app** (trust is recorded server-side per `device_id`, and this is the only path that establishes it) — so **an app already signed in on your phone may need to sign in again**.\n> Once verified and the device is marked trusted, this step will not be needed again; the integration also reuses its session.\n\n---\n\n> 💡 After you submit, Home Assistant signs in with the same device identity.\n> Once that succeeds, this device is marked as trusted and no longer needs SMS\n> verification.",
         "data": {
           "recheck": "I have logged in — submit"
         }
