@@ -123,6 +123,28 @@ def _int01(val: Any) -> int | None:
         return None
 
 
+def _window_pct(val: Any) -> float | int | None:
+    """车窗开度（%）。
+
+    ★ App 侧字段是 `openStatus`（String），语义**待实车确认**：
+      · 数值（如 "0" / "40"）→ 直接当百分比（我们的 `window_*` 单位就是 %）
+      · 非数值（"open" / "closed"）→ 退化为 100 / 0
+    两种都先兜住，等理想ONE 车主回传真实响应后收敛。
+    """
+    v = _raw(val)
+    if v is None:
+        return None
+    n = _num(v)
+    if n is not None:
+        return n
+    s = str(v).strip().lower()
+    if s in ("open", "opened", "true", "on"):
+        return 100
+    if s in ("closed", "close", "false", "off"):
+        return 0
+    return None
+
+
 def map_realtime_state(res: Any) -> dict[str, dict]:
     """把 `real-time-state` 的响应体（DynamicInfoRes）映射成信号字典。
 
@@ -151,16 +173,17 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     cst = _dig(res, "chargeSetting", "chargeStatus")
     put("charge_status", _num(cst.get("chargeStatus")))
 
-    # 五门
+    # 五门（★ App 侧：doorSwitchStatus.<门>.isOpen，类型是 String）
     doors = res.get("doorSwitchStatus")
     if isinstance(doors, dict):
         for src, key in _DOOR_MAP.items():
-            put(key, _int01(doors.get(src)))
+            put(key, _int01(_dig(doors, src).get("isOpen") or doors.get(src)))
 
-    # 车窗 + 天窗
+    # 车窗 + 天窗（★ App 侧：windowSwitchStatus.<窗>.openStatus，类型是 String）
     wins = res.get("windowSwitchStatus")
     if isinstance(wins, dict):
         for src, key in _WINDOW_MAP.items():
-            put(key, _num(wins.get(src)))
+            put(key, _window_pct(_dig(wins, src).get("openStatus")
+                                 or wins.get(src)))
 
     return out
