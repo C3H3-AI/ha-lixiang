@@ -37,6 +37,7 @@ from .const import (
     CONF_VIN,
     CONF_XDEV,
     DEFAULT_APP_TOKEN,
+    CONF_IDENTITY_SOURCE,
     DEFAULT_DEVICE_ID,
     DOMAIN,
     LOGGER_NAME,
@@ -218,6 +219,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     return
                 hass.config_entries.async_update_entry(
                     entry, data={**entry.data, **patch})
+                # ★ 2026-10-10：身份被迁移（老条目 → 本设备派生身份）时，
+                #   已按旧身份构造的签名器必须同步更新 —— 否则
+                #   coordinator 的 client.update() 仍用旧身份签名。
+                if patch.get(CONF_HAC_KEY):
+                    try:
+                        signer.update_identity(
+                            patch[CONF_HAC_KEY], patch.get(CONF_KEY_ID) or key_id,
+                            patch.get(CONF_XDEV) or xdev)
+                    except Exception as _e:  # noqa: BLE001
+                        _LOGGER.warning("更新签名器身份失败: %s", _e)
                 _LOGGER.debug("已回写 token: %s", list(patch))
             except Exception as err:  # noqa: BLE001
                 _LOGGER.warning("回写 token 失败: %s", err)
@@ -241,6 +252,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             app_token=app_token, device_id=device_id,
             on_token_update=_persist_tokens,
             app_type=app_type,
+            # ★ 标记为空 = v1.4.7 之前的老条目（内置抓包身份）→ 登录后迁移
+            identity_source=entry.data.get(CONF_IDENTITY_SOURCE) or "",
         )
     else:
         _LOGGER.warning(
