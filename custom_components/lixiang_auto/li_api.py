@@ -28,7 +28,15 @@ import uuid
 from homeassistant.exceptions import HomeAssistantError
 
 
-from .const import APP_LIXIANG
+from .const import (
+    APP_LIXIANG,
+    CONF_HAC_KEY,
+    CONF_IDENTITY_SOURCE,
+    CONF_KEY_ID,
+    CONF_XDEV,
+    IDENTITY_SOURCE_DERIVED,
+    IDENTITY_SOURCE_MANUAL,
+)
 from .policy import (
     POLICY_COMMAND,
     POLICY_RESULT,
@@ -251,6 +259,27 @@ def _ensure_task_ok(op: str, resp) -> None:
     raise LiApiError(f"任务大师{op}失败: {str(resp)[:200]}")
 
 
+def is_signature_error(err_or_payload) -> bool:
+    """签名错误判定（100005 / 「签名错误」文案）。
+
+    ★ 必须认两种形态（实测都有）：
+      · HTTP 非 2xx → _signed_call 抛 LiApiError，错误文本里带 100005；
+      · HTTP 200 但 body 是 {"code": 100005, ...} —— 服务端把签名错误
+        当业务码返回，此时不会抛异常，调用方只会拿到「空 items」。
+    """
+    if isinstance(err_or_payload, dict):
+        raw = err_or_payload.get("code")
+        try:
+            if raw is not None and int(raw) == 100005:
+                return True
+        except (TypeError, ValueError):
+            pass
+        text = json.dumps(err_or_payload, ensure_ascii=False)
+    else:
+        text = str(err_or_payload)
+    return "100005" in text or "签名错误" in text
+
+
 def _is_scope_denied(err) -> bool:
     """换取 scope 被服务端策略拒绝（≠ 会话失效，不应触发重登）。
 
@@ -458,6 +487,7 @@ class LiApiClient:
         refresh_token: str = "",
         on_token_update=None,
         app_type: str = APP_LIXIANG,
+        identity_source: str = "",
     ) -> None:
         self._phone = str(phone) if phone is not None else ""
         self._password = str(password) if password is not None else ""
@@ -474,6 +504,12 @@ class LiApiClient:
         self._hac = _hac_key_bytes(hac_key)
         self._key_id = str(key_id) if key_id is not None else ""
         self._xdev = str(xdev) if xdev is not None else ""   # x-chj 签名身份 (与 hac_key 绑定的设备)
+        # ★ 2026-10-10 身份迁移：来源标记为空 = v1.4.7 之前建的老条目
+        #   （身份来自已删除的内置抓包值）→ 下次拿到新鲜会话时迁移。
+        self._identity_source = (
+            str(identity_source) if identity_source is not None else "")
+        self._identity_dirty = False      # 身份有变更待回写 entry
+        self._sig_recover_ts = 0.0        # 签名错误自愈的冷却时间戳
         self._app_token = str(app_token) if app_token is not None else ""
         # ★ 主 Bearer（PAKE 登录后的 access_token）—— travel 等接口需要（App 抓包 x-chj-token = APP-xxx）
         self._main_bearer: str = ""
@@ -492,6 +528,84 @@ class LiApiClient:
         self._on_token_update = on_token_update
         # ★ 登录身份来源（lixiang=理想汽车 / livis=理想同学，仅日志标识用）
         self._app_type = str(app_type) if app_type else APP_LIXIANG
+
+    # ---------- 身份迁移 / 签名错误自愈（★ 2026-10-10）------------------
+
+    #: 签名错误自愈冷却（秒）—— 历史教训：无守卫的重登/重试会变成
+    #  每分钟风暴（实测 87 次/1.5h，有账号风控风险），必须节流。
+    SIG_RECOVER_COOLDOWN = 600.0
+
+    def _identity_needs_migration(self) -> bool:
+        """当前身份是否应迁移为「本设备现场派生」的身份。
+
+        ★ 判据是【来源标记】而不是比对旧内置值 —— 后者等于把抓包身份
+          再写回代码里，正是「去 iPad 化」要避免的。
+            · derived → 已是本设备派生身份，跳过
+            · manual  → 用户在手动流程里自填四件套，尊重其选择，不动
+            · 标记缺失 → v1.4.7 之前建的老条目（身份=内置抓包值）→ 迁移
+        """
+        return self._identity_source not in (
+            IDENTITY_SOURCE_DERIVED, IDENTITY_SOURCE_MANUAL)
+
+    def _migrate_identity_if_needed(self, reason: str) -> bool:
+        """把老条目的内置抓包身份迁移成本设备派生身份。
+
+        ★ 触发时机：PAKE 登录成功之后 —— 只有这时主 Bearer 一定新鲜，
+          而 keySuite 派生必须带有效 Bearer（别处触发可能因过期而失败）。
+        ★ 失败绝不破坏现状：保留旧身份、只告警，下次登录再试。
+        """
+        if not self._identity_needs_migration():
+            return False
+        xdev = str(self._device_id or self._xdev or "")
+        bearer = self._main_bearer
+        if not xdev or not bearer:
+            _LOGGER.warning(
+                "身份迁移跳过（缺设备号或 Bearer）: xdev=%s bearer=%s",
+                bool(xdev), bool(bearer))
+            return False
+        try:
+            from .key_suite import derive_identity
+            hac_hex, key_id = derive_identity(self._app_type, xdev, bearer)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("身份迁移失败（保留原身份，下次登录重试）: %s", err)
+            return False
+        self._hac = _hac_key_bytes(hac_hex)
+        self._key_id = str(key_id)
+        self._xdev = xdev          # ★ 与登录设备对齐（v1.4.7：PAKE/签名/exchange 三者一致）
+        self._identity_source = IDENTITY_SOURCE_DERIVED
+        self._identity_dirty = True
+        self._tokens.clear()
+        self._notify_token_update()
+        _LOGGER.info("签名身份已迁移为本设备派生身份（reason=%s, xdev=%s…）",
+                     reason, xdev[:12])
+        return True
+
+    def _recover_signature_error(self) -> bool:
+        """签名错误（100005）后的自愈：迁移身份或重登拿新 Bearer。
+
+        带冷却节流：同一客户端 10 分钟内只尝试一次，避免风暴。
+        返回 True 表示状态已变（调用方可重试请求一次）。
+        """
+        now = time.monotonic()
+        if (now - self._sig_recover_ts) < self.SIG_RECOVER_COOLDOWN:
+            return False
+        self._sig_recover_ts = now
+
+        # ① 老身份 → 先用现有 Bearer 迁移（迁移成功即换了签名身份）
+        if self._identity_needs_migration() and self._migrate_identity_if_needed(
+                "signature_error"):
+            return True
+        # ② 仍需修复且持有密码 → 重登一次（_login 内部会再尝试迁移）
+        if self._password:
+            try:
+                _LOGGER.info("签名错误自愈：重新登录")
+                self._cli = None
+                self._login()
+                return True
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("签名错误自愈失败（重登异常）: %s", err)
+                return False
+        return False
 
     # ---------- 登录会话 ----------
 
@@ -512,6 +626,9 @@ class LiApiClient:
         self._notify_token_update()
         _LOGGER.info("li_api PAKE 登录成功 (device_id=%s, app_type=%s)",
                      self._device_id, self._app_type)
+        # ★ 2026-10-10：老条目的内置身份在此迁移（此时 Bearer 最新鲜）。
+        #   非老条目（已派生/手填）直接跳过，不产生额外请求。
+        self._migrate_identity_if_needed("login")
 
     def _notify_token_update(self) -> None:
         """把最新 token 交给回调（由集成侧写入 config entry 持久化）。
@@ -521,12 +638,24 @@ class LiApiClient:
         cb = getattr(self, "_on_token_update", None)
         if not cb:
             return
-        try:
-            cb({
-                "refresh_token": self._refresh_token,
-                "main_bearer": self._main_bearer,
-                "access_token": self._main_bearer,
+        patch = {
+            "refresh_token": self._refresh_token,
+            "main_bearer": self._main_bearer,
+            "access_token": self._main_bearer,
+        }
+        # ★ 2026-10-10：身份被迁移/派生刷新时才回写身份字段。
+        #   只在「有变化」时带，避免把手工流程用户自填的四件套
+        #   被归一化后覆盖写回（dirty 标记见 _migrate_identity_if_needed）。
+        if self._identity_dirty:
+            patch.update({
+                CONF_HAC_KEY: self._hac.hex(),
+                CONF_KEY_ID: self._key_id,
+                CONF_XDEV: self._xdev,
+                CONF_IDENTITY_SOURCE: self._identity_source,
             })
+            self._identity_dirty = False
+        try:
+            cb(patch)
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("token 回写回调失败（不影响运行）: %s", err)
 
@@ -622,6 +751,24 @@ class LiApiClient:
     # ---------- x-chj 签名请求 ----------
 
     def _signed_call(self, method: str, path: str, body: str, bearer: str) -> dict:
+        """签名调用。★ 2026-10-10：签名错误（100005）时自愈并重试一次。
+
+        自愈会把客户端身份换成本设备派生身份（_recover_signature_error），
+        因为身份是客户端级共享状态，所以只要任一签名调用触发自愈，
+        其余通道（任务大师 / travel）随之受益。
+        """
+        try:
+            resp = self._signed_call_raw(method, path, body, bearer)
+        except LiApiError as err:
+            if is_signature_error(err) and self._recover_signature_error():
+                return self._signed_call_raw(method, path, body, bearer)
+            raise
+        # 100005 也可能以 HTTP 200 + {"code":100005} 返回（不抛异常）
+        if is_signature_error(resp) and self._recover_signature_error():
+            return self._signed_call_raw(method, path, body, bearer)
+        return resp
+
+    def _signed_call_raw(self, method: str, path: str, body: str, bearer: str) -> dict:
         ts = str(int(time.time() * 1000))
         nonce = str(uuid.uuid4())
         if body:
