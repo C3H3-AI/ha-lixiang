@@ -197,3 +197,33 @@ class TestLivisLoginClient:
             text = path.read_text(encoding="utf-8", errors="ignore")
             assert "6qxd1MLZhAtdWipnmXe1dd" not in text, (
                 f"{path.name} 残留旧 livis client 字面量")
+
+    def test_trust_link_fixed_to_main_app(self):
+        """★ 2026-10-10：信任链接固定主 App 参数。
+
+        背景：链接唯一用途是建立 device_id 信任（信任按 device_id 全局
+        生效，与 client 无关）。按 app_type 切 livis 参数会跳到理想同学
+        「绑定特斯拉」页 → 无法完成信任建立。
+        """
+        s = _src("config_flow.py")
+        i = s.find("def _browser_ph")
+        assert i > 0
+        blk = s[i:i + 3500]
+        assert 'APP_LOGIN_PARAMS["lixiang"]' in blk, (
+            "_browser_ph 必须固定主 App 信任参数")
+        assert "APP_LOGIN_PARAMS.get(app_type" not in blk, (
+            "_browser_ph 不得按 app_type 切参（livis H5 跳特斯拉绑定页）")
+        # 调用点不再传 app_type
+        assert "_browser_ph(tok, device_id, app_type)" not in s
+
+        # auth_web 辅助页同规则
+        s2 = _src("auth_web.py")
+        assert 'APP_LOGIN_PARAMS["lixiang"]' in s2, (
+            "auth_web 辅助页信任链接必须固定主 App 参数")
+        assert "APP_LOGIN_PARAMS.get(s.get(" not in s2
+
+    def test_browser_poll_fast_probing(self):
+        """信任检测轮询前密后疏（原固定 5 秒盲等）。"""
+        s = _src("config_flow.py")
+        assert "_RETRY_GAPS = [1, 2, 3, 5, 5, 8, 10]" in s, (
+            "轮询应为快探测序列（信任同步 1~3 秒生效）")
