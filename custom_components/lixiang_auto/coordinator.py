@@ -616,6 +616,11 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                             _fn = eval(_compute, _eval_globals)
                             _raw = _fn(data["vss"])
                             data["vss"][_k] = {"value": _raw, "computed": True}
+                            _LOGGER.debug("派生信号 %s = %r（输入键 %s）",
+                                          _k, _raw,
+                                          [kk for kk in ("range_elec_cltc","range_fuel_cltc",
+                                                         "range_elec_wltc","range_fuel_wltc")
+                                           if kk in data["vss"]] or "无")
                         except Exception as _err:  # noqa: BLE001
                             _LOGGER.debug("派生信号 %s 计算失败: %s", _k, _err)
 
