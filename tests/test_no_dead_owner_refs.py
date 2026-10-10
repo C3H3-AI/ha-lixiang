@@ -28,8 +28,14 @@ ROOT = Path(__file__).resolve().parent.parent
 #: 失效组织名（拼接构造，避免本文件自我命中）
 DEAD = ("c3h3" + "-ci", "c3h3" + "-bi")
 
-#: 有意记录失效组织名的文件（其测试目的就是断言它不得出现）
-ALLOW_PATHS = {"tests/test_manifest_urls.py"}
+#: 有意记录失效组织名的文件 —— 它们的**测试目的**就是点名这个失效组织名：
+#:   · test_manifest_urls.py    断言 manifest 不得指向它
+#:   · test_no_dead_owner_refs.py 本文件（说明文字与断言消息里必然出现）
+#:     注意：本文件的探针字符串用拼接构造（DEAD），所以只有文档/消息里才有字面量。
+ALLOW_PATHS = {
+    "tests/test_manifest_urls.py",
+    "tests/test_no_dead_owner_refs.py",
+}
 
 #: 只扫文本类文件，跳过二进制/大文件噪音
 _TEXT_SUFFIX = {
