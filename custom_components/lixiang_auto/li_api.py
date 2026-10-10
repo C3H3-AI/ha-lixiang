@@ -5,6 +5,10 @@
   2. 会话 cookie POST /api/auth (response_type=token) → 各服务 scope token (15分钟)
      注意: 裸 Bearer 换不了 scope token (login_required), 必须带登录会话 cookie;
      refresh_token 续期不会重新种 cookie, 故密码是唯一的长期免维护凭据。
+    ★ 2026-10-10：据此把恢复分成两档 ——
+      · scope token 通道（VSS/车控/任务大师）→ 只能密码重登（cookie 不可再生）
+      · 主 Bearer 通道（travel/充电明细）→ 先用 refresh_token **免密续期**
+        （`_refresh_main_bearer`），失败才密码重登；续期不碰 cookie，救不了前者。
   3. x-chj 签名请求 (hac_key/KEY_ID/X-CHJ-Deviceid 用 iPad 捕获的一套) + scope Bearer
      → /ssp-cloud-vss-service/mobile/vss/get-batch 读实时信号
 
