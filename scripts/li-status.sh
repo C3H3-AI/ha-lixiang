@@ -43,7 +43,7 @@ PROXY_ARGS=(-x "$PROXY")
 if ! curl -s -o /dev/null --max-time 3 -x "$PROXY" https://api.github.com/ 2>/dev/null; then
   PROXY_ARGS=(--noproxy '*')
 fi
-GH_REPO="${LI_GH_REPO:-c3h3-ci/ha-lixiang}"
+GH_REPO="${LI_GH_REPO:-C3H3-AI/ha-lixiang}"
 QUIET=0
 [[ "${1:-}" == "--quiet" ]] && QUIET=1
 
@@ -130,7 +130,7 @@ while read -r br; do
     # ★ 必须区分「确实没有 PR」与「查不到（网络/API 失败）」——
     #   否则一次网络抖动就会误报漂移，告警变噪音后巡检就失效了。
     short="${br#origin/}"
-    pr_raw=$(gh_api "/pulls?head=c3h3-ci:$short&state=open" 2>/dev/null)
+    pr_raw=$(gh_api "/pulls?head=${GH_REPO%%/*}:$short&state=open" 2>/dev/null)
     has_pr=$(printf '%s' "$pr_raw" | python3 -c "
 import sys, json
 try:
