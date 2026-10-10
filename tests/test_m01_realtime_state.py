@@ -126,6 +126,36 @@ class TestMapper:
         assert "battery_level" not in out
 
 
+class TestExtendedFields:
+    """App 能显示全部功能 → 这些字段在 ONE 上应当都有值。"""
+
+    def test_inside_temp(self):
+        out = m01_state.map_realtime_state(
+            {"temperatureStatus": {"indoorTemperature": "23.5",
+                                   "outdoorTemperature": "31"}})
+        assert out["inside_temp"]["value"] == 23.5
+
+    def test_location_is_json_string(self):
+        """★ device_tracker 解析的是 JSON 字符串，不是 dict。"""
+        out = m01_state.map_realtime_state(
+            {"locationStatus": {"lat": "31.23", "lon": "121.47",
+                                "alt": "12", "dir": "90"}})
+        raw = out["location"]["value"]
+        assert isinstance(raw, str), type(raw)
+        import json as _json
+        loc = _json.loads(raw)
+        assert loc["v"] == 1 and loc["lat"] == 31.23 and loc["lon"] == 121.47
+        assert loc["alt"] == 12
+
+    def test_location_without_coords_is_skipped(self):
+        out = m01_state.map_realtime_state({"locationStatus": {"alt": "1"}})
+        assert "location" not in out
+
+    def test_online_status(self):
+        out = m01_state.map_realtime_state({"vehOnlineStatus": {"status": "1"}})
+        assert out["online_5g"]["value"] == 1
+
+
 class TestNestedBeanShape:
     """★ App 实测结构：门/窗是 bean 对象，值在 `isOpen` / `openStatus`（String）。"""
 
