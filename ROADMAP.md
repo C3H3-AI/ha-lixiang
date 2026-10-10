@@ -163,7 +163,7 @@
 
 ## 反馈
 
-提 [Issue](https://github.com/c3h3-ci/ha-lixiang/issues) 时请附：
+提 [Issue](https://github.com/C3H3-AI/ha-lixiang/issues) 时请附：
 - HA 版本 + 集成版本
 - 「设备 → 下载诊断」导出的 JSON（已脱敏）
 - 相关日志（设置 → 系统 → 日志，搜索 `lixiang_auto`）
