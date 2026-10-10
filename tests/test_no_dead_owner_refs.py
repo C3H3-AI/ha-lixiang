@@ -35,7 +35,21 @@ DEAD = ("c3h3" + "-ci", "c3h3" + "-bi")
 ALLOW_PATHS = {
     "tests/test_manifest_urls.py",
     "tests/test_no_dead_owner_refs.py",
+    # CHANGELOG 是历史记录：修某个 bug 时会**叙述**到旧名（例如
+    # 「脚本里仍是旧组织名 c3h3-ci」）。允许叙述，但**死链**照样禁止
+    # —— 见下面的 test_no_dead_links。
+    "CHANGELOG.md",
 }
+
+#: 死链形态：URL / API 路径 —— 任何文件都不许有（用户点进去 404）
+DEAD_LINK_PATTERNS = (
+    "github.com/{d}", "api.github.com/repos/{d}", "/repos/{d}/",
+)
+#: 脚本专属形态：查询里的 owner（head=<owner>:<branch>）—— 只在 .sh 里算死链，
+#:  否则文档里解释这个 bug 时也会被误判。
+DEAD_LINK_PATTERNS_SH = ("{d}:",)
+#: 本文件必须能「点名」坏形态才能写守卫 → 扫描时跳过自己
+LINK_SCAN_SKIP = {"tests/test_no_dead_owner_refs.py"}
 
 #: 只扫文本类文件，跳过二进制/大文件噪音
 _TEXT_SUFFIX = {
@@ -72,6 +86,27 @@ class TestNoDeadOwnerReferences:
         assert not bad, (
             "发现失效旧组织名引用（仓库已迁至 C3H3-AI/ha-lixiang，"
             "c3h3-ci / c3h3-bi 均 404）：\n  " + "\n  ".join(bad[:20]))
+
+    def test_no_dead_links(self):
+        """★ 死链是真正伤用户的东西：任何跟踪文件都不许出现旧组织名的 URL。
+
+        （与上一条的区别：CHANGELOG 里可以「叙述」旧名，但不能给出链接。）
+        """
+        bad = []
+        for rel in _tracked_text_files():
+            if str(rel) in LINK_SCAN_SKIP:
+                continue
+            text = (ROOT / rel).read_text(encoding="utf-8", errors="ignore")
+            pats = list(DEAD_LINK_PATTERNS)
+            if rel.suffix == ".sh":
+                pats += list(DEAD_LINK_PATTERNS_SH)
+            for i, line in enumerate(text.splitlines(), 1):
+                for dead in DEAD:
+                    for pat in pats:
+                        if pat.format(d=dead) in line:
+                            bad.append(f"{rel}:{i}  {line.strip()[:100]}")
+        assert not bad, (
+            "发现失效组织名的死链（用户点进去 404）：\n  " + "\n  ".join(bad[:20]))
 
     def test_scripts_default_repo_is_current(self):
         """脚本默认仓库名必须是当前仓库，且 owner 与真实值一致。"""
