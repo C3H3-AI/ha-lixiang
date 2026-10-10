@@ -38,6 +38,9 @@ from .const import (
     CONF_XDEV,
     DEFAULT_APP_TOKEN,
     CONF_IDENTITY_SOURCE,
+    CONF_MAIN_BEARER,
+    CONF_REFRESH_TOKEN,
+    CONF_SESSION_COOKIES,
     DEFAULT_DEVICE_ID,
     DOMAIN,
     LOGGER_NAME,
@@ -254,6 +257,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             app_type=app_type,
             # ★ 标记为空 = v1.4.7 之前的老条目（内置抓包身份）→ 登录后迁移
             identity_source=entry.data.get(CONF_IDENTITY_SOURCE) or "",
+            # ★ 2026-10-10：复用上次存下的登录会话 cookie（重启不再密码登录）
+            session_cookies=entry.data.get(CONF_SESSION_COOKIES) or None,
+            # ★ 2026-10-10：这两个 token 之前【只写不读】—— entry 里存着，
+            #   但启动时从不传回客户端 → 重启后 self._refresh_token/_main_bearer
+            #   都是空 → travel/充电 首次调用必然走 _login()（密码登录 = 可能顶掉手机 App），
+            #   且 v1.4.10 的「refresh_token 免密续期」在启动路径上永远不会生效。
+            refresh_token=entry.data.get(CONF_REFRESH_TOKEN) or "",
+            main_bearer=(entry.data.get(CONF_MAIN_BEARER)
+                         or entry.data.get(CONF_ACCESS_TOKEN) or ""),
         )
     else:
         _LOGGER.warning(

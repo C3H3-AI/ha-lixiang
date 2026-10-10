@@ -209,6 +209,64 @@ class LixiangDirectLogin:
             self._sess.cookies.set("authli_device_id", self.device_id, domain=dom)
         self._sess.cookies.set("isapp", "1", domain="account.lixiang.com")
 
+    # ---------- 登录会话 cookie 的导出 / 装载（★ 2026-10-10） --------------
+
+    def export_session_cookies(self) -> list[dict]:
+        """导出登录态 cookie（可 JSON 序列化），供下次启动复用会话。
+
+        ★ 为什么要它：会话 cookie 有 13 天有效期，但此前只活在内存里 ——
+          于是**每次 HA 启动、每次会话丢失都要重新做一次密码登录**，
+          而每次密码登录都可能把手机上的 App 顶下线。
+        """
+        out: list[dict] = []
+        for ck in self._sess.cookies:
+            if not ck.value:
+                continue
+            try:
+                exp = int(ck.expires) if ck.expires else 0
+            except (TypeError, ValueError):
+                exp = 0
+            out.append({
+                "name": str(ck.name),
+                "value": str(ck.value),
+                "domain": str(ck.domain or ""),
+                "path": str(ck.path or "/"),
+                "expires": exp,
+            })
+        return out
+
+    def import_session_cookies(self, cookies) -> int:
+        """装载持久化的 cookie；返回真正装入的条数（过期的丢弃）。
+
+        幂等：同名同域直接覆盖。任何异常都跳过该条，绝不让脏数据
+        打断启动流程（最坏情况退化为「重新登录」，与改动前一致）。
+        """
+        import time as _time
+        now = _time.time()
+        n = 0
+        for ck in cookies or []:
+            if not isinstance(ck, dict):
+                continue
+            name = str(ck.get("name") or "")
+            if not name:
+                continue
+            try:
+                exp = int(ck.get("expires") or 0)
+            except (TypeError, ValueError):
+                exp = 0
+            if exp and exp < now:
+                continue                       # 已过期 → 不装
+            # ★ domain 为空时【不要】显式传 None：requests 会拒绝该 cookie
+            kw: dict = {"path": str(ck.get("path") or "/")}
+            if ck.get("domain"):
+                kw["domain"] = str(ck["domain"])
+            try:
+                self._sess.cookies.set(name, str(ck.get("value") or ""), **kw)
+            except Exception:  # noqa: BLE001  —— 单条脏数据不该影响启动
+                continue
+            n += 1
+        return n
+
     def _sync_parent_domain_cookies(self) -> None:
         """把登录态 cookie 同步到父域 `.lixiang.com`。
 
