@@ -75,6 +75,11 @@ CONF_PHONE = "phone"
 CONF_PASSWORD = "password"        # PAKE 登录密码 (sso_token 会话13天过期后自动重登)
 CONF_REFRESH_TOKEN = "refresh_token"
 CONF_ACCESS_TOKEN = "access_token"
+#: 持久化的登录会话 cookie（★ 2026-10-10）：cookie 13 天有效，
+#: 存下来重启即可复用 → **不必每次启动都做密码登录**。
+#: 每次密码登录都可能把手机上已登录的「理想汽车」App 顶下线（实测），
+#: 所以这条同时是「减少顶号」的关键。
+CONF_SESSION_COOKIES = "session_cookies"
 CONF_APP_TOKEN = "app_token"      # X-CHJ-TOKEN (APP-xxx), frida从app抓取
 CONF_HAC_KEY = "hac_key"          # x-chj-sign 的 HMAC 密钥（k11）
 CONF_KEY_ID = "key_id"            # x-chj-key

@@ -37,6 +37,7 @@ from .const import (
     CONF_HAC_KEY,
     CONF_IDENTITY_SOURCE,
     CONF_KEY_ID,
+    CONF_SESSION_COOKIES,
     CONF_XDEV,
     IDENTITY_SOURCE_DERIVED,
     IDENTITY_SOURCE_MANUAL,
@@ -329,6 +330,28 @@ def _is_scope_denied(err) -> bool:
     return "access_denied" in m or "HTTP 300" in m
 
 
+def _is_session_loss(err) -> bool:
+    """换取失败的**唯一**重登判据：错误是否真的表示「登录会话失效」。
+
+    ★ 2026-10-10（真机取证）：此前 `_get_scoped` 把**任何** LiApiError 都当
+      会话失效 → 5xx、空响应、响应格式异常都会白白触发一次 `_login()`。
+      而**每次密码登录都可能把手机上已登录的 App 顶下线**（用户实测），
+      所以「不该重登时重登」是有实际代价的。
+
+    判据来自实测形态：
+      · `300 + login_required` → 会话失效 → 必须重登（见 _is_scope_denied 注释）
+      · `100105 / 用户未登录`   → 会话失效（主 Bearer 路径的已知业务码）
+      · HTTP 401               → 会话失效
+      · 其它（5xx / 空响应 / 解析异常）→ **与会话无关** → 原样抛出交给上层重试
+    """
+    m = str(err)
+    low = m.lower()
+    return ("login_required" in low
+            or "100105" in m
+            or "用户未登录" in m
+            or "http 401" in low)
+
+
 def _is_unauthorized(err) -> bool:
     """业务调用返回 401（token 被服务端拒绝）→ 应失效缓存重取，而非重登。
 
@@ -510,9 +533,11 @@ class LiApiClient:
         app_token: str,
         device_id: str | None = None,
         refresh_token: str = "",
+        main_bearer: str = "",
         on_token_update=None,
         app_type: str = APP_LIXIANG,
         identity_source: str = "",
+        session_cookies: list | None = None,
     ) -> None:
         self._phone = str(phone) if phone is not None else ""
         self._password = str(password) if password is not None else ""
@@ -537,7 +562,9 @@ class LiApiClient:
         self._sig_recover_ts = 0.0        # 签名错误自愈的冷却时间戳
         self._app_token = str(app_token) if app_token is not None else ""
         # ★ 主 Bearer（PAKE 登录后的 access_token）—— travel 等接口需要（App 抓包 x-chj-token = APP-xxx）
-        self._main_bearer: str = ""
+        # ★ 2026-10-10：main_bearer 也要能从 entry 复用（此前恒为空 →
+        #   travel/充电 首次调用必然密码重登）
+        self._main_bearer: str = str(main_bearer) if main_bearer else ""
         self._refresh_token = str(refresh_token) if refresh_token is not None else ""
         self._cli: LixiangDirectLogin | None = None
         if device_id:
@@ -555,6 +582,9 @@ class LiApiClient:
         self._app_type = str(app_type) if app_type else APP_LIXIANG
         # ★ 2026-10-10：该账号上次换取胜出的 client key（access_denied 回退后记忆）
         self._exchange_client_win: str | None = None
+        # ★ 2026-10-10：持久化的登录会话 cookie（重启复用，避免每次都密码登录顶号）
+        self._session_cookies: list = list(session_cookies or [])
+        self._cookies_dirty = False
 
     # ---------- 身份迁移 / 签名错误自愈（★ 2026-10-10）------------------
 
@@ -661,6 +691,11 @@ class LiApiClient:
         self._main_bearer = str(tok.get("access_token") or "")
         self._refresh_token = tok.get("refresh_token", "") or self._refresh_token
         self._tokens.clear()
+        # ★ 2026-10-10：把本次建立的会话 cookie 存下来（下次启动直接复用）
+        _cookies = cli.export_session_cookies()
+        if _cookies and _cookies != getattr(self, "_session_cookies", []):
+            self._session_cookies = _cookies
+            self._cookies_dirty = True
         self._notify_token_update()
         _LOGGER.info("li_api PAKE 登录成功 (device_id=%s, app_type=%s)",
                      self._device_id, self._app_type)
@@ -681,6 +716,11 @@ class LiApiClient:
             "main_bearer": self._main_bearer,
             "access_token": self._main_bearer,
         }
+        # ★ 2026-10-10：会话 cookie 变化时回写（重启复用会话，少一次密码登录）
+        #   getattr 与 _main_bearer / _on_token_update 同风格：容忍半初始化实例
+        if getattr(self, "_cookies_dirty", False):
+            patch[CONF_SESSION_COOKIES] = getattr(self, "_session_cookies", [])
+            self._cookies_dirty = False
         # ★ 2026-10-10：身份被迁移/派生刷新时才回写身份字段。
         #   只在「有变化」时带，避免把手工流程用户自填的四件套
         #   被归一化后覆盖写回（dirty 标记见 _migrate_identity_if_needed）。
@@ -698,9 +738,28 @@ class LiApiClient:
             _LOGGER.debug("token 回写回调失败（不影响运行）: %s", err)
 
     def _ensure_session(self) -> LixiangDirectLogin:
-        """保证登录会话可用 (尝试换取 token 探测会话有效性)."""
+        """保证登录会话可用（★ 优先复用已持久化的登录会话）。
+
+        ★ 2026-10-10：会话 cookie 有 13 天有效期，此前只活在内存里 →
+          每次启动/会话丢失都重新做一次**密码登录**，而每次密码登录都可能
+          把手机上的「理想汽车」App 顶下线（用户实测）。
+          现在先装载上次存下的 cookie；若 cookie 全部过期或服务端已不认，
+          后续换取失败会走既有的「会话失效 → 密码重登」路径（fail-safe：
+          最坏情况与改动前完全一致）。
+        """
         if self._cli is not None:
             return self._cli
+        if self._session_cookies:
+            cli = LixiangDirectLogin(
+                device_id=self._xdev or self._device_id,
+                debug=False, app_type=self._app_type)
+            loaded = cli.import_session_cookies(self._session_cookies)
+            if loaded:
+                self._cli = cli
+                _LOGGER.info(
+                    "复用持久化的登录会话（装入 %d 个 cookie，未做密码登录）", loaded)
+                return cli
+            _LOGGER.debug("持久化的会话 cookie 已全部过期，改走密码登录")
         self._login()
         return self._cli
 
@@ -769,11 +828,24 @@ class LiApiClient:
             },
             allow_redirects=False, timeout=20,
         )
-        frag = urllib.parse.urlparse(r.headers.get("location", "")).fragment
+        loc = r.headers.get("location", "") or ""
+        _loc = urllib.parse.urlparse(loc)
+        frag = _loc.fragment
         params = dict(urllib.parse.parse_qsl(frag))
         tok = params.get("access_token", "")
         if not tok:
-            raise LiApiError(f"换 token 失败 ({scope}): HTTP {r.status_code} {r.text[:120]}")
+            # ★ 2026-10-10：失败原因常在 location 的 query/fragment（如
+            #   `error=login_required`），正文里可能什么都没有 —— 不带出来
+            #   就没法判断「会话失效（该重登）」还是「与会话无关（不该重登）」。
+            #   只取这几个诊断键，避免把 token 等敏感值写进日志。
+            _hints = {k: v for k, v in
+                      {**dict(urllib.parse.parse_qsl(_loc.query)), **params}.items()
+                      if k in ("error", "error_description", "prompt",
+                               "login_required", "code")}
+            _hint = " ".join(f"{k}={v}" for k, v in _hints.items())
+            raise LiApiError(
+                f"换 token 失败 ({scope}): HTTP {r.status_code} {_hint} "
+                f"{r.text[:120]}")
         # ★ 诊断：HZ token 不透明，fragment 里的 scope/expires 是唯一能观察
         #   「服务端实际授予了什么」的窗口（排查 403 用，只打非敏感参数）
         if params.get("scope") or params.get("audience"):
@@ -794,6 +866,10 @@ class LiApiClient:
             #   还会因 _login() 内的 _tokens.clear() 形成「每分钟重登+清缓存」
             #   风暴（真机实测 87 次/1.5h，有账号风控风险）→ 直接抛出。
             if _is_scope_denied(err):
+                raise
+            if not _is_session_loss(err):
+                # ★ 2026-10-10：与会话无关的失败（5xx / 空响应 / 解析异常）
+                #   **不再重登** —— 每次重登都可能顶掉手机 App，且重登也修不好。
                 raise
             if self._password:
                 _LOGGER.info("会话失效, 重新登录 (%s)", name)
@@ -1027,6 +1103,9 @@ class LiApiClient:
            反而**制造**风控。这条有专门的回归测试。
         """
         if not self._refresh_token:
+            # ★ 2026-10-10：这条此前是静默 return —— 于是「entry 里存着
+            #   refresh_token 但启动没传进来」这种 bug 完全看不见（真机取证踩坑）
+            _LOGGER.debug("无 refresh_token 可续期（将回退密码重登）")
             return False
         try:
             cli = self._cli or LixiangDirectLogin(
