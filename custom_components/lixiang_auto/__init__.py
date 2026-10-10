@@ -15,6 +15,8 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
+from aiohttp import web
+from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant, ServiceResponse, SupportsResponse
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import (
@@ -157,6 +159,37 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
+def _integration_version() -> str:
+    """集成版本号（读 manifest.json）—— 给前端资源做 cache-buster。"""
+    try:
+        from pathlib import Path as _P  # noqa: PLC0415
+
+        import json as _json  # noqa: PLC0415
+
+        m = _json.loads((_P(__file__).parent / "manifest.json").read_text(encoding="utf-8"))
+        return str(m.get("version") or "0")
+    except Exception:  # noqa: BLE001
+        return "0"
+
+
+class LiXiangAssetVersionView(HomeAssistantView):
+    """给前端卡片用的资源版本号。
+
+    ★ 为什么需要它：卡片资源（JS / 图标 / 车型剪影）走静态路径 `/lixiang_auto`，
+      **没有版本号**时浏览器会沿用旧缓存 —— HACS 更新后用户可能仍在跑旧卡片。
+      卡片拿到 `window.__LX_ASSET_V__` 后给资源 URL 追加 `?v=`，版本一变必然重新拉取。
+    """
+
+    url = "/lixiang_auto/asset-version.js"
+    name = "api:lixiang_auto:asset_version"
+    requires_auth = False
+
+    async def get(self, request: web.Request) -> web.Response:
+        return web.Response(
+            text=f'window.__LX_ASSET_V__="{_integration_version()}";\n',
+            content_type="application/javascript")
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # ★ 前端卡片静态资源（7 个自定义卡片随集成发布）
     #   URL: /lixiang_auto/lixiang-cards/<name>.js
@@ -172,6 +205,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 StaticPathConfig("/lixiang_auto", str(_cards_dir), False),
             ])
             _LOGGER.debug("已注册前端卡片静态路径: /lixiang_auto → %s", _cards_dir)
+            # ★ 资源版本号（cache-buster）：卡片据此给静态资源加 ?v=
+            try:
+                hass.http.register_view(LiXiangAssetVersionView())
+            except Exception as _verr:  # noqa: BLE001
+                _LOGGER.debug("注册资源版本视图失败（卡片缓存可能不刷新）: %s", _verr)
     except Exception as err:  # noqa: BLE001
         _LOGGER.warning("注册前端卡片静态路径失败（不影响集成功能）: %s", err)
 
