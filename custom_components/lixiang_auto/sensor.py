@@ -616,8 +616,14 @@ class LiCarSensor(CoordinatorEntity, RestoreSensor):
                 (self.coordinator.data or {}).get("unsupported_keys") or set()):
             return None
 
+        # ★ 2026-10-10 修：派生信号（computed，path="" + compute）**没有 ts**，
+        #   会落进下面的「从未上报」分支；而它们首轮必然 `_last_value is None`
+        #   → 直接 return None，`_last_value` 永远建立不起来（死锁 unknown）。
+        #   实测：总续航 CLTC/WLTC 恒为 unknown，而派生日志算得好好的
+        #   （`派生信号 range_total_cltc = 978.0`）—— 值被这一行吃掉了。
+        #   available() 里早已对 computed 豁免（#40），这里漏了同类豁免。
         sig_now = self._vss()
-        if sig_now is not None:
+        if sig_now is not None and not sig_now.get("computed"):
             ts = str(sig_now.get("ts") or "").strip()
             if ts in ("", "0"):
                 # 从未上报：只有历史有效值时才回退（否则 unavailable）
