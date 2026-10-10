@@ -572,6 +572,14 @@ class LiCarSensor(CoordinatorEntity, RestoreSensor):
         data = self.coordinator.data or {}
         sig = self._vss()
         val = sig.get("value") if isinstance(sig, dict) else None
+        if key.startswith("range_total") and val is None:
+            # ★ 2026-10-10 排障用：总续航取不到值时打印上下文（保留为常驻 debug）
+            _LOGGER.debug(
+                "range_total 取值失败: vss_keys 含目标=%s computed=%s "
+                "coordinator_vss_键数=%s",
+                key in (data.get("vss") or {}),
+                ((data.get("vss") or {}).get(key) or {}).get("computed"),
+                len((data.get("vss") or {})))
         return render_value(key, val, sig, data)
 
     @property
@@ -660,8 +668,13 @@ class LiCarSensor(CoordinatorEntity, RestoreSensor):
             return False
 
         # ② 服务端返回了路径但从未上报（ts 为空/0）
+        #   ★ 2026-10-10 修：派生信号（computed，path="" + compute）没有 ts，
+        #     会落进这个分支且首轮 _last_value 未建立 → available 恒 False
+        #     → HA 不再取值 → _last_value 永远建立不起来（死锁 unavailable，
+        #     实测 range_total_cltc/wltc）。computed 信号值就是算出来的，
+        #     跳过该判定。
         sig = self._vss()
-        if sig is not None:
+        if sig is not None and not sig.get("computed"):
             ts = str(sig.get("ts") or "").strip()
             if ts in ("", "0") and self._last_value is None:
                 return False
