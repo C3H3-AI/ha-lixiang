@@ -47,6 +47,8 @@ from .policy import (
 )
 from .pake_login import (
     APP_LOGIN_PARAMS,
+    CredentialRejected,
+    is_credential_rejection,
     APP_VERSION as LOGIN_APP_VERSION,
     BASE_ID,
     LixiangDirectLogin,
@@ -615,7 +617,18 @@ class LiApiClient:
         #   否则服务端认为「token 来自别的设备」→ 100105 用户未登录。
         cli = LixiangDirectLogin(device_id=self._xdev or self._device_id,
                                  debug=False, app_type=self._app_type)
-        tok = cli.login(self._phone, self._password)
+        try:
+            tok = cli.login(self._phone, self._password)
+        except LoginError as err:
+            # ★ 2026-10-10：凭据被拒（账号/密码变更）→ 转成结构化异常，
+            #   由 coordinator 转成 ConfigEntryAuthFailed，让 HA 自动弹出
+            #   「需要重新认证」，而不是让用户面对一句含糊的「连接异常」。
+            if is_credential_rejection(err):
+                detail = str(getattr(err, "detail", "") or "")
+                raise CredentialRejected(
+                    getattr(err, "step", "login"),
+                    getattr(err, "status", 401), detail) from err
+            raise
         if not tok.get("access_token"):
             raise LiApiError("登录成功但无 access_token")
         self._cli = cli

@@ -6,9 +6,11 @@ import logging
 from datetime import timedelta
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import scan_interval_seconds, DOMAIN, LOGGER_NAME, SCAN_INTERVAL_SECONDS
+from .pake_login import is_credential_rejection
 from .signals import VSS_PATHS_COMPAT as VSS_PATHS
 from .signals import SIGNALS as _SIGNALS
 from . import vehicle_role as _vr
@@ -39,6 +41,25 @@ def _jitter(seconds: int, ratio: float = 0.1) -> int:
     import random
     delta = max(1, int(seconds * ratio))
     return max(1, seconds + random.randint(-delta, delta))
+
+
+def _fail_if_credential(err: BaseException) -> None:
+    """凭据被拒（账号/密码变更）→ 直接抛 ConfigEntryAuthFailed。
+
+    ★ 为什么必须在这里抛：本协调器的更新流程分了很多段，各段都
+      `except Exception` 做降级（网络抖动、单个接口失败都允许继续）。
+      凭据失效若在这些分段被吞掉，用户只会看到「实体不可用 + 一条
+      『网络中断/车辆离线/凭据失效』的含糊通知」，**永远等不到** HA 的
+      「需要重新认证」提示 —— 而这条才是真正能修好它的入口。
+    ★ 反过来：网络错误**绝不**转成 ConfigEntryAuthFailed，否则会误导用户
+      去改密码（所以只认 CredentialRejected / 401·密码错误）。
+    """
+    if is_credential_rejection(err):
+        _LOGGER.error(
+            "理想账号凭据被拒（密码或账号可能已变更）→ 触发重新认证: %s", err)
+        raise ConfigEntryAuthFailed(
+            "理想账号认证失败（密码可能已修改）—— 请在集成页重新认证"
+        ) from err
 
 
 class LiCarCoordinator(DataUpdateCoordinator[dict]):
@@ -298,6 +319,7 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             r = await self.hass.async_add_executor_job(
                 self.li_api.get_vss_state, self.PRESENCE_PATHS)
         except Exception as err:  # noqa: BLE001
+            _fail_if_credential(err)      # 凭据失效必须冒出去（见函数注释）
             _LOGGER.debug("在线探测失败: %s", err)
             return None
 
@@ -357,6 +379,7 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                             _LOGGER.warning("充电累计量拉取失败（10 分钟后重试）")
             _charge_kwh = self._charge_total_cache.get(_rid2)
         except Exception as _err2:  # noqa: BLE001
+            _fail_if_credential(_err2)
             _LOGGER.warning("充电累计量拉取异常: %s", _err2)
 
         # ★ 2026-10-02：本月里程 / 本月充电量（1h 刷新）—— 与 App 首页/充电页同口径
@@ -414,6 +437,7 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                 "month_single_fuel": _mcd.get("single_fuel"),
             }
         except Exception as _err3:  # noqa: BLE001
+            _fail_if_credential(_err3)
             _LOGGER.warning("本月数据拉取异常: %s", _err3)
             _charge_kwh = self._charge_total_cache.get(self._rid())
 
@@ -442,6 +466,7 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                         else:
                             _LOGGER.debug("任务大师列表更新: %d 条", len(_tl or []))
                     except Exception as _err5:  # noqa: BLE001
+                        _fail_if_credential(_err5)
                         # 失败 60s 后重试（不阻塞整轮更新）；
                         # ★ 错误上浮到传感器属性；内容变化才打 warning（防刷屏）
                         self._task_ts[_rid5] = _now5 - 120 + 60
@@ -462,6 +487,7 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                     self._task_error[_rid5] = "无 li_api（未配置密码登录，无法拉取）"
             _tasks = self._task_cache.get(_rid5) or []
         except Exception as _err5b:  # noqa: BLE001
+            _fail_if_credential(_err5b)
             _LOGGER.warning("任务大师列表拉取异常: %s", _err5b)
             try:
                 self._task_error[self._rid()] = (
@@ -472,6 +498,7 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
         try:
             data = await self.client.update()
         except Exception as err:  # noqa: BLE001
+            _fail_if_credential(err)
             # ★ 2026-09-24 分级错误处理：
             #   ①②次失败 → 静默重试（网络抖动很常见）
             #   ③次起    → 记录 warning
@@ -681,6 +708,7 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                             data["vehicle_status"] = 1 if _v in ("true", "1") else 0
                             break
             except Exception as err:  # noqa: BLE001
+                _fail_if_credential(err)
                 # 实时信号失败不拖垮静态数据 (也避免反复触发登录)
                 _LOGGER.warning("VSS 实时信号轮询失败: %s", err)
 
