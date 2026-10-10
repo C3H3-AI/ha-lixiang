@@ -213,11 +213,18 @@ def scan_interval_seconds(options=None) -> int:
     return max(MIN_SCAN_INTERVAL_SECONDS, min(MAX_SCAN_INTERVAL_SECONDS, sec))
 
 # 日志
-# ★ 2026-10-10：logger 必须在 `custom_components.` 命名空间下。
-#   实测：HA 默认只把 custom_components.* / homeassistant.* 记为 INFO，
-#   裸 logger 名（原 "lixiang_auto"）继承 root(WARNING) → 集成的 INFO 日志
-#   用户**一条都看不到**（排障时「什么都没看到」，也看不到
-#   「身份来源=」「已派生签名身份」这类关键信息）。
-#   改成 custom_components.lixiang_auto 后，与其它自定义集成一致：
-#   默认可见 INFO，DEBUG 仍需用户显式开启。
+# ★ 2026-10-10：logger 必须落在 `custom_components.` 命名空间下。
+#
+#   事实（实测）：HA 的 root logger 默认是 WARNING
+#   （bootstrap.py: `logger.setLevel(INFO if verbose else WARNING)`），
+#   所以 `custom_components.*` **也**默认不输出 INFO —— 用户要开日志，
+#   靠的是 HA 的标准入口：集成页「启用调试日志」按钮，或 configuration.yaml
+#   里写 `logger.logs.custom_components.lixiang_auto: info`。
+#
+#   改名的真实收益（实测）：HA 那个一键入口用的就是这个命名空间。
+#   改名之前，本集成 50+ 个模块用的是裸名 `lixiang_auto`，
+#   `custom_components.lixiang_auto: info` 只能覆盖 4 个
+#   用 `logging.getLogger(__name__)` 的模块（li_api/auth/client/pake_login）
+#   → 一键调试是「半残」的（coordinator/config_flow 等全都不出日志）。
+#   改名后同一行配置覆盖全部模块（实测 16 条 INFO 正常输出）。
 LOGGER_NAME = "custom_components.lixiang_auto"

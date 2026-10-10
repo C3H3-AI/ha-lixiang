@@ -2,19 +2,23 @@
 
 真事故（实测）
 --------------
-`const.LOGGER_NAME` 原来是裸名 `"lixiang_auto"`。HA 的默认日志级别只把
-`homeassistant.*` 与 `custom_components.*` 记为 INFO，**裸 logger 名继承
-root（WARNING）** → 集成的 INFO 日志用户一条都看不到：
+`const.LOGGER_NAME` 原来是裸名 `"lixiang_auto"`。
 
-    实测：日志里 `INFO ...[lixiang_auto]` 出现 0 次；
-          而 `[custom_components.lixiang_auto.li_api]` 的 INFO 正常出现
-          （那 4 个模块用 logging.getLogger(__name__)）。
+★ 事实澄清：HA 的 root logger 默认是 WARNING
+  （`bootstrap.py`: `logger.setLevel(INFO if verbose else WARNING)`），
+  所以 **`custom_components.*` 也默认不输出 INFO** —— 不要以为进了命名空间
+  就自动可见。用户开日志靠 HA 的标准入口：集成页「启用调试日志」按钮，
+  或 `logger.logs.custom_components.lixiang_auto: info`。
 
-后果：用户排障时「什么都没看到」，也看不到「身份来源=」「已派生签名身份」
-这类关键信息；反而只有 WARNING/ERROR 才可见 —— 正好把最需要的前因藏起来。
+★ 真正的缺陷（实测）：HA 那个入口正是按 `custom_components.<domain>` 写的。
+  改名之前，本集成 50+ 个模块用裸名，只有 4 个用
+  `logging.getLogger(__name__)` 的模块会出日志
+  → **一键「启用调试日志」是半残的**（coordinator / config_flow 等全都不出）。
+  改名后同一行配置覆盖全部模块（实测 16 条 INFO 正常输出）。
 
 本文件守卫两件事：
-  ① `LOGGER_NAME` 必须在 `custom_components.` 命名空间下（HA 默认可达 INFO）
+  ① `LOGGER_NAME` 必须在 `custom_components.` 命名空间下
+     （这样 HA 的标准调试入口 / 一行配置才能覆盖全部模块）
   ② 模块里不得再硬编码裸 logger 名（要么用 LOGGER_NAME，要么用 __name__）
 """
 from __future__ import annotations
@@ -25,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CC = ROOT / "custom_components" / "lixiang_auto"
 
-#: HA 默认按 INFO 记录的命名空间前缀
+#: HA 标准调试入口（集成页按钮 / logger.logs）使用的命名空间前缀
 HA_INFO_NAMESPACES = ("custom_components.", "homeassistant.")
 
 
@@ -35,19 +39,25 @@ def _const_src() -> str:
 
 class TestLoggerNamespace:
     def test_logger_name_is_under_ha_namespace(self):
-        """★ LOGGER_NAME 必须在 custom_components.* 下，否则 INFO 默认不可见。"""
+        """★ LOGGER_NAME 必须在 custom_components.* 下。
+
+        否则 HA 的标准调试入口（集成页「启用调试日志」写的就是
+        `custom_components.<domain>`）覆盖不到本集成，用户按标准做法开了日志
+        也看不到（历史事故：50+ 模块裸名，只有 4 个模块出日志）。
+        """
         m = re.search(r'^LOGGER_NAME\s*=\s*"([^"]+)"', _const_src(), re.M)
         assert m, "const.py 里找不到 LOGGER_NAME 定义"
         name = m.group(1)
         assert name.startswith(HA_INFO_NAMESPACES), (
-            f"LOGGER_NAME={name!r} 不在 HA 默认 INFO 命名空间内 —— "
-            "裸 logger 名继承 root(WARNING)，集成的 INFO 日志用户看不到")
+            f"LOGGER_NAME={name!r} 不在 HA 标准调试命名空间内 —— "
+            "用户按 HA 的「启用调试日志」入口开了也覆盖不到本集成")
 
     def test_no_module_hardcodes_bare_logger_name(self):
         """★ 每个模块的 logger 必须来自 LOGGER_NAME 或 __name__。
 
-        两者都在 custom_components.* 下；任何硬编码的裸名都会让该模块的
-        INFO 日志静默消失（历史事故：policy.py / secrets.py 写死 "lixiang_auto"）。
+        两者都在 custom_components.* 下 → HA 标准调试入口能覆盖到；
+        任何硬编码的裸名都会让该模块的日志在标准配置下静默消失
+        （历史事故：policy.py / secrets.py 写死 "lixiang_auto"）。
         """
         bad = []
         for f in sorted(CC.glob("*.py")):
