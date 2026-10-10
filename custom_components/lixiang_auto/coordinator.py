@@ -43,6 +43,17 @@ def _jitter(seconds: int, ratio: float = 0.1) -> int:
     return max(1, seconds + random.randint(-delta, delta))
 
 
+def _vss_failure_is_model_unsupported(err) -> bool:
+    """VSS 失败是否属于「该车型未开通 VSS」（老平台车型 → 走 real-time-state）。
+
+    ★ 2026-10-11（理想ONE 车主日志实证）：M01 平台车型上 `vss:get-batch`
+      恒返 `access_denied`。它**既不是会话问题**（死会话实测回 `login_required`
+      而不是 access_denied），**也不是临时故障**（重登无效）。
+      → 应按「车型不支持」**一次性**提示，而不是每分钟一条 WARNING。
+    """
+    return "access_denied" in str(err)
+
+
 def _fail_if_credential(err: BaseException) -> None:
     """凭据被拒（账号/密码变更）→ 直接抛 ConfigEntryAuthFailed。
 
@@ -699,6 +710,7 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                                 _k, data["vehicle_status"])
                             break
 
+                self._vss_denied_notified = False
                 # ★ 补充：即使 VSS 轮询失败，也尝试从 data["vss"] 的旧数据兜底
                 if data.get("vehicle_status") is None:
                     for _k in ("online_5g", "online_xcu", "online_huf"):
@@ -710,7 +722,25 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             except Exception as err:  # noqa: BLE001
                 _fail_if_credential(err)
                 # 实时信号失败不拖垮静态数据 (也避免反复触发登录)
-                _LOGGER.warning("VSS 实时信号轮询失败: %s", err)
+                # ★ 2026-10-11（理想ONE 车主日志实证）：`access_denied` 意味着
+                #   该车型**没有开通 VSS 信号服务**（M01/理想ONE 属老平台，走
+                #   real-time-state），不是会话问题也不是临时故障 ——
+                #   每分钟一条 WARNING 既吵又看不出原因 → 只提示一次，并给出
+                #   可执行的诊断入口；后续降级为 debug。
+                _msg = str(err)
+                if _vss_failure_is_model_unsupported(err):
+                    if not getattr(self, "_vss_denied_notified", False):
+                        self._vss_denied_notified = True
+                        _LOGGER.warning(
+                            "实时信号（VSS）被服务端拒绝（access_denied）：该车型很可能"
+                            "未开通 VSS 信号服务（老平台车型如理想ONE/M01 走的是 "
+                            "real-time-state）→ 本条目不会产生实时实体。"
+                            "诊断：调用服务 lixiang_auto.dump_realtime_state 并查看日志/导出文件。")
+                    else:
+                        _LOGGER.debug("VSS 仍被拒绝（已提示过）: %s", err)
+                else:
+                    self._vss_denied_notified = False
+                    _LOGGER.warning("VSS 实时信号轮询失败: %s", err)
 
 
 

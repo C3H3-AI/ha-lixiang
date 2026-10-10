@@ -372,6 +372,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 SERVICE_WAKEUP = "wakeup"
 SERVICE_REFRESH = "refresh"
 SERVICE_DUMP_ABILITY = "dump_ability"
+# ★ 2026-10-11：老平台车型（理想ONE/M01）实时状态通道诊断
+SERVICE_DUMP_REALTIME_STATE = "dump_realtime_state"
 # ★ 2026-10-02：行程/陪伴里程查询服务（逆向自 App travel 接口）
 SERVICE_GET_TRAVEL = "get_travel"
 SERVICE_GET_CHARGE = "get_charge"
@@ -422,6 +424,57 @@ def _async_register_services(hass: HomeAssistant) -> None:
                     await coord.async_request_refresh()
             except Exception as err:  # noqa: BLE001
                 _LOGGER.error("唤醒失败: %s", err)
+
+    async def _handle_dump_realtime_state(call) -> dict:
+        """诊断：探测 real-time-state（老平台车型的实时状态通道）并写盘。
+
+        ★ 用途：理想ONE（M01）等**没有 VSS 服务**的车型，实时数据应走
+          `/ssp-as-mobile-api/v3-0/vehicles/{vin}/real-time-state`。
+          但字段映射必须依**真实响应**建立 → 本服务把原始 JSON 写到
+          `<config>/lixiang_realtime_state_<vin>.json`，用户回传即可。
+          内置对照组（travel 月里程），可区分「端点不可用」与「会话/权限问题」。
+        """
+        import json as _json  # noqa: PLC0415
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        target_vin = (call.data or {}).get("vin")
+        results: list[dict] = []
+        for eid, d in (hass.data.get(DOMAIN) or {}).items():
+            if not isinstance(d, dict):
+                continue
+            entry = hass.config_entries.async_get_entry(eid)
+            if entry is None:
+                continue
+            if target_vin and (entry.data.get(CONF_VIN) or "") != target_vin:
+                continue
+            api = d.get("li_api")
+            if api is None:
+                _LOGGER.warning("real-time-state 探针：该条目没有 API 客户端（无密码登录？）")
+                continue
+            res = await hass.async_add_executor_job(api.probe_realtime_state)
+            vin = entry.data.get(CONF_VIN) or "unknown"
+            out_path = _Path(hass.config.path(f"lixiang_realtime_state_{vin}.json"))
+
+            def _write() -> None:
+                out_path.write_text(_json.dumps(res, ensure_ascii=False, indent=2),
+                                    encoding="utf-8")
+
+            try:
+                await hass.async_add_executor_job(_write)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.warning("real-time-state 探针写盘失败: %s", err)
+                continue
+            summary = {
+                k: {"ok": v.get("ok"), "code": v.get("code"),
+                    "error": (v.get("error") or "")[:60] or None}
+                for k, v in (res.get("attempts") or {}).items()
+            }
+            _LOGGER.info("real-time-state 探针 VIN=%s → %s | 已写入 %s",
+                         vin, summary, out_path)
+            results.append({"vin": vin, "file": str(out_path), "attempts": summary})
+        if not results:
+            _LOGGER.warning("real-time-state 探针：没有找到匹配的条目（检查 vin 参数）")
+        return {"results": results}
 
     async def _handle_dump_ability(call) -> None:
         """导出车型能力表（诊断用）。
@@ -986,6 +1039,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, _handle_refresh)
     hass.services.async_register(DOMAIN, SERVICE_WAKEUP, _handle_wakeup)
     hass.services.async_register(DOMAIN, SERVICE_DUMP_ABILITY, _handle_dump_ability)
+    hass.services.async_register(DOMAIN, SERVICE_DUMP_REALTIME_STATE,
+                                  _handle_dump_realtime_state,
+                                  supports_response=SupportsResponse.OPTIONAL)
     hass.services.async_register(DOMAIN, SERVICE_GET_TRAVEL, _handle_get_travel,
                                   supports_response=SupportsResponse.OPTIONAL)
     hass.services.async_register(DOMAIN, SERVICE_GET_CHARGE, _handle_get_charge,
