@@ -14,6 +14,8 @@
  *   ⚠️ 整车软件版本 —— 集成未采集
  */
 
+import { renderCards } from "./lixiang-info-page.js";
+
 const CARD_TAG = "lixiang-vehicle-info-page";
 const DEFAULT_ICON_BASE = "/local/lixiang-icons";
 const DEFAULT_FONT_BASE = "/local/lixiang-fonts";
@@ -132,35 +134,24 @@ class LixiangVehicleInfoPage extends HTMLElement {
         <h1>车辆设置</h1>
       </div>
 
-      <div class="card">
-        <div class="row">
-          <img class="ic" src="${__iconBase}/ic_home_control.webp" alt="">
-          <span class="k">车辆昵称</span><span class="v" id="v-name">—</span></div>
-        <div class="row click" id="r-plate">
-          <img class="ic" src="${__iconBase}/ic_home_control.webp" alt="">
-          <span class="k">车牌号</span><span class="v na" id="v-plate">暂不可用</span></div>
-        <div class="row">
-          <img class="ic" src="${__iconBase}/ic_home_control.webp" alt="">
-          <span class="k">车辆型号</span><span class="v" id="v-model">—</span></div>
-        <div class="row">
-          <img class="ic" src="${__iconBase}/ic_home_dialogue.png" alt="" onerror="this.style.visibility='hidden'">
-          <span class="k">车架号</span><span class="v mono" id="v-vin">—</span></div>
-      </div>
-
-      <div class="card">
-        <div class="row click" id="r-sw">
-          <img class="ic" src="${__iconBase}/ic_home_health.webp" alt="">
-          <span class="k">整车软件版本</span><span class="v na" id="v-sw">暂不可用</span></div>
-      </div>
-
-      <div class="card">
-        <div class="row">
-          <img class="ic" src="${__iconBase}/ic_home_control.webp" alt="">
-          <span class="k">配置等级</span><span class="v" id="v-cfg">—</span></div>
-        <div class="row">
-          <img class="ic" src="${__iconBase}/ic_home_navigation.webp" alt="">
-          <span class="k">辅助驾驶等级</span><span class="v" id="v-ad">—</span></div>
-      </div>
+      ${renderCards({
+        iconBase: __iconBase,
+        cards: [
+          { rows: [
+              { icon: "ic_home_control.webp",    k: "车辆昵称", id: "v-name" },
+              { icon: "ic_home_control.webp",    k: "车牌号",   id: "v-plate", na: "暂不可用", rowId: "r-plate", click: true },
+              { icon: "ic_home_control.webp",    k: "车辆型号", id: "v-model" },
+              { icon: "ic_home_dialogue.png",    k: "车架号",   id: "v-vin", mono: true },
+          ]},
+          { rows: [
+              { icon: "ic_home_health.webp",     k: "整车软件版本", id: "v-sw", na: "暂不可用", rowId: "r-sw", click: true },
+          ]},
+          { rows: [
+              { icon: "ic_home_control.webp",    k: "配置等级",     id: "v-cfg" },
+              { icon: "ic_home_navigation.webp", k: "辅助驾驶等级", id: "v-ad" },
+          ]},
+        ],
+      })}
       <div class="toast" role="status" aria-live="polite"></div>
     `;
     this.appendChild(root);
