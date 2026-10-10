@@ -25,6 +25,9 @@ from .const import (
     CONF_APP_TOKEN,
     CONF_APP_TYPE,
     CONF_DEVICE_ID,
+    CONF_IDENTITY_SOURCE,
+    IDENTITY_SOURCE_DERIVED,
+    IDENTITY_SOURCE_MANUAL,
     CONF_HAC_KEY,
     CONF_KEY_ID,
     CONF_MAIN_BEARER,
@@ -630,6 +633,9 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 )
             data[CONF_HAC_KEY] = hac_key
             data[CONF_KEY_ID] = key_id
+            # ★ 2026-10-10 来源标记：本设备现场派生。
+            #   老条目没有这个标记 → 运行期会把它迁移成本设备身份。
+            data[CONF_IDENTITY_SOURCE] = IDENTITY_SOURCE_DERIVED
             _LOGGER.info(
                 "已派生签名身份: app_type=%s xdev=%s... key_id=%s...",
                 app_type, str(data[CONF_XDEV])[:12], str(key_id)[:12])
@@ -790,6 +796,10 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(user_input[CONF_PHONE])
             self._abort_if_unique_id_configured()
             # ★ title = 车型 + 车牌（多车账号也能分清）
+            # ★ 2026-10-10：手动流程自带四件套 → 标记 manual，
+            #   运行期**不**迁移（尊重用户显式提供的身份）。
+            user_input.setdefault(
+                CONF_IDENTITY_SOURCE, IDENTITY_SOURCE_MANUAL)
             return self.async_create_entry(
                 title=self._entry_title(user_input),
                 data=user_input,
@@ -800,6 +810,38 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
             description_placeholders={"note": "请填写从理想 App 提取的凭据"},
         )
+
+    async def _rederive_identity_on_reauth(self, data: dict, src: str) -> None:
+        """重新认证时刷新签名身份（失败保留旧值，绝不让条目变砖）。
+
+        ★ 为什么这里可以派生：重新认证刚刚 PAKE 登录成功 →
+          主 Bearer 一定新鲜，而 keySuite 派生需要有效 Bearer。
+        """
+        xdev = str(data.get(CONF_DEVICE_ID) or data.get(CONF_XDEV) or "")
+        bearer = str(data.get(CONF_MAIN_BEARER)
+                     or data.get(CONF_ACCESS_TOKEN) or "")
+        app_type = data.get(CONF_APP_TYPE) or APP_LIXIANG
+        if not xdev or not bearer:
+            _LOGGER.warning("重新认证：跳过签名身份刷新（缺设备号或 Bearer）")
+            return
+        try:
+            from .key_suite import derive_identity
+
+            hac_key, key_id = await self.hass.async_add_executor_job(
+                functools.partial(derive_identity, app_type, xdev, bearer))
+        except Exception as err:  # noqa: BLE001
+            # ★ 安全语义：保留旧值，只告警 —— 重新认证本身已成功，
+            #   不能因为派生失败把（可能还有救的）条目变成无凭据状态。
+            _LOGGER.warning(
+                "重新认证：签名身份重新派生失败（保留原身份）: %s", err)
+            return
+        data[CONF_XDEV] = xdev          # 与登录设备对齐（v1.4.7 规则）
+        data[CONF_HAC_KEY] = hac_key
+        data[CONF_KEY_ID] = key_id
+        data[CONF_IDENTITY_SOURCE] = IDENTITY_SOURCE_DERIVED
+        _LOGGER.info(
+            "重新认证：签名身份已重新派生（原来源=%s, xdev=%s…, key_id=%s…）",
+            src or "内置/未知", xdev[:12], str(key_id)[:12])
 
     # ---------------------------------------------------------------
     # 重新认证（修复 3 个 P0）
@@ -873,6 +915,15 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 for k in (CONF_HAC_KEY, CONF_KEY_ID, CONF_XDEV, CONF_APP_TOKEN):
                     if entry.data.get(k):
                         data.setdefault(k, entry.data[k])
+                # ★ 2026-10-10：重新认证是修「会话/签名失效」的入口，
+                #   必须**重新派生**签名身份而不是沿用旧值 —— 旧行为会让
+                #   「重新认证」看起来成功（登录确实成功）但签名身份依旧失效
+                #   → 功能照旧全挂，用户无从下手。
+                #   · manual 条目：尊重用户自填，不动
+                #   · 派生失败：保留旧值 + 明确告警（不把能用的条目搞砖）
+                src = entry.data.get(CONF_IDENTITY_SOURCE) or ""
+                if src != IDENTITY_SOURCE_MANUAL:
+                    await self._rederive_identity_on_reauth(data, src)
                 # ★ 2026-10-10：保留登录身份来源（老条目无此键 → 默认理想汽车）
                 data.setdefault(
                     CONF_APP_TYPE,
