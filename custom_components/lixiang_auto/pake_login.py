@@ -102,6 +102,30 @@ class LoginError(RuntimeError):
         super().__init__(f"[{step}] HTTP {status} {detail}" if status else f"[{step}] {detail}")
 
 
+class CredentialRejected(LoginError):
+    """账号/密码被服务端拒绝 —— 需要【用户】重新认证。
+
+    ★ 与网络抖动、风控（短信）区分开：只有这一类才应该让 HA 弹出
+      「需要重新认证」（ConfigEntryAuthFailed），否则会把网络问题
+      也变成要用户改密码的提示。
+    实测：401 空体 = 密码错误（见 login() 内注释）。
+    """
+
+
+def is_credential_rejection(err: BaseException) -> bool:
+    """判断登录失败是否属于「账号/密码被拒」。
+
+    注意：**不**把风控（require=SMS_CODE / 300）算进来 —— 那是「设备未受信任」，
+    走浏览器辅助登录，不该让用户以为密码错了。
+    """
+    if isinstance(err, CredentialRejected):
+        return True
+    if not isinstance(err, LoginError):
+        return False
+    detail = str(getattr(err, "detail", "") or "")
+    return getattr(err, "status", 0) == 401 or "密码错误" in detail
+
+
 # ---------------------------------------------------------------- PAKE 原语
 
 def create_seed(password: str) -> str:
