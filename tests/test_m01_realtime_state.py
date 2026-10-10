@@ -126,6 +126,42 @@ class TestMapper:
         assert "battery_level" not in out
 
 
+class TestNestedBeanShape:
+    """★ App 实测结构：门/窗是 bean 对象，值在 `isOpen` / `openStatus`（String）。"""
+
+    BEAN = {
+        "timestamp": 7,
+        "doorSwitchStatus": {
+            "mainDoor": {"isOpen": "0", "isLock": "1", "actionTime": 1},
+            "backLeftDoor": {"isOpen": "1", "isLock": "1", "actionTime": 1},
+            "trunkDoor": {"isOpen": "false", "isLock": "1"},
+        },
+        "windowSwitchStatus": {
+            "mainWindow": {"openStatus": "0", "actionTime": 1},
+            "backLeftWindow": {"openStatus": "40", "actionTime": 1},
+            "skylightWindow": {"openStatus": "closed"},
+        },
+    }
+
+    def test_doors_from_bean(self):
+        out = m01_state.map_realtime_state(self.BEAN)
+        assert out["door_main"]["value"] == 0
+        assert out["door_back_left"]["value"] == 1
+        assert out["door_trunk"]["value"] == 0
+
+    def test_windows_from_bean(self):
+        out = m01_state.map_realtime_state(self.BEAN)
+        assert out["window_main"]["value"] == 0
+        assert out["window_back_left"]["value"] == 40
+        assert out["window_skylight"]["value"] == 0
+
+    def test_window_open_keyword(self):
+        """非数值 openStatus：open → 100、closed → 0（语义待实车确认，先兜住）。"""
+        out = m01_state.map_realtime_state(
+            {"windowSwitchStatus": {"mainWindow": {"openStatus": "open"}}})
+        assert out["window_main"]["value"] == 100
+
+
 class TestPlatformGate:
     class _A:
         def __init__(self, platform="", unity=""):
