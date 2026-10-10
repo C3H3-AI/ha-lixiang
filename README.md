@@ -311,6 +311,34 @@ automation:
 
 ## 故障排查
 
+### 查看集成日志（排障第一步）
+
+集成日志**默认不输出 INFO**（HA 的 root logger 默认是 `WARNING`），
+所以「什么都没看到」是正常的 —— 需要显式开启：
+
+**方式一（推荐，一键）**：设置 → 设备与服务 → **Li Auto 集成页** → 右上角 ⋮ →
+**启用调试日志**。它会往 `configuration.yaml` 写入
+
+```yaml
+logger:
+  logs:
+    custom_components.lixiang_auto: debug
+```
+
+**方式二（手动；只想看关键信息用 `info`）**：
+
+```yaml
+logger:
+  logs:
+    custom_components.lixiang_auto: info   # 想更详细就换 debug
+```
+
+改完**重启 HA** 生效；日志看 设置 → 系统 → 日志，或 `config/home-assistant.log`。
+
+> 💡 排障时优先看这几类行（都在 `custom_components.lixiang_auto` 下）：
+> `身份来源=`、`PAKE 登录成功`、`签名身份已迁移`、`已派生签名身份`、
+> `充电查询成功`、以及 `轮询连续失败 N 次`。
+
 ### 帮助 → 下载诊断
 
 设备页面有「下载诊断」按钮，会导出脱敏的 JSON（不含密码/密钥/位置）。
