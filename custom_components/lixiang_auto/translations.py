@@ -171,8 +171,14 @@ VALUE_MAPS: dict[str, dict] = {
     "Fridge.ActWorkSts":    {0: "关闭", 1: "运行中",
                              2: "自动关闭（省电）", 3: "离车持续运行"},
     "LicLghtSts":           {0: "关闭", 1: "开启"},
-    "LRearMirro":           {0: "收起", 1: "展开"},
-    "RRearMirro":           {0: "收起", 1: "展开"},
+    # ★ 2026-10-11 修正（此前写反）：后视镜 0=展开 / 1=收起（折叠）
+    #   依据① 实车实测：锁车 + 后视镜物理收起时，裸值 LRearMirro/RRearMirro = 1
+    #            （同一状态下 HA 曾显示"展开" → 暴露映射颠倒）
+    #   依据② App 侧符号名 Left/RightRearviewMirrorFolded（Folded = 折叠 → 1=折叠）
+    #   ⚠️ 旧值（0=收起/1=展开）来自 2026-09 的**推断**，且当时的"实测值"取自
+    #      模拟器 VIN（TESTVIN0000000001），不能作为语义依据 —— 故以实车为准。
+    "LRearMirro":           {0: "展开", 1: "收起"},
+    "RRearMirro":           {0: "展开", 1: "收起"},
 }
 
 
@@ -187,6 +193,13 @@ def translate(path: str, value):
         return None
     if not isinstance(path, str):
         return value
+    # ★ 2026-10-11：部分字段（如后视镜 LRearMirro）在 App 侧类型是 **String**，
+    #   服务端可能给 "0"/"1" 而不是数字 → 数字字符串按数字查表，否则会显示裸数字。
+    if isinstance(value, str) and value.strip().lstrip("-").isdigit():
+        try:
+            value = int(value.strip())
+        except (TypeError, ValueError):
+            pass
     # ★ 按后缀长度降序匹配（避免 FrontTrunkDoor 被 TrunkDoor 抢先）
     for suffix in sorted(VALUE_MAPS, key=len, reverse=True):
         if path.endswith(suffix):
