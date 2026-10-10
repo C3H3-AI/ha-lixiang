@@ -338,6 +338,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     *ability.temp_range())
             else:
                 _LOGGER.info("车型能力表: 无此车型配置，回退 VSS 探测")
+
+            # ★ 2026-10-11：M 系（理想ONE 等老平台）未开通 VSS → 实时状态改走
+            #   real-time-state（App 侧同款判定：platform == '1'）
+            try:
+                from .m01_state import is_m_series
+                if is_m_series(ability):
+                    coordinator.enable_realtime_state(True)
+            except Exception as _err:  # noqa: BLE001
+                _LOGGER.debug("老平台通道判定失败（忽略）: %s", _err)
         except Exception as err:  # noqa: BLE001
             _LOGGER.warning("车型功能探测异常（忽略）: %s", err)
 
