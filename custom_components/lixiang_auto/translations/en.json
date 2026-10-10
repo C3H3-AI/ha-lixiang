@@ -12,7 +12,7 @@
       },
       "password_login": {
         "title": "Li Auto login",
-        "description": "Enter your Li Auto account phone number and password, then choose a sign-in identity.\n\n**Sign-in identity:**\n- **Li Auto** — the same sign-in session as the Li Auto App (the phone App may be signed out)\n- **Li Auto Assistant** — an independent identity (signing key derived from the Assistant app)\n\n**First login** requires SMS verification (including a slider captcha); the integration will guide you through it in your browser. Once verified, this device is trusted and no further verification is needed.",
+        "description": "Enter your Li Auto account phone number and password, then choose a sign-in identity.\n\n**Sign-in identity:**\n- **Li Auto** — the same sign-in session as the Li Auto App (the phone App may be signed out)\n- **Li Auto Assistant** — an independent sign-in session (tested: it does not sign out any phone app)\n\n**First login** requires SMS verification (including a slider captcha); the integration will guide you through it in your browser. Once verified, this device is trusted and no further verification is needed.",
         "data": {
           "phone": "Phone number",
           "password": "Password",

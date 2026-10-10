@@ -379,15 +379,16 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         #    ★ 2026-09-24 体验优化：
         #      理想服务器同步"设备已受信任"需要几十秒。
         #      原来只检测一次 → 用户必须自己等 30 秒再点提交。
-        #      现在改为【自动重试】：最多等 ~40 秒，每 5 秒试一次，
-        #      用户点一次提交即可。
+        #      现在改为【自动重试】：前密后疏探测（2026-10-10），
+        #      用户也可以随时点提交触发新一轮检测。
         import asyncio as _asyncio
 
-        _RETRY_TOTAL = 8      # 最多 8 次
-        _RETRY_GAP = 5        # 间隔 5 秒 → 共 ~40 秒
+        # ★ 2026-10-10 快探测：信任同步后通常 1~3 秒生效，
+        #   固定 5 秒间隔会白等 —— 改为前密后疏（总 ~34 秒，原 40 秒）。
+        _RETRY_GAPS = [1, 2, 3, 5, 5, 8, 10]
 
         ok = False
-        for _i in range(_RETRY_TOTAL):
+        for _i, _gap in enumerate(_RETRY_GAPS):
             try:
                 ok = await self.hass.async_add_executor_job(
                     try_login, phone, password, device_id, app_type)
@@ -398,16 +399,16 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             if ok:
                 break
 
-            if _i < _RETRY_TOTAL - 1:
+            if _i < len(_RETRY_GAPS) - 1:
                 _LOGGER.info(
                     "设备尚未受信任，%d 秒后重试（第 %d/%d 次）",
-                    _RETRY_GAP, _i + 1, _RETRY_TOTAL)
-                await _asyncio.sleep(_RETRY_GAP)
+                    _gap, _i + 1, len(_RETRY_GAPS))
+                await _asyncio.sleep(_gap)
 
         if not ok:
             _LOGGER.info(
                 "等待 %d 秒后仍未检测到受信任（device_id=%s）",
-                _RETRY_TOTAL * _RETRY_GAP, device_id[:12])
+                sum(_RETRY_GAPS), device_id[:12])
 
         if ok:
             # ★ 设备已受信任 → 完成登录
@@ -424,8 +425,7 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     step_id="browser",
                     data_schema=vol.Schema({vol.Optional("_retry", default=True): bool}),
                     errors={"base": "cannot_connect"},
-                    description_placeholders=self._browser_ph(
-                        tok, device_id, app_type),
+                    description_placeholders=self._browser_ph(tok, device_id),
                 )
             return await self._finish_login(data)
 
@@ -439,7 +439,7 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({
                 vol.Optional("recheck", default=True): bool,
             }),
-            description_placeholders=self._browser_ph(tok, device_id, app_type),
+            description_placeholders=self._browser_ph(tok, device_id),
         )
 
     def _current_entry_id(self) -> str:
@@ -522,8 +522,7 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         add(getattr(self.hass.config, "external_url", None))
         return urls
 
-    def _browser_ph(self, tok: str, device_id: str,
-                    app_type: str = APP_LIXIANG) -> dict[str, str]:
+    def _browser_ph(self, tok: str, device_id: str) -> dict[str, str]:
         """生成登录步骤的说明文案与链接。
 
         ★ 2026-09-24 方案 B（用户选择）：HA 弹窗【直接给完整登录链接】
@@ -540,17 +539,23 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
           链接参数（来自 auth_web 的实测值）：
             mode=h5 必须带（否则页面空白）
             scope/audience 用登录实测值
-            ★ 2026-10-10：client_id/scope/redirect 按 app_type 取
-              （livis 理想同学独立 client，V5 实测）。
+
+        ★ 2026-10-10：【信任链接与登录身份无关】——本链接唯一用途是让
+          device_id 被服务端标记受信任（信任按 device_id 全局生效，与
+          client 无关，用户实测：先用主 App 链接建立信任 → 理想同学分支
+          密码登录同样免风控）。故统一用主 App 参数：
+            · 早先按 app_type 切 livis 参数（40amUDK.../lisa scope）会跳到
+              理想同学「绑定特斯拉」页（H5 授权进入 lisa 业务流程），无法
+              完成信任建立 —— 统一主 App 参数后绕开该问题。
+            · 真正的登录（PAKE API）仍按 app_type 走各自 client（V5/V6）。
         """
         from urllib.parse import urlencode
 
         from .const import ACCOUNT_BASE, AUDIENCE
         from .pake_login import APP_LOGIN_PARAMS
 
-        client_id, scope, redirect = (
-            APP_LOGIN_PARAMS.get(app_type) or APP_LOGIN_PARAMS["lixiang"]
-        )
+        # 信任链接固定主 App 参数（见 docstring）
+        client_id, scope, redirect = APP_LOGIN_PARAMS["lixiang"]
 
         # ① 理想官方登录链接（含 device_id）
         login_url = ACCOUNT_BASE + "/app-auth?" + urlencode({

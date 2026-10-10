@@ -147,11 +147,12 @@ class LiXiangLoginView(HomeAssistantView):
         from .pake_login import APP_LOGIN_PARAMS
 
         dev = s["device_id"]
-        # ★ 2026-10-10：登录链接按 app_type 取 client（livis 独立 client）
-        client_id, scope, redirect = (
-            APP_LOGIN_PARAMS.get(s.get("app_type") or "lixiang")
-            or APP_LOGIN_PARAMS["lixiang"]
-        )
+        # ★ 2026-10-10：【信任链接统一主 App 参数】——与 config_flow._browser_ph
+        #   同理：本页唯一用途是建立 device_id 信任（信任按 device_id 全局生效，
+        #   与 client 无关）。早先按 app_type 切 livis 参数会跳到理想同学
+        #   「绑定特斯拉」页，无法完成信任建立 → 统一主 App 参数绕开。
+        #   真正登录（PAKE API）仍按 app_type 走各自 client。
+        client_id, scope, redirect = APP_LOGIN_PARAMS["lixiang"]
         # 主链接：H5 模式 + 完整授权参数
         login_url = ACCOUNT_BASE + "/app-auth?" + urlencode({
             "mode": "h5",
