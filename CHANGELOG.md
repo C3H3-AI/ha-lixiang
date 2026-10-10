@@ -4,6 +4,44 @@
 
 ---
 
+## [1.5.0] — 2026-10-11
+
+> **新增：理想ONE（老平台 / M 系）实时状态支持** —— 此前这类车型的实时信号恒为 0
+> （VSS 服务对它们不开放），现在改走与官方 App 相同的 `real-time-state` 通道。
+
+### Added
+
+- **理想ONE / M 系（M01A、M01B）实时状态通道**。此前集成只有 VSS 一路数据源，
+  而理想ONE 上 `vss:get-batch` 恒返 `access_denied` → 实时信号全空（车主日志实证：49 分钟内 `实时信号=0 条`）。
+  现在按 App 的同一条链路取数：
+  `GET /ssp-as-mobile-api/v3-0/vehicles/{vin}/real-time-state` → `DynamicInfoRes`，
+  映射进集成现有的 signal-key 空间（实体 / 渲染 / 卡片无需改动）。
+
+  已覆盖：电量、纯电续航、燃油续航、充电状态、五门、四窗 + 天窗、车内温度、
+  车外空气质量、车辆定位、在线状态。
+  （对应 App `LXM01StateDelegate` 的 14 项状态面里的 12 项；余下 2 项是我们没有对应实体概念的聚合项。）
+
+### Changed
+
+- **仅对 M 系生效**（判定与 App 一致：`platform == '1'`），X 系（L6/L7/L8/L9）与 W 系仍走 VSS，行为不变。
+- 老平台数据只**补 VSS 拿不到的键**，不会覆盖 VSS 已给出的真实值。
+
+### 依据（静态逆向，APK 8.27.0）
+
+- 端点来自 `NetApiConst.GET_VEHICLE_STATE(vin)`；响应模型 `DynamicInfoRes`；M 系解析 `LXM01StateDelegate`
+- 平台开关来自 `LXVehicleManagerFactory.delegateMap`（键 = 整数 1 → M 系代理）
+- 与社区方案 hasscc 的 `update_status()` 互证（同一端点、同名字段）
+
+### 验证
+
+- 真机（L6，X 系）：实体 196 / 有值 189、总续航正常刷新，**未误启用**老平台通道 → 对现有车型零影响
+- 单元测试 **1411 个通过**
+
+⚠️ **理想ONE 车主请在更新后执行一次 `lixiang_auto.dump_realtime_state`** 并把导出的 JSON 反馈给我们 ——
+用于校准量纲（电量是否 %、续航是否 km、车窗开度是否百分比等）；校准结果会在后续小版本落地。
+
+---
+
 ## [1.4.10] — 2026-10-11
 
 > 三件事：手机 App 不再被反复顶下线、总续航真正显示出来、以及为**理想ONE 等老平台
