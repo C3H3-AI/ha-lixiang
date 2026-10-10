@@ -5,7 +5,7 @@
 [![Validate](https://github.com/C3H3-AI/ha-lixiang/actions/workflows/validate.yml/badge.svg)](https://github.com/C3H3-AI/ha-lixiang/actions/workflows/validate.yml)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-![Version](https://img.shields.io/badge/version-1.5.0-blue.svg)
+![Version](https://img.shields.io/badge/version-1.5.1-blue.svg)
 
 > ⚠️ **Beta 阶段** —— 功能可用，但边界场景尚未覆盖，不建议用于关键场景。
 > 当前仅 **理想 L6** 长期验证；L7 / L8 / L9 / MEGA / i 系列**未验证**。
@@ -493,7 +493,7 @@ HA 的实体注册表**不会**因为平台或名称变化而自动改名 ——
 | 信号语义 | ✅ **已用 App 官方 spec 全量审计**（150 信号 × 1563 路径，2026-09-28）<br>发现并修正 2 处语义错误 |
 | 车控（新增两路）| ✅ **充电盖（`cpCtrl`）· 后视镜加热（`rmCtrl`）实车实测通过**（2026-10-09，开/关均生效）|
 | 首次登录 | ⚠️ 辅助页面方案**刚验证 1 次**，不同网络/浏览器未测 |
-| 单元测试 | ✅ **1411 个通过**（signals / rendering / policy / coordinator / features / vehicle_role / task_master / 卡片绑定 / 发布流程）<br>❓ 实车端到端仍需手工验证 |
+| 单元测试 | ✅ **1440 个通过**（signals / rendering / policy / coordinator / features / vehicle_role / task_master / 卡片绑定 / 发布流程）<br>❓ 实车端到端仍需手工验证 |
 
 ### 2026-10-09 实车新增验证：充电盖 / 后视镜加热
 
@@ -647,7 +647,7 @@ PYTHONUTF8=1 python -m pytest tests/ -q
 
 ## 更新日志
 
-见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v1.5.0**。
+见 [CHANGELOG.md](CHANGELOG.md)。当前版本 **v1.5.1**。
 
 ---
 
