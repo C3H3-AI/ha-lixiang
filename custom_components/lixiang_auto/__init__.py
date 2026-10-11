@@ -754,8 +754,27 @@ def _async_register_services(hass: HomeAssistant) -> None:
                             api.get_charge_records_monthly, str(dt), ct)
                         kind = f"{dt} 明细(type={ct})"
                 else:
-                    r = await hass.async_add_executor_job(api.get_charge_monthly_stats)
-                    kind = "按月统计"
+                    # ★★ 2026-10-11 修复：按月统计必须**聚合全部 4 种类型**。
+                    #   服务端 monthlyStatistics 每个 chargingType 只返回该类型，
+                    #   且没有"全部"取值。此前走默认 type=1（仅 DC 直流快充）
+                    #   → 只显示实际电量的约 1/3（实测 10 月 78.65 vs 真实 223.32）。
+                    #   传 0 / "all" / "全部" / 不传 → 聚合；传 1~4 → 只查该类型
+                    #   （对应 App 的「交流慢充 / 直流快充 / 理想超充」筛选）。
+                    _raw2 = str(ctype).strip().lower() if ctype not in (None, "") else ""
+                    if _raw2 in ("", "0", "all", "全部"):
+                        r = await hass.async_add_executor_job(
+                            api.get_charge_monthly_stats_all)
+                        kind = "按月统计(全部类型聚合)"
+                    elif _raw2 in ("hpc", "理想超充", "5"):
+                        # App 的「理想超充」= 5C 超充(3) + 4C/5C 理想超充(4)
+                        r = await hass.async_add_executor_job(
+                            api.get_charge_monthly_stats_all, (3, 4))
+                        kind = "按月统计(理想超充=3+4)"
+                    else:
+                        ct = int(ctype)
+                        r = await hass.async_add_executor_job(
+                            api.get_charge_monthly_stats, ct)
+                        kind = f"按月统计(type={ct})"
                 code = r.get("code")
                 ok = code is None or code == 0
                 payload = r.get("data") if ok else r
