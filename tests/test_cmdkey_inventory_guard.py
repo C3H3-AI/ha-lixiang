@@ -34,21 +34,37 @@ RE = Path("/media/duola/devdata/AI-workspace/lixiang-reverse")
 MAPPING = (RE / "apk_latest/decompiled/smali_classes11/com/chehejia/lib/vehicle"
            / "limesh/x/helper/XVehicleJobHelper$Companion.smali")
 
-#: 集成**尚未**评估/实现的 cmdKey（2026-10-11 快照）。
+#: App 侧多个入口 = **同一能力**（我们用基础 cmdKey + 参数值表达）
+#: → 别名不算缺口（2026-10-11 用户指出"车窗不是有开关功能吗？fan"后新增）
+ALIASES = {
+    "remoteVehWdwOpenControl": "remoteVehWdwControl（cover 位置 99）",
+    "remoteVehWdwCloseControl": "remoteVehWdwControl（cover 位置 0）",
+    "remoteVehWdwVentControl": "remoteVehWdwControl（开窗即通风）",
+    "remoteVehACSmartControlOpen": "remoteVehACSmartControl（climate/fan）",
+    "remoteVehACSmartControlClose": "remoteVehACSmartControl（climate/fan）",
+}
+
+#: 集成**真正**尚未评估/实现的 cmdKey（2026-10-11 快照，已扣除别名）
 #: 新增命令时从这里移走；App 升级带来新命令时测试会提示差异。
 KNOWN_PENDING = {
-    "remoteVehACSmartControlClose", "remoteVehACSmartControlOpen",
-    "remoteVehAISwitch", "remoteVehAISwitchClose", "remoteVehAISwitchOpen",
+    "remoteVehAISwitch",
+    "remoteVehAISwitchClose",
+    "remoteVehAISwitchOpen",
     "remoteVehAbatVentControl",
-    "remoteVehCloseRearMirro", "remoteVehOpenRearMirro",
+    "remoteVehCloseRearMirro",
     "remoteVehFlashLight",
     "remoteVehFrontTrunkControl",
-    "remoteVehLSlidingCloseControl", "remoteVehLSlidingOpenControl",
-    "remoteVehPlgCloseControl", "remoteVehPlgOpenControl",
-    "remoteVehRSlidingCloseControl", "remoteVehRSlidingOpenControl",
-    "remoteVehScene", "remoteVehTypeFSDInit", "remoteVehUnLockControl",
-    "remoteVehWdwCloseControl", "remoteVehWdwOpenControl",
-    "remoteVehWdwVentControl", "remoteVehWhistle",
+    "remoteVehLSlidingCloseControl",
+    "remoteVehLSlidingOpenControl",
+    "remoteVehOpenRearMirro",
+    "remoteVehPlgCloseControl",
+    "remoteVehPlgOpenControl",
+    "remoteVehRSlidingCloseControl",
+    "remoteVehRSlidingOpenControl",
+    "remoteVehScene",
+    "remoteVehTypeFSDInit",
+    "remoteVehUnLockControl",
+    "remoteVehWhistle",
 }
 
 
@@ -84,7 +100,8 @@ class TestCmdKeyInventory:
           · App 新增了命令 → 有人要评估它（更新本清单）
           · 集成已实现某条但忘了从 KNOWN_PENDING 移除 → 清理本清单
         """
-        gap = _app_cmdkeys() - _our_cmdkeys()
+        # ★ 别名（同一能力的另���入口）不是缺口 —— 避免假警报
+        gap = _app_cmdkeys() - _our_cmdkeys() - set(ALIASES)
         undeclared = gap - KNOWN_PENDING
         assert not undeclared, (
             "App 里有、集成未使用、也没登记的命令："
@@ -94,7 +111,7 @@ class TestCmdKeyInventory:
 
     def test_stale_pending_entries(self):
         """反向：登记为待评估、但集成其实已经用了 → 清单腐化。"""
-        stale = KNOWN_PENDING - _app_cmdkeys() - _our_cmdkeys()
+        stale = KNOWN_PENDING - _app_cmdkeys() - _our_cmdkeys() - set(ALIASES)
         assert not stale, (
             f"KNOWN_PENDING 里的 {sorted(stale)} 既不在 App 映射表、也没被集成使用"
             " → 清单已过期，请复核")
@@ -106,13 +123,34 @@ class TestCmdKeyInventory:
         assert "remoteVehOpenRearMirro" in body
         assert "HTTP 白名单" in body, "文档必须写明白名单门槛，避免把'已实现'当'可用'"
 
+    def test_alias_entries_still_exist_in_app(self):
+        """★ 别名本身也不能凭空留着：App 里已不存在的入口 → 别名表腐化。"""
+        app = _app_cmdkeys()
+        vanished = set(ALIASES) - app
+        assert not vanished, (
+            f"别名表里的 {sorted(vanished)} 在 App 映射表中已不存在"
+            " → 从 ALIASES 移除（否则会长期掩盖新缺口）")
+
+    def test_aliases_point_to_implemented_cmdkeys(self):
+        """★ 别名表必须指向**集成已实现**的命令 —— 否则别名表自己会骗人。
+
+        ⚠️ 已知局限（不可自动验证）：**语义等价性**只能靠人判断。
+          本测试只能保证「目标已实现」与「别名仍存在于 App」，
+          无法证明「这个别名真的等价于那个基础命令」——
+          改动别名表后请人工复核一遍映射关系。"""
+        ours = _our_cmdkeys()
+        for alias, target in ALIASES.items():
+            base = target.split("（")[0].strip()
+            assert base in ours, (
+                f"别名 {alias} 声称由 {base} 覆盖，但集成里并没有用到 {base}")
+
     def test_mirror_fold_not_silently_dropped(self):
         """★ 本次事故的直接防线：后视镜折叠命令不得'看起来处理过了'。
 
         现在集成确实没实现它们 → 必须仍在待评估清单里；
         将来实现了 → 本测试会因上面的 stale 检查提示更新清单。
         """
-        gap = _app_cmdkeys() - _our_cmdkeys()
+        gap = _app_cmdkeys() - _our_cmdkeys() - set(ALIASES)
         for ck in ("remoteVehOpenRearMirro", "remoteVehCloseRearMirro"):
             if ck in _our_cmdkeys():
                 continue                      # 已实现：由其他守卫保证清单同步
