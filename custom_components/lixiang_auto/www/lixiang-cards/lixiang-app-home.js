@@ -191,6 +191,10 @@ const STYLE = `
   .mile .chart::after { content:""; position:absolute; left:0; right:0; bottom:0;
                         height:1px; background:var(--lx-line); }
   .mile .chart svg { width:100%; height:100%; display:block; }
+  /* ★ 柱状图（对齐 App）：每个数据点一根等宽柱子 */
+  #sparkbars rect { fill:#9A9AA0; }
+  #sparkbars rect[data-zero] { fill:transparent; }     /* 0 值不画柱子（不留脏点） */
+  #sparkgrid line { stroke:var(--lx-line); stroke-width:0.4; }
   .mile .axis { display:flex; justify-content:space-between; font-size:10px;
                 color:var(--lx-t3); margin-top:3px; }
   .batt .row { display:flex; align-items:center; gap:9px; }
@@ -578,9 +582,14 @@ class LixiangAppHome extends HTMLElement {
           <div class="card mile" id="c-mile" role="button" tabindex="0">
             <div class="big"><span id="v-mile">—</span><small>km</small></div>
             <div class="cap">本月陪伴里程</div>
+            <!-- ★ 2026-10-12：折线 → 柱状图（对齐 App —— 车主截图里是柱状图 + 网格线） -->
             <div class="chart"><svg id="spark" viewBox="0 0 100 40" preserveAspectRatio="none">
-              <polyline id="sparkline" fill="none" stroke="#8A8A8E" stroke-width="1.6"
-                        stroke-linejoin="round" points=""></polyline></svg></div>
+              <g class="grid" id="sparkgrid" aria-hidden="true">
+                <line x1="0" y1="10" x2="100" y2="10"></line>
+                <line x1="0" y1="22" x2="100" y2="22"></line>
+                <line x1="0" y1="34" x2="100" y2="34"></line>
+              </g>
+              <g id="sparkbars"></g></svg></div>
             <div class="axis"><span>01</span><span>08</span><span>15</span><span>22</span><span>29</span></div>
           </div>
           <div style="display:grid; gap:12px; grid-template-rows:1fr auto;">
@@ -904,8 +913,11 @@ class LixiangAppHome extends HTMLElement {
     });
   }
 
+  /** 本月每日里程 —— **柱状图**（对齐 App；此前是折线）。
+   *  每根柱子等宽，高度按当月最大值归一；0 值不画柱子。
+   */
   _spark() {
-    const el = this.querySelector("#sparkline"); if (!el) return;
+    const el = this.querySelector("#sparkbars"); if (!el) return;
     // 优先用服务拉取的日明细（属性常因 recorder 未落库而为空）
     let cached = this._dailyCache;
     const s = this._st(this._config.mile_chart || this._config.month_km);
@@ -919,14 +931,20 @@ class LixiangAppHome extends HTMLElement {
         if (Array.isArray(raw) && raw.length) { vals = raw.map(r => Number(r.mileage) || 0); break; }
       }
     }
-    if (!vals || !vals.length) { el.setAttribute("points",""); return; }
+    if (!vals || !vals.length) { el.innerHTML = ""; return; }
     const max = Math.max.apply(null, vals.concat([1]));
     const n = vals.length;
-    el.setAttribute("points", vals.map((v, i) => {
-      const x = (i / Math.max(n - 1, 1)) * 100;
-      const y = 40 - (v / max) * 36 - 2;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(" "));
+    const step = 100 / n;                       // 每根柱子占的横向槽位
+    const bw = Math.max(step * 0.62, 0.9);      // 柱宽（留间隙）
+    el.innerHTML = vals.map((v, i) => {
+      const val = Number(v) || 0;
+      const h = (val / max) * 34;               // 柱高（底部留 6 给坐标轴）
+      const x = i * step + (step - bw) / 2;
+      const y = 40 - h - 2;
+      const zero = val <= 0 ? ' data-zero="1"' : "";
+      return `<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${bw.toFixed(2)}" `
+           + `height="${Math.max(h, 0.6).toFixed(2)}"${zero}></rect>`;
+    }).join("");
   }
 
   _update() {
