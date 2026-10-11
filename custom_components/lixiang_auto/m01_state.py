@@ -40,6 +40,35 @@ from typing import Any
 #: App 里 M 系的判定值（LXVehicleManagerFactory.delegateMap 的键）
 M_SERIES_PLATFORM = "1"
 
+#: 座位 → 信号键（实测字段 seatStatus.<座>SeatHeatVentState.value）
+_SEAT_MAP = {
+    "fl": "seat_heat_vent_fl",
+    "fr": "seat_heat_vent_fr",
+    "rl": "seat_heat_vent_rl",
+    "rr": "seat_heat_vent_rr",
+}
+
+#: M 系空调字段 → **复用 L 系已有信号键**（一个概念一个实体，不新建重复项）
+#: 依据：L 系走 VSS（Vehicle.Cabin.AC.*），M 系走 real-time-state；
+#:     两条通道语义相同 → 共用同一批实体，UI/自动化不用分车型写两套。
+#: ⚠️ 各档位语义（风量 1-3、出风模式 0-4）**未实测**，沿用旧表 → 属 [推断]
+_AC_MAP = {
+    "acOffStatus": "ac_on",            # ★ 注意：字段是 OffStatus，0=关 → 需取反
+    "acAutoStatus": "ac_auto_mode",
+    "acWindSpeed": "ac_fan_speed_level",
+    "acFLTempStatus": "ac_set_temp_fl",
+    "acFRTempStatus": "ac_set_temp_fr",
+    "acDefrostModeSts": "ac_defrost",
+    "acWindTempStatus": "ac_wind_mode",
+}
+
+#: 需要取反的字段（字段名说的是"关"，而我们统一用"开=1"）
+_AC_INVERT = {"acOffStatus"}
+
+#: vehOnlineStatus.status 的休眠态字符串（实测 2026-10-11 理想ONE："Sleeping"）
+#: ⚠️ 其余取值（在线/唤醒中…）未见样本 → 一律按"在线"处理，属 [推断]
+_SLEEP_STATES = {"sleeping", "sleep", "asleep", "offline", "standby", "powersave"}
+
 #: DynamicInfoRes.doorSwitchStatus 字段 → 我们的信号键
 _DOOR_MAP = {
     "mainDoor": "door_main",
@@ -193,10 +222,62 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
             }, ensure_ascii=False))
 
     # 在线状态（vehOnlineStatus.status）—— 供 coordinator 的 vehicle_status 兜底使用
-    #   ⚠️ 语义待实车确认：ONE 侧的 status 是否就是「在线」标志
-    _on = _dig(res, "vehOnlineStatus").get("status")
-    if _on is not None:
-        put("online_5g", _int01(_on))
+    #   ★ 实测（2026-10-11 理想ONE 车主回传 real-time-state 原始响应）：
+    #     status 是**字符串枚举**，休眠时实测为 "Sleeping"，**不是 0/1**
+    #   → 之前用 _int01 解析必然得到 None（在线状态永远 unknown）
+    _on = _raw(_dig(res, "vehOnlineStatus").get("status"))
+    if isinstance(_on, str) and _on.strip():
+        put("online_5g", 0 if _on.strip().lower() in _SLEEP_STATES else 1)
+
+    # ---- 2026-10-11 按车主回传的实测响应扩展 ----
+    # 依据：real-time-state v3 原始响应（realtime_state_v3 / ok=true, code=0）
+    # ⚠️ 下面的【档位语义】目前只有"关=0"这一档被实测覆盖；1/2/3 各档含义仍属 [推断]，
+    #    与 translations.py 里 SeatHeatState/SeatVentilationState 的旧表一致（同样未实测）。
+
+    # 座椅加热/通风（seatStatus.<座位>SeatHeatVentState.value）
+    seats = res.get("seatStatus")
+    if isinstance(seats, dict):
+        for src, key in _SEAT_MAP.items():
+            _v = _num(_dig(seats, f"{src}SeatHeatVentState").get("value")
+                      if isinstance(seats.get(f"{src}SeatHeatVentState"), dict)
+                      else seats.get(f"{src}SeatHeatVentState"))
+            if _v is None:
+                _v = _num(seats.get(f"{src}SeatHeatVent"))
+            if _v is not None:
+                put(key, _v)
+
+    # 空调（airConditioningStatus.*，多数是 {value, timestamp} 形态）
+    acs = res.get("airConditioningStatus")
+    if isinstance(acs, dict):
+        for src, key in _AC_MAP.items():
+            _v = _num(acs.get(src))
+            if _v is None:
+                continue
+            if src in _AC_INVERT:
+                # acOffStatus 语义 = "是否关闭"（实测 0）→ 我们的 ac_on 语义 = "是否开启"
+                #   取反：0(不关) → 1(开)；1(关) → 0(关)
+                _v = 0 if _v else 1
+            put(key, _v)
+
+    # 剩余油量（chargeSetting.enduranceStatus.residueFuel，单位 L）
+    _rf = _num(_dig(res, "chargeSetting", "enduranceStatus").get("residueFuel"))
+    if _rf is not None:
+        put("fuel_level", _rf)
+
+    # 挡位（travelStatus.gear，实测 "P"）
+    _g = _raw(_dig(res, "travelStatus").get("gear"))
+    if isinstance(_g, str) and _g.strip():
+        put("gear", _g.strip())
+
+    # 环形灯（ringLightStatus.status，实测 "1"；⚠️ 0/1 语义未实测）
+    _rl = _num(_dig(res, "ringLightStatus").get("status"))
+    if _rl is not None:
+        put("ring_light", _rl)
+
+    # 车内是否有钥匙（keyInCarWarning.warning，实测 "0"）
+    _ki = _num(_dig(res, "keyInCarWarning").get("warning"))
+    if _ki is not None:
+        put("key_in_car_warning", _ki)
 
     # 五门（★ App 侧：doorSwitchStatus.<门>.isOpen，类型是 String）
     doors = res.get("doorSwitchStatus")
