@@ -144,6 +144,87 @@ class LixiangSettingPage extends HTMLElement {
     }
     return auto;
   }
+  /**
+   * ★ 2026-10-11 数据驱动：页面结构由这张表决定（原来散落在大段 innerHTML 里）。
+   * 每行 = [key, 类型, 名称, 图标, 副标题]
+   *   类型：sw=开关 / sel=选择 / num=步进 / rng=滑块 / btn=动作
+   * 好处：① 新增功能只改这张表；② 区块顺序一目了然；
+   *       ③ 「这台车有没有」统一由 `_rowSupported` 判定（实体是否存在），
+   *          不再在模板里写一堆 `S.includes(...) ? ... : ""`。
+   */
+  _sections() {
+    return [
+      { title: "空调与舒适", rows: [
+        ["ac_temp",     "num", "设定温度",   "ic_home_ice_cool.webp"],
+        ["ac_fast_hot", "sw",  "快速制热",   "ic_home_ice_cool.webp"],
+        ["ac_fast_cold","sw",  "快速制冷",   "ic_home_ice_cool.webp"],
+        ["ac_defrost",  "sw",  "前风挡除霜", ""],
+        ["steer_heat",  "sw",  "方向盘加热", ""],
+        ["batt_warm",   "sw",  "电池保温",   ""],
+      ]},
+      { title: "充电", rows: [
+        ["charge_limit", "rng", "充电上限",   ""],
+        ["charge_mode",  "sel", "充电模式",   "ic_home_electricity.webp"],
+        ["appointment",  "sw",  "预约充电",   "ic_home_chrgporlid_off_lisa.png"],
+      ]},
+      { title: "安全与辅助", rows: [
+        ["sentry", "sw", "哨兵模式", "ic_home_sentry.png", "离车后监控周围环境"],
+      ]},
+      { title: "远程操作", rows: [
+        ["find",  "btn", "寻车",     "ic_summon_lisa.png"],
+        ["start", "btn", "远程启动", "ic_home_control.webp"],
+        ["flash", "btn", "闪灯",     "ic_home_lightning.png"],
+        ["horn",  "btn", "鸣笛",     "ic_home_dialogue.png"],
+        ["photo", "btn", "远程拍照", "ic_home_photo.png"],
+      ]},
+    ];
+  }
+
+  /**
+   * 该行在这台车上是否可用（车型适配）。
+   * 判据 = 实体存在（服务端已按车型能力门控）；buttons 组另有 btn_ 前缀约定。
+   */
+  _rowSupported(type, key) {
+    if (type === "btn") {
+      // buttons 组：配置里写 btn_start / autoBind 里是 start（两种都认）
+      return !!(this._grp("buttons", key) || this._grp("buttons", "btn_" + key));
+    }
+    const group = ({ sw: "switches", sel: "selects", num: "numbers", rng: "numbers" })[type];
+    const g = this._grp(group, key);
+    if (!g) return false;
+    // ★ _grp 的返回形态不统一：switches/selects 给**字符串** entity，
+    //   numbers 给 {entity, step, unit}。两种都要认（写错会导致开关整组不显示）。
+    const eid = (typeof g === "string") ? g : g.entity;
+    return !!(eid && this._st(eid));
+  }
+
+  /** 按 SECTIONS 表生成四个区块（★ 替代原来手写的大段 innerHTML）。 */
+  _renderSections() {
+    const ic = n => (n ? `<img class="ic" src="${__iconBase}/${n}" alt="" onerror="this.style.visibility='hidden'">` : "");
+    const row = (key, type, name, icon, sub) => {
+      const head = `${ic(icon)}<div class="tx"><div class="nm">${name}</div>${sub ? `<div class="sd">${sub}</div>` : ""}</div>`;
+      if (type === "sw")
+        return `<div class="row click" data-sw="${key}">${head}<div class="sw" data-swtoggle="${key}"></div></div>`;
+      if (type === "sel")
+        return `<div class="row click" data-sel="${key}">${head}<div class="val" data-selval="${key}">—</div><div class="ar">›</div></div>`;
+      if (type === "num")
+        return `<div class="row">${head}<div class="stepper">
+          <button data-dec="${key}" aria-label="降低">−</button>
+          <span class="n" data-numval="${key}">—</span>
+          <button data-inc="${key}" aria-label="升高">+</button></div></div>`;
+      if (type === "rng")
+        return `<div class="sliderwrap">
+          <div class="lbl"><span>${name}</span><b><span data-numval="${key}">—</span>%</b></div>
+          <input type="range" min="50" max="100" step="5" data-range="${key}"></div>`;
+      return `<div class="row click" data-btn="${key}">${head}<div class="ar">›</div></div>`;
+    };
+    return this._sections().map(sec => {
+      const rows = sec.rows.filter(r => this._rowSupported(r[1], r[0])).map(r => row(...r)).join("");
+      if (!rows) return "";                       // ★ 整块都不支持 → 区块也不出现
+      return `<div class="sec"><h2>${sec.title}</h2><div class="box">${rows}</div></div>`;
+    }).join("");
+  }
+
   _grpKeys(group) {
     const c=this._config||{}; const manual=Object.keys(c[group]||{});
     const auto=this._autoBind()||{};
@@ -201,36 +282,6 @@ class LixiangSettingPage extends HTMLElement {
     const c = this._config;
     const root = document.createElement("div");
     root.className = "root"; root.dataset.theme = c.theme || "light";
-    const S = this._grpKeys("switches"), N = this._grpKeys("numbers"), SEL = this._grpKeys("selects"), B = this._grpKeys("buttons");
-    const swRow = (key, name, sub, icon) => `
-      <div class="row click" data-sw="${key}">
-        ${icon ? `<img class="ic" src="${__iconBase}/${icon}" alt="">` : ""}
-        <div class="tx"><div class="nm">${name}</div>${sub ? `<div class="sd">${sub}</div>` : ""}</div>
-        <div class="sw" data-swtoggle="${key}"></div>
-      </div>`;
-    const selRow = (key, name, icon) => `
-      <div class="row click" data-sel="${key}">
-        ${icon ? `<img class="ic" src="${__iconBase}/${icon}" alt="">` : ""}
-        <div class="tx"><div class="nm">${name}</div></div>
-        <div class="val" data-selval="${key}">—</div>
-        <div class="ar">›</div>
-      </div>`;
-    const numRow = (key, name, icon) => `
-      <div class="row">
-        ${icon ? `<img class="ic" src="${__iconBase}/${icon}" alt="">` : ""}
-        <div class="tx"><div class="nm">${name}</div></div>
-        <div class="stepper">
-          <button data-dec="${key}" aria-label="减少">−</button>
-          <span class="n" data-numval="${key}">—</span>
-          <button data-inc="${key}" aria-label="增加">+</button>
-        </div>
-      </div>`;
-    const btnRow = (key, name, icon) => `
-      <div class="row click" data-btn="${key}">
-        ${icon ? `<img class="ic" src="${__iconBase}/${icon}" alt="">` : ""}
-        <div class="tx"><div class="nm">${name}</div></div>
-        <div class="ar">›</div>
-      </div>`;
 
     root.innerHTML = `
       <div class="ptr" id="ptr"><div class="sp"></div><div class="tx">下拉刷新</div></div>
@@ -242,55 +293,7 @@ class LixiangSettingPage extends HTMLElement {
         </div>
       </div>
 
-      <div class="sec">
-        <h2>空调与舒适</h2>
-        <div class="box">
-          ${N.includes("ac_temp") ? `<div class="row">
-            <img class="ic" src="${__iconBase}/ic_home_ice_cool.webp" alt="" onerror="this.style.visibility='hidden'">
-            <div class="tx"><div class="nm">设定温度</div></div>
-            <div class="stepper">
-              <button data-dec="ac_temp" aria-label="降低">−</button>
-              <span class="n" data-numval="ac_temp">—</span>
-              <button data-inc="ac_temp" aria-label="升高">+</button>
-            </div></div>` : ""}
-          
-          ${S.includes("ac_fast_hot") ? swRow("ac_fast_hot", "快速制热") : ""}
-          ${S.includes("ac_fast_cold") ? swRow("ac_fast_cold", "快速制冷") : ""}
-          ${S.includes("ac_defrost") ? swRow("ac_defrost", "前风挡除霜") : ""}
-          ${S.includes("steer_heat") ? swRow("steer_heat", "方向盘加热") : ""}
-          ${S.includes("batt_warm") ? swRow("batt_warm", "电池保温") : ""}
-        </div>
-      </div>
-
-      <div class="sec">
-        <h2>充电</h2>
-        <div class="box">
-          ${N.includes("charge_limit") ? `<div class="sliderwrap">
-            <div class="lbl"><span>充电上限</span><b><span data-numval="charge_limit">—</span>%</b></div>
-            <input type="range" min="50" max="100" step="5" data-range="charge_limit">
-          </div>` : ""}
-          ${SEL.includes("charge_mode") ? selRow("charge_mode", "充电模式", "ic_home_electricity.webp") : ""}
-          ${S.includes("appointment") ? swRow("appointment", "预约充电", "", "ic_home_chrgporlid_off_lisa.png") : ""}
-        </div>
-      </div>
-
-      <div class="sec">
-        <h2>安全与辅助</h2>
-        <div class="box">
-          ${S.includes("sentry") ? swRow("sentry", "哨兵模式", "离车后监控周围环境", "ic_home_sentry.png") : ""}
-        </div>
-      </div>
-
-      <div class="sec">
-        <h2>远程操作</h2>
-        <div class="box">
-          ${B.includes("find") ? btnRow("find", "寻车", "ic_summon_lisa.png") : ""}
-          ${B.start ? btnRow("start", "远程启动", "ic_home_control.webp") : ""}
-          ${B.flash ? btnRow("flash", "闪灯", "ic_home_lightning.png") : ""}
-          ${B.horn ? btnRow("horn", "鸣笛", "ic_home_dialogue.png") : ""}
-          ${B.photo ? btnRow("photo", "远程拍照", "ic_home_photo.png") : ""}
-        </div>
-      </div>
+      ${this._renderSections()}
       <div class="toast" role="status" aria-live="polite"></div>
     `;
     this.appendChild(root);
