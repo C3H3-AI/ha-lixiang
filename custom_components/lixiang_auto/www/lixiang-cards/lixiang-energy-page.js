@@ -108,7 +108,21 @@ const STYLE = `
   .year.open .yhead .ar { transform:rotate(180deg); }
   .ymonths { display:none; padding-bottom:8px; }
   .year.open .ymonths { display:block; }
-  .m { display:flex; align-items:center; padding:11px 0; cursor:pointer; }
+  /* ★ 2026-10-12：改为 block —— .m 现在包着 .mh（行）+ .md（内联明细） */
+  .m { display:block; padding:11px 0; }
+  .yhead .ys { font-size:12px; color:var(--lx-t3); margin-left:10px; }
+  .m .mh { display:flex; align-items:center; width:100%; cursor:pointer; }
+  .m .mbar { flex:1; height:6px; border-radius:3px; background:var(--lx-line);
+             overflow:hidden; margin:0 10px; min-width:30px; }
+  .m .mbar > i { display:block; height:100%; border-radius:3px; background:#2C6BFF;
+                 transition:width .3s ease; }
+  .m .ar { margin-left:6px; color:var(--lx-t3); font-size:13px; transition:transform .2s; }
+  .m.sel .ar { transform:rotate(90deg); }
+  .m.top .mv { font-weight:600; color:var(--lx-t1); }
+  .m.top .mbar > i { background:#1E5AE0; }
+  /* ★ 内联明细（参考充电页）：点月份即在该月下方展开，不再跑到底部 */
+  .m .md { display:none; padding:2px 0 8px; }
+  .m.sel .md { display:block; }
   .m .mn { font-size:14px; color:var(--lx-t2); }
   .m .mt { font-size:11.5px; color:var(--lx-t3); margin-left:10px; }
   .m .mv { margin-left:auto; font-family:"LxNum"; font-size:14px; font-weight:500; }
@@ -248,8 +262,8 @@ class LixiangEnergyPage extends HTMLElement {
 
       <div class="note">${I18N.disclaimer}</div>
 
+      <!-- 明细已改为内联到各月份下方（参考充电页），不再有底部 #daily -->
       <div class="years" id="years"><div class="empty">${I18N.loading}</div></div>
-      <div class="daily" id="daily" style="display:none"></div>
       <div class="toast" role="status" aria-live="polite"></div>
     `;
     this.appendChild(root);
@@ -377,15 +391,33 @@ class LixiangEnergyPage extends HTMLElement {
     box.innerHTML = yl.map((y) => {
       const ms = (y.monthlyEnergyList || []).filter((m) => Number(m.travelMil) > 0);
       const open = this._openYears.has(String(y.year));
+      // 年份汇总（对齐充电页：N 个月 · 总计）
+      const tot = ms.reduce((a, m) => a + (Number(m.travelMil) || 0), 0);
+      // 条形按【所在年】归一（跨年不可比）
+      const mx = Math.max(1, ...ms.map((m) => Number(m.travelMil) || 0));
       const rows = ms.map((m) => {
-        const sel = this._selMonth && this._selMonth.year === y.year && this._selMonth.month === m.month;
-        return `<div class="m${sel ? " sel" : ""}" data-y="${y.year}" data-m="${m.month}">
-            <span class="mn">${m.month} 月</span>
-            <span class="mv">${Number(m.travelMil).toFixed(1)}</span>
-            <span class="mu">km</span></div>`;
+        const sel = this._selMonth && this._selMonth.year === y.year
+                    && this._selMonth.month === m.month;
+        const v = Number(m.travelMil) || 0;
+        const w = v > 0 ? Math.max(3, Math.round((v / mx) * 100)) : 0;
+        const isTop = v > 0 && v >= mx;
+        // ★ 每行自带内联明细容器（参考充电页：点开即在该月下方，不再跑到底部）
+        return `<div class="m${sel ? " sel" : ""}${isTop ? " top" : ""}"
+                     data-y="${y.year}" data-m="${m.month}">
+            <div class="mh" role="button" tabindex="0" aria-expanded="${sel ? "true" : "false"}">
+              <span class="mn">${m.month} 月</span>
+              <span class="mbar" aria-hidden="true"><i style="width:${w}%"></i></span>
+              <span class="mv">${Number(m.travelMil).toFixed(1)}</span>
+              <span class="mu">km</span>
+              <span class="ar">›</span>
+            </div>
+            <div class="md" id="md-${y.year}-${m.month}"></div>
+          </div>`;
       }).join("");
       return `<div class="year${open ? " open" : ""}" data-year="${y.year}">
-          <div class="yhead"><span class="yn">${y.year}年</span>
+          <div class="yhead" role="button" tabindex="0" aria-expanded="${open ? "true" : "false"}">
+            <span class="yn">${y.year}年</span>
+            <span class="ys">${ms.length} 个月 · ${tot.toFixed(1)} km</span>
             <span class="ar">⌃</span></div>
           <div class="ymonths">${rows || '<div class="empty">无记录</div>'}</div>
         </div>`;
@@ -401,30 +433,61 @@ class LixiangEnergyPage extends HTMLElement {
       h.addEventListener("click", act);
     });
     box.querySelectorAll(".m").forEach((m) => {
-      const act = () => {
-        this._selMonth = { year: Number(m.dataset.y), month: Number(m.dataset.m) };
-        this._renderYears(); this._renderDaily();
-        this._fetchMonthDaily(this._selMonth.year, this._selMonth.month, false);
+      const h = m.querySelector(".mh");
+      const act = async () => {
+        const yy = Number(m.dataset.y), mm = Number(m.dataset.m);
+        const isOpen = this._selMonth && this._selMonth.year === yy
+                       && this._selMonth.month === mm;
+        if (isOpen) {
+          // 再点一次收起
+          this._selMonth = null; this._monthDaily = null;
+          m.classList.remove("sel");
+          if (h) h.setAttribute("aria-expanded", "false");
+          const d = m.querySelector(".md"); if (d) d.innerHTML = "";
+          return;
+        }
+        this._selMonth = { year: yy, month: mm };
+        // 收起其它已展开的月份
+        box.querySelectorAll(".m.sel").forEach((el) => {
+          el.classList.remove("sel");
+          const hh = el.querySelector(".mh");
+          if (hh) hh.setAttribute("aria-expanded", "false");
+          const dd = el.querySelector(".md"); if (dd) dd.innerHTML = "";
+        });
+        m.classList.add("sel");
+        if (h) h.setAttribute("aria-expanded", "true");
+        const target = m.querySelector(".md");
+        if (target) target.innerHTML = `<div class="empty">${I18N.loading}</div>`;
+        this._renderDaily(target);          // 先渲染 tabs（带 loading）
+        await this._fetchMonthDaily(yy, mm, false);
       };
-      this._a11y(m, `${m.dataset.y} 年 ${m.dataset.m} 月`, act);
-      m.addEventListener("click", act);
+      this._a11y(h || m, `${m.dataset.y} 年 ${m.dataset.m} 月 明细`, act);
+      (h || m).addEventListener("click", act);
     });
   }
 
-  _renderDaily() {
-    const box = this.querySelector("#daily");
+  /** 渲染某月「每日」明细。
+   *  ★ 2026-10-12：改为**内联**渲染到传入的容器（`box`）—— 参考充电页。
+   *    此前渲染到页面底部的 `#daily`，用户点月份后要往下滚才看得到。
+   *    `box` 缺省时按「当前选中月份」自动定位容器。
+   */
+  _renderDaily(box) {
+    // ★ 未显式传容器时，自动定位"当前选中月份"的内联容器 ——
+    //   这样排序/tabs/重新拉取等旧调用点无需改动即可正确重绘。
+    if (!box && this._selMonth) {
+      box = this.querySelector(`#md-${this._selMonth.year}-${this._selMonth.month}`);
+    }
     if (!box) return;
-    if (!this._selMonth) { box.style.display = "none"; return; }
-    box.style.display = "";
+    if (!this._selMonth) { box.innerHTML = ""; return; }
     const rows = this._monthDaily || [];
     const head = `<div class="tabs">
         <div class="tab${this._tab === "mileage" ? " on" : ""}" data-tab="mileage">每日里程</div>
         <div class="tab${this._tab === "elec" ? " on" : ""}" data-tab="elec">每日耗电</div>
         <div class="tab${this._tab === "fuel" ? " on" : ""}" data-tab="fuel">每日耗油</div>
       </div>
-      <div class="sortbtn${this._sort ? " on" : ""}" id="dsort" role="button" tabindex="0"
+      <div class="sortbtn${this._sort ? " on" : ""}" role="button" tabindex="0"
            aria-label="按数值排序">${this._sort ? "按数值 ↓" : "按日期"}</div>`;
-    if (!rows.length) { box.innerHTML = head + `<div class="empty">${I18N.noData}</div>`; this._bindTabs(); return; }
+    if (!rows.length) { box.innerHTML = head + `<div class="empty">${I18N.noData}</div>`; this._bindTabs(box); return; }
     const pick = { mileage:"mileage", elec:"elecEnergy", fuel:"fuelConsumption" }[this._tab];
     const unit = this._tab === "mileage" ? "km" : (this._tab === "elec" ? "kWh" : "L");
     // ★ 迷你条以【当月最大值】为基准；排序可选（默认按日期）
@@ -443,22 +506,22 @@ class LixiangEnergyPage extends HTMLElement {
           <span class="dbar"><i style="width:${pct}%"></i></span>
           <span class="dn">${v ? v + " " + unit : "—"}</span></div>`;
       }).join("");
-    this._bindTabs();
-    this._bindSort();
+    this._bindTabs(box);
+    this._bindSort(box);
   }
 
   /** 排序切换（按日期 / 按数值）——★ 2026-10-11 */
-  _bindSort() {
-    const b = this.querySelector("#dsort");
+  _bindSort(scope) {
+    const b = (scope || this).querySelector(".sortbtn");
     if (!b) return;
-    const act = () => { this._sort = !this._sort; this._renderDaily(); };
+    const act = () => { this._sort = !this._sort; this._renderDaily(scope); };
     this._a11y(b, b.textContent, act);
     b.addEventListener("click", act);
   }
 
-  _bindTabs() {
-    this.querySelectorAll(".tab").forEach((t) => {
-      const act = () => { this._tab = t.dataset.tab; this._renderDaily(); };
+  _bindTabs(scope) {
+    (scope || this).querySelectorAll(".tab").forEach((t) => {
+      const act = () => { this._tab = t.dataset.tab; this._renderDaily(scope); };
       this._a11y(t, t.textContent, act);
       t.addEventListener("click", act);
     });
