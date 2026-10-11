@@ -748,6 +748,12 @@ def _async_register_services(hass: HomeAssistant) -> None:
                         r = await hass.async_add_executor_job(
                             api.get_charge_records_monthly_all, str(dt))
                         kind = f"{dt} 明细(全部类型聚合)"
+                    elif _raw in ("hpc", "理想超充", "5"):
+                        # ★ App 的「理想超充」= 5C(3) + 4C/5C(4)；
+                        #   此前这里直接 int(ctype) → int("hpc") 会抛异常。
+                        r = await hass.async_add_executor_job(
+                            api.get_charge_records_monthly_all, str(dt), (3, 4))
+                        kind = f"{dt} 明细(理想超充=3+4)"
                     else:
                         ct = int(ctype)
                         r = await hass.async_add_executor_job(

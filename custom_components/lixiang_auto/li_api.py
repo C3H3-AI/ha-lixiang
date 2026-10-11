@@ -1409,7 +1409,8 @@ class LiApiClient:
             f"?vin={self._vin}&dt={dt}&chargingType={charging_type}",
             "", self._travel_bearer())
 
-    def get_charge_records_monthly_all(self, dt: str) -> dict:
+    def get_charge_records_monthly_all(
+            self, dt: str, types: tuple[int, ...] | None = None) -> dict:
         """某月充电记录明细（**聚合全部 4 种类型**，按时间倒序）。
 
         ★ 2026-10-09：单一 charging_type 只能取到一种充电方式的记录，
@@ -1419,11 +1420,16 @@ class LiApiClient:
 
         返回结构与单类型一致：{"code": 0, "data": [...]}，每条记录补充
         chargingType 字段标明来源；全部类型都失败才返回错误码。
+
+        types: 只聚合指定类型（如 ``(3, 4)`` = App 的「理想超充」）；None = 全部。
         """
+        wanted = set(types) if types else None
         merged: list = []
         got = False
         failed = 0
         for ct, _pfx in CHARGE_TYPE_PREFIX:
+            if wanted is not None and ct not in wanted:
+                continue
             try:
                 r = self.get_charge_records_monthly(dt, ct)
             except Exception:  # noqa: BLE001
