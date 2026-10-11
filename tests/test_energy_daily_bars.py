@@ -80,6 +80,9 @@ def harness(rows_js: str, tab: str, sort: bool) -> str:
         "const dailyBox = {\n"
         "  set innerHTML(v) { CAPTURED = v; }, get innerHTML() { return CAPTURED; },\n"
         "  style: {},\n"
+        # ★ 真实 DOM 元素有 querySelector/querySelectorAll；绑定排序/标签时需要
+        "  querySelector() { return null; },\n"
+        "  querySelectorAll() { return []; },\n"
         "};\n"
         "const G = {\n"
         "  _selMonth: { year: 2026, month: 10 },\n"
@@ -88,7 +91,10 @@ def harness(rows_js: str, tab: str, sort: bool) -> str:
         "  get _sort() { return SORT; },\n"
         "  set _sort(v) { SORT = v; },\n"
         "  _a11y() {}, _bindTabs() {}, _bindSort() {},\n"
-        "  querySelector(sel) { return sel === '#daily' ? dailyBox : null; },\n"
+        # ★ 2026-10-12：明细改为内联到月份下方（参考充电页），
+        #   选择器从 #daily 变为 #md-{year}-{month}；排序按钮去掉重复 id 改用 .sortbtn
+        "  querySelector(sel) { return (sel === '#daily' || sel === '.sortbtn'"
+        " || String(sel).indexOf('#md-') === 0) ? dailyBox : null; },\n"
         f"{members}\n"
         "};\n"
         "G._renderDaily();\n"
@@ -168,15 +174,15 @@ class TestSorting:
 
     def test_sort_button_present(self):
         html = run_node(harness(json.dumps(SAMPLE), "mileage", False))
-        assert 'id="dsort"' in html
+        assert 'class="sortbtn"' in html
         assert "按日期" in html
         html2 = run_node(harness(json.dumps(SAMPLE), "mileage", True))
         assert "按数值" in html2, "排序开启时按钮文案要变"
 
     def test_sort_binding_exists(self):
         src = PAGE.read_text(encoding="utf-8")
-        assert "  _bindSort() {" in src, "必须有 _bindSort（否则按钮点了没反应）"
-        assert "this._bindSort();" in src, "_renderDaily 末尾必须绑定排序按钮"
+        assert "  _bindSort(scope) {" in src, "必须有 _bindSort（否则按钮点了没反应）"
+        assert "this._bindSort(box);" in src, "_renderDaily 末尾必须绑定排序按钮（带作用域）"
 
 
 class TestPreserved:
@@ -200,3 +206,97 @@ class TestGuardSelfCheck:
     def test_harness_uses_real_source(self):
         h = harness(json.dumps(SAMPLE), "mileage", False)
         assert "_renderDaily" in h and "_bindSort" in h
+
+class TestEnergyOptimizedLikeCharge:
+    """★★ 2026-10-12：里程耗能页按「充电页」的模式优化（车主：「参考充电」）。
+
+    充电页经过三轮迭代后的形态：
+      · 年份折叠，**年份头带汇总**
+      · 月份行带**条形图**（按所在年归一）
+      · ★ **明细内联**在月份下方（不再渲染到页面底部 —— 那是充电页踩过的坑：
+        车主原话「点击10月，明细在下面，根本看不到」）
+
+    能耗页此前：年份折叠 ✓ 但月份行**没有条形图**、明细渲染到页面底部 `#daily` ✗
+    """
+
+    def _src(self) -> str:
+        return PAGE.read_text(encoding="utf-8")
+
+    def test_year_header_has_summary(self):
+        """年份头要有「N 个月 · X km」汇总。"""
+        s = self._src()
+        i = s.index('box.innerHTML = yl.map((y) => {')
+        blk = s[i:s.index('box.querySelectorAll(".yhead")', i)]
+        assert 'class="ys"' in blk, "年份头缺汇总元素"
+        assert "tot.toFixed(1)" in blk and "个月" in blk, "年份头缺汇总内容"
+
+    def test_month_row_has_bar(self):
+        """月份行要有条形图（对齐充电页）。"""
+        s = self._src()
+        i = s.index('box.innerHTML = yl.map((y) => {')
+        blk = s[i:s.index('box.querySelectorAll(".yhead")', i)]
+        assert 'class="mbar"' in blk, "月份行缺条形图"
+        assert "const w = v > 0 ? Math.max(3" in blk, "条形宽度算法缺失"
+        assert "const mx = Math.max(1," in blk, "缺按年归一的最大值"
+
+    def test_month_has_inline_detail_container(self):
+        """★ 每个月都要有内联明细容器（点开即在该月下方）。"""
+        s = self._src()
+        i = s.index('box.innerHTML = yl.map((y) => {')
+        blk = s[i:s.index('box.querySelectorAll(".yhead")', i)]
+        assert 'class="md" id="md-${y.year}-${m.month}"' in blk, "缺内联明细容器"
+
+    def test_no_bottom_daily_container(self):
+        """★ 页面底部的 `#daily` 必须删掉（否则又变成"明细在下面"）。"""
+        s = self._src()
+        assert 'id="daily"' not in s, "底部 #daily 容器还在"
+
+    def test_render_daily_auto_locates_container(self):
+        """未传容器时应自动定位到当前选中月份的内联容器。"""
+        s = self._src()
+        i = s.index("  _renderDaily(box) {")
+        blk = s[i:i + 700]
+        assert "#md-${this._selMonth.year}-${this._selMonth.month}" in blk, \
+            "没有按选中月份自动定位容器"
+
+    def test_month_click_toggles_inline(self):
+        """点月份应切换内联展开（再点一次收起），而不是跳到别处。"""
+        s = self._src()
+        i = s.index('box.querySelectorAll(".m").forEach')
+        blk = s[i:i + 1400]
+        assert "classList.add(\"sel\")" in blk, "没有标记选中态"
+        assert "classList.remove(\"sel\")" in blk, "再点一次没有收起"
+        assert "target.innerHTML" in blk, "没有往内联容器渲染"
+
+    def test_only_one_month_expanded(self):
+        """展开新月份时应收起其它月份（避免列表被撑开）。"""
+        s = self._src()
+        i = s.index('box.querySelectorAll(".m").forEach')
+        blk = s[i:i + 1400]
+        assert 'box.querySelectorAll(".m.sel")' in blk, "没有收起其它已展开月份"
+
+    def test_tabs_and_sort_are_scoped(self):
+        """★ tabs/排序必须限定在**当前容器**内 —— 否则会绑到其它月份的按钮上。"""
+        s = self._src()
+        assert "  _bindTabs(scope) {" in s and "  _bindSort(scope) {" in s, \
+            "tabs/排序未做作用域限定"
+        assert "(scope || this).querySelectorAll(\".tab\")" in s
+        assert '(scope || this).querySelector(".sortbtn")' in s
+
+    def test_no_duplicate_dsort_id(self):
+        """多个月份展开时 `#dsort` id 会重复 → 必须改用 class。"""
+        s = self._src()
+        assert 'id="dsort"' not in s, "重复 id 未清理"
+        assert 'class="sortbtn' in s
+
+    def test_css_rules_present(self):
+        s = self._src()
+        for rule in (".yhead .ys", ".m .mbar", ".m .md", ".m.sel .md"):
+            assert rule in s, f"缺样式 {rule}"
+
+    def test_month_row_is_block_not_flex(self):
+        """`.m` 现在包着 `.mh` + `.md`，必须是 block（否则明细挤在同一行）。"""
+        s = self._src()
+        i = s.index("  .m { display:")
+        seg = s[i:i + 60]
+        assert "block" in seg, f".m 仍是 {seg.split(';')[0]}"
