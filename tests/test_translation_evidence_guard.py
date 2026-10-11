@@ -37,9 +37,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TR = ROOT / "custom_components" / "lixiang_auto" / "translations.py"
 
+#: [推断] 映射条数上限（"仍不可信"的真实存量；实测确认一条减一）
+#: 2026-10-11：8 条（座椅已实测移出，其余为空调/温控类，App 静态无对照）
+MAX_INFERRED = 8
+
 #: 2026-10-11 基线：VALUE_MAPS 里未标注 [实测]/[实证] 的条目数（= 视为 [推断]）
 #: 只能下降。每次有映射被实测确认，就下调这个数字（并在 translations.py 补标注）。
-MAX_UNVERIFIED = 8   # 2026-10-11 精确基线，确认一条减一   # 基线实测值（2026-10-11），确认一条减一
+MAX_UNVERIFIED = 0   # 2026-10-11 精确基线，确认一条减一（2026-10-11：座椅加热/通风实测 → 8→0）   # 基线实测值（2026-10-11），确认一条减一
 
 
 def _src() -> str:
@@ -161,7 +165,26 @@ class TestEvidencePolicy:
             "→ 合并成一个定义；若语义真的不同，说明字段名选错了，需核对路径")
 
     def test_cap_only_decreases(self):
-        """上限必须是非负且合理的整数（防止有人把它改成 9999 绕过守卫）。"""
+        """上限必须是合理整数（防止有人改成 9999 绕过守卫）。
+
+        ★ 2026-10-11：全部 66 条映射都已标注等级 → 上限降到 **0**。
+          从此"新增未标注映射"与"删掉已有标注"都会被这条守住。
+        """
         assert isinstance(MAX_UNVERIFIED, int)
-        assert 0 < MAX_UNVERIFIED <= 69, (
-            f"上限 {MAX_UNVERIFIED} 不合理（映射总数约 69；上限过大等于形同虚设）")
+        assert 0 <= MAX_UNVERIFIED <= 66, (
+            f"上限 {MAX_UNVERIFIED} 不合理（映射总数 66；上限过大等于形同虚设）")
+
+    def test_inferred_entries_are_tracked(self):
+        """★ [推断] 条数也要锁定 —— 它才是"仍不可信"的真实存量。
+
+        全部映射都标注了等级（上限 0），但其中仍有 8 条是 [推断]
+        （App 静态查不到对照、只能靠实测）。这个数字只能减少。
+        """
+        src = _src()
+        n = src.count("[推断]")
+        assert n <= MAX_INFERRED, (
+            f"[推断] 映射有 {n} 条，超过上限 {MAX_INFERRED}"
+            "\n→ 新增未验证映射必须显式标 [推断] 并把 MAX_INFERRED 一并上调"
+            "（等于承认这是猜测）；实测确认一条则下调一格")
+        assert MAX_INFERRED <= 12, (
+            f"MAX_INFERRED={MAX_INFERRED} 偏大，推断存量已经失控")
