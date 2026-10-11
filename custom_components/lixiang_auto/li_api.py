@@ -483,6 +483,15 @@ def ensure_job_channel_supported(command_key: str) -> None:
     )
 
 
+#: 服务端 resultCode → 人话（★ 2026-10-11 真车实测，msg 由服务端直接给出）
+#: 只收录**实测见过**的；未收录的回落到服务端 msg，不猜。
+RESULT_CODE_HINTS = {
+    -1:  "车辆当前状态不支持该操作",
+    -3:  "操作被拒绝（可能车辆未熄火或状态不满足）",
+    -4:  "车辆已启动，不支持远程控制",   # ★ 实测：READY / 通电 / 启动 均为此码
+    -51: "闭锁失败，主驾有人，请稍后再试",  # ★ 实测
+}
+
 class LiCommandError(LiApiError):
     """车控命令执行失败 (含服务端 resultCode / pushState)."""
 
@@ -1970,9 +1979,16 @@ class LiApiClient:
                     f"（resultCode={rc_err}）",
                     request_id=request_id, result_code=rc_err, push_state=ps,
                 )
+            # ★ 2026-10-11 修复：服务端返回的是 **msg**，此前误取 resultMsg
+            #   → 恒为 None → 中文原因（"车辆已启动，不支持远程控制"）丢失，
+            #   用户只看到裸的 resultCode。
+            #   取值顺序：服务端 msg → 已知错误码的人话 → 原样（不猜）。
+            _msg = (result.get("msg") or result.get("resultMsg")
+                    or RESULT_CODE_HINTS.get(rc_err))
+            _head = (f"命令执行失败 ({command_key}): pushState={ps} "
+                     f"resultCode={rc_err}")
             raise LiCommandError(
-                f"命令执行失败 ({command_key}): pushState={ps} "
-                f"resultCode={rc_err} msg={result.get('resultMsg')}",
+                f"{_head} msg={_msg}" if _msg else _head,
                 request_id=request_id,
                 result_code=rc_err, push_state=ps,
             )
@@ -1985,7 +2001,8 @@ class LiApiClient:
         _LOGGER.warning(
             "车控命令未在超时内进入终态 %s %s pushState=%s msg=%s "
             "（命令可能已生效，状态以下次轮询为准）",
-            command_key, command_data, ps, result.get("resultMsg"))
+            command_key, command_data, ps,
+            result.get("msg") or result.get("resultMsg"))
         return result
 
     def _poll_result(self, request_id: str, timeout: float, interval: float) -> dict:
