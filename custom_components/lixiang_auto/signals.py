@@ -2177,6 +2177,24 @@ MAINTAIN_KEYS = frozenset({
     "maint_engine_level2",  # 增程器大保养（保养二级）
 })
 
+#: ★★ 2026-10-12：这些信号虽然归为诊断类，但**前端页面直接要用**，
+#:   所以必须默认启用 —— 否则卡片拿不到实体，页面显示「—」。
+#:
+#: 车主报「二级页面内容错误」，实测根因（用真实实体注册表 + auto-bind 复现）：
+#:   陪伴里程/陪伴天数/耗电行驶 → 能耗页缺 3 项
+#:   位置服务（地址）        → 位置页无地址
+#:   场景模式               → 情景页 0/1 字段
+#:   车辆配置（车型）        → 钥匙管理页缺车型
+#: 这 6 个实体都存在（`disabled_by=integration`），只是被诊断类规则默认禁用了。
+UI_REQUIRED_KEYS = frozenset({
+    "stat_mileage",         # 陪伴里程   → energy-page
+    "stat_days",            # 陪伴天数   → energy-page
+    "stat_elec_mileage",    # 耗电行驶   → energy-page
+    "privacy_pos_service",  # 位置服务   → location-page（地址）
+    "scene_mode",           # 场景模式   → scene-page
+    "config_code",          # 车辆配置   → vehicle-info-page（车型）
+})
+
 
 def to_sensor_description(spec: SignalSpec):
     """把 SignalSpec 转成 HA 的 SensorEntityDescription。
@@ -2207,6 +2225,7 @@ def to_sensor_description(spec: SignalSpec):
         kw["entity_category"] = EntityCategory.DIAGNOSTIC
         kw["entity_registry_enabled_default"] = (
             spec.key in MAINTAIN_KEYS        # 保养项默认启用
+            or spec.key in UI_REQUIRED_KEYS  # ★ 前端页面要用 → 默认启用
         )
     return SensorEntityDescription(**kw)
 
