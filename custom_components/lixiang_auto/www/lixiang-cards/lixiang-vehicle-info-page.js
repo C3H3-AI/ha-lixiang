@@ -28,7 +28,7 @@ const STYLE = `
   @font-face { font-family:"LxNum";  src:url("${__fontBase}/roboto_medium_numbers.ttf"); font-display:swap; }
   :host { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
-    --lx-card:#F5F5F7; --lx-bg:#FFF; --lx-line:#EDEDF0; }
+    --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
     :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
@@ -36,7 +36,7 @@ const STYLE = `
     .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
     .root[data-theme="light"] { --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
-            --lx-card:#F5F5F7; --lx-bg:#FFF; --lx-line:#EDEDF0; --lx-blue:#0A58F6; }
+            --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; --lx-blue:#0A58F6; }
   .root { background:var(--lx-bg); color:var(--lx-t1); padding-bottom:24px;
     font-family:"Licium",-apple-system,"PingFang SC",sans-serif; }
 
