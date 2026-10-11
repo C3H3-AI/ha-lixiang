@@ -18,6 +18,39 @@
  * 写入 API：POST /api/config/automation/config/{id}
  */
 
+/* ★ 条件/动作分类的中文名（服务端只给英文 classification） */
+const _DICT_CLS_LABEL = {
+  ConditionTimes:"时间", ConditionEnvironments:"环境", ConditionLocations:"位置",
+  ConditionNavigations:"导航", ConditionPassengers:"乘员", ConditionSittingPositions:"坐姿",
+  ConditionDrivings:"驾驶", ConditionPowerStatus:"充电供电", ConditionDoorsAndWindows:"门窗",
+  ConditionBelts:"安全带", ConditionLights:"灯光", ConditionVolumes:"音量",
+  ConditionApplications:"应用", ConditionModes:"模式", ConditionAccessories:"配件",
+  ActionDelays:"延时", ActionAirs:"空调", ActionSeatAirs:"座椅通风", ActionSeatHeats:"座椅加热",
+  ActionSeatMassages:"座椅按摩", ActionSittingPositions:"座椅位置", ActionDrivings:"驾驶",
+  ActionDoorsAndWindows:"门窗", ActionLights:"灯光", ActionScreenShows:"屏幕",
+  ActionVolumes:"音量", ActionNavigations:"导航", ActionBluetooths:"蓝牙",
+  ActionApplications:"应用", ActionModes:"模式", ActionLiStudents:"学习",
+  ActionAccessories:"配件",
+};
+/* ★ 常用条目的中文名（未列出的直接显示英文 type，不猜） */
+const _DICT_ITEM_LABEL = {
+  Gear:"挡位", Speed:"车速", Lock:"车锁", BatteryRemaining:"剩余电量",
+  InsideTemperature:"车内温度", OutsideTemperature:"车外温度", TimeRange:"时间段",
+  Sunrise:"日出", Sunset:"日落", Time:"定时", InRange:"在位置范围内", OutRange:"在位置范围外",
+  LeftFDoor:"主驾车门", RightFDoor:"副驾车门", TailDoor:"尾门",
+  LeftFWindow:"主驾车窗", RightFWindow:"副驾车窗", LeftRWindow:"左后车窗", RightRWindow:"右后车窗",
+  DriverBelt:"主驾安全带", CopilotBelt:"副驾安全带",
+  ChargingStatus:"充电状态", ChargingGunStatus:"充电枪",
+  MusicPlaying:"音乐播放", MediaVolume:"媒体音量",
+  Driver:"主驾", Copilot:"副驾", SecondLeft:"二排左", SecondRight:"二排右", SecondMid:"二排中",
+  GetOnCar:"上车", GetOffCar:"下车",
+  ACSwitch:"空调开关", Defog:"除雾", AirPurification:"空气净化",
+  DriverHeating:"主驾加热", SecondLHeating:"二排左加热",
+  DriverAir:"主驾通风", SeatHeating_:"座椅加热",
+  Headlights:"大灯", AllDoorsLock:"全车落锁", AutoUnlock:"自动解锁",
+  Delay:"延时", OpenApp:"打开应用", BackHome:"回家",
+};
+
 const CARD_TAG = "lixiang-task-page";
 const DEFAULT_ICON_BASE = "/local/lixiang-icons";
 const DEFAULT_FONT_BASE = "/local/lixiang-fonts";
@@ -495,6 +528,12 @@ class LixiangTaskPage extends HTMLElement {
 
   /** 触发条件选择（简化为常用几项） */
   async _pickTrigger() {
+    // ★ 优先用服务端字典（86 条件 + 参数模板）；取不到则回退下面的简表
+    if (await this._ensureDict()) {
+      const r = await this._pickFromDict("选择触发条件", "conditions");
+      if (r) { this._draft.trigger = { platform: "state", entity_id: this._eid("status"), to: r.type, params: r.payload }; }
+      return;
+    }
     const OPTS = [
       { label: "驻车后", t: { platform: "state", entity_id: this._eid("status"), to: "已驻车（P 档）", for: "00:05:00" } },
       { label: "开始行驶", t: { platform: "state", entity_id: this._eid("status"), to: "行驶中" } },
@@ -512,6 +551,11 @@ class LixiangTaskPage extends HTMLElement {
   }
 
   async _pickAction() {
+    if (await this._ensureDict()) {
+      const r = await this._pickFromDict("选择操作", "actions");
+      if (r) this._draft.action.push(r.payload);
+      return;
+    }
     const act = this._eid("ac"), lock = this._eid("lock"), sentry = this._eid("sentry");
     const OPTS = [
       { label: "开启空调", a: act ? { service: "climate.turn_on", target: { entity_id: act } } : null },
@@ -529,6 +573,203 @@ class LixiangTaskPage extends HTMLElement {
   }
 
   /** 轻量选择器（替代 window.prompt —— 后者在 HA 里体验差） */
+  /**
+   * 拉取字典（一次即可，缓存在实例上）。
+   * ★ 取不到时静默返回 false —— 调用方回退到旧的硬编码简表，
+   *   **不让用户看到一个空的"添加条件"表单**（那会像坏了）。
+   */
+  async _ensureDict() {
+    if (this._dictCache) return true;
+    if (this._dictTried) return false;          // 本次会话已试过，不重复打
+    this._dictTried = true;
+    try {
+      const res = await fetch("/lixiang_auto/task-dict.json");
+      const j = await res.json();
+      if (j && j.ok && Array.isArray(j.conditions) && j.conditions.length) {
+        this._dictCache = j;
+        return true;
+      }
+    } catch (e) {
+      // 忽略：回退旧简表
+    }
+    return false;
+  }
+
+  /**
+   * ★ 2026-10-11 字典驱动：从服务端下发的 condition-and-action 字典构建条件/动作列表。
+   *   取不到时返回 null（调用方回退到旧的硬编码简表，不让用户看到空表单）。
+   *   字典结构（见 task_dict.py）：classification → items[{type,source,params[]}]
+   */
+  _dict(kind) {
+    // ★ 卡片拿不到 coordinator → 字典经 REST 视图暴露（/lixiang_auto/task-dict.json）
+    const d = this._dictCache || null;
+    if (!d) return null;
+    const groups = d[kind] || [];
+    if (!groups.length) return null;
+    return groups.map(g => ({
+      cls: g.classification,
+      label: _DICT_CLS_LABEL[g.classification] || g.classification,
+      items: (g.items || []).map(it => ({
+        type: it.type,
+        label: _DICT_ITEM_LABEL[it.type] || it.type,
+        source: it.source,
+        params: it.params || [],
+      })),
+    })).filter(g => g.items.length);
+  }
+
+  /** 该条目是否需要参数表单（没有 params 就是选完即用）。 */
+  static _needsForm(item) { return Array.isArray(item.params) && item.params.length > 0; }
+
+  /**
+   * 两级选择：先选分类，再选条目；带参数的在第二步后追加参数表单。
+   * @returns {Promise<null | {type:string, t:object, a:object}>}
+   */
+  _pickFromDict(title, kind, typeKey) {
+    const groups = this._dict(kind);
+    if (!groups) return Promise.resolve(null);
+    return (async () => {
+      // ① 选分类
+      const gi = await this._choose(title, groups.map(g => g.label));
+      if (gi == null) return null;
+      const g = groups[gi];
+      // ② 选条目
+      const ii = await this._choose(g.label, g.items.map(i => i.label));
+      if (ii == null) return null;
+      const item = g.items[ii];
+      // ③ 需要参数 → 生成表单
+      let vals = {};
+      if (item.params.length) {
+        vals = await this._fillParams(item);
+        if (vals === null) return null;          // 用户取消
+      }
+      const body = {};
+      for (const [k, v] of Object.entries(vals)) body[k] = v;
+      return { type: item.type, payload: body, source: item.source,
+               text: `${g.label} · ${item.label}` };
+    })();
+  }
+
+  /**
+   * 按参数模板生成表单。
+   * ★ 支持的控件类型（来自实测字典）：
+   *   singleChoiceList / multiChoiceList → 单选/多选按钮组
+   *   singleColumnSelector            → 数值选择（滚轮/滑杆）
+   *   默认（无 value）→ 文本输入
+   * 未知类型不猜：退回文本输入并保留原始 key（服务端仍可能接受）。
+   */
+  _fillParams(item) {
+    return new Promise((resolve) => {
+      const ov = document.createElement("div");
+      ov.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:21;
+        display:flex;align-items:flex-end;justify-content:center;`;
+      const sheet = document.createElement("div");
+      sheet.style.cssText = `background:var(--lx-bg);color:var(--lx-t1);width:100%;
+        max-width:460px;border-radius:20px 20px 0 0;padding:16px 0 24px;
+        font-family:inherit;max-height:78vh;overflow:auto;`;
+      const vals = {};
+      const ESC_MAP = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+      const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ESC_MAP[c]);
+
+      const rows = item.params.map((p, i) => {
+        const key = p.key;
+        const label = p.label || key;
+        const type = p.type || "";
+        const opts = Array.isArray(p.value) ? p.value : null;
+        if (type.includes("ChoiceList") && opts) {
+          // 单选按钮组（多选暂按单选，取第一个匹配 —— ★ 不猜多选语义）
+          const multi = type.includes("multi");
+          vals[key] = p.defaultValue != null ? p.defaultValue
+                    : (multi && Array.isArray(p.defaultValue) ? p.defaultValue[0] : opts[0]);
+          return `<div style="padding:10px 20px">
+            <div style="font-size:12.5px;color:var(--lx-t3);margin-bottom:7px">${esc(label)}</div>
+            <div data-p="${i}" data-key="${esc(key)}" data-multi="${multi}"
+                 style="display:flex;flex-wrap:wrap;gap:7px">
+              ${opts.map(o => `<span data-v="${esc(o)}" style="padding:6px 12px;border-radius:9px;
+                 font-size:13px;border:1px solid var(--lx-line);cursor:pointer">${esc(o)}</span>`).join("")}
+            </div></div>`;
+        }
+        if (type === "singleColumnSelector" && opts) {
+          // 数值：默认取 defaultValue（找不到则取中间值）
+          let init = p.defaultValue;
+          const hit = opts.some((n) => String(n) === String(init));
+          if (init == null || !hit) init = opts[Math.floor(opts.length / 2)];
+          vals[key] = init;
+          return `<div style="padding:10px 20px">
+            <div style="font-size:12.5px;color:var(--lx-t3);margin-bottom:7px">${esc(label)}</div>
+            <input data-p="${i}" data-key="${esc(key)}" data-kind="num"
+              value="${esc(init)}" inputmode="decimal"
+              style="width:100%;padding:11px 12px;border-radius:10px;font-size:15px;
+                     border:1px solid var(--lx-line);background:var(--lx-card);color:var(--lx-t1)">
+            <div style="font-size:11px;color:var(--lx-t3);margin-top:5px">可选：${esc(opts[0])} ~ ${esc(opts[opts.length-1])}</div>
+          </div>`;
+        }
+        // 兜底：文本输入（不猜语义，保留原始 key）
+        vals[key] = p.defaultValue != null ? p.defaultValue : "";
+        return `<div style="padding:10px 20px">
+          <div style="font-size:12.5px;color:var(--lx-t3);margin-bottom:7px">${esc(label)}</div>
+          <input data-p="${i}" data-key="${esc(key)}" data-kind="txt" value="${esc(vals[key])}"
+            style="width:100%;padding:11px 12px;border-radius:10px;font-size:15px;
+                   border:1px solid var(--lx-line);background:var(--lx-card);color:var(--lx-t1)">
+        </div>`;
+      }).join("");
+
+      sheet.innerHTML = `<div style="font-size:16px;font-weight:500;padding:0 20px 6px">${esc(item.label)}</div>
+        ${rows}
+        <div style="display:flex;gap:10px;padding:14px 20px 0">
+          <div id="ok" style="flex:1;text-align:center;padding:13px 0;border-radius:12px;
+               background:var(--lx-blue);color:#fff;font-size:15px;cursor:pointer">确定</div>
+          <div id="cx" style="flex:1;text-align:center;padding:13px 0;border-radius:12px;
+               font-size:15px;color:var(--lx-t3);border:1px solid var(--lx-line);cursor:pointer">取消</div>
+        </div>`;
+      ov.appendChild(sheet);
+      document.body.appendChild(ov);
+
+      // 选项高亮 + 单选
+      sheet.querySelectorAll("[data-p]").forEach((box) => {
+        const key = box.dataset.key;
+        const multi = box.dataset.multi === "true";
+        if (box.tagName === "INPUT") {
+          box.addEventListener("input", () => { vals[key] = box.value; });
+          return;
+        }
+        const paint = () => box.querySelectorAll("[data-v]").forEach(el => {
+          const on = String(el.dataset.v) === String(vals[key]);
+          el.style.background = on ? "var(--lx-blue)" : "transparent";
+          el.style.color = on ? "#fff" : "";
+        });
+        box.querySelectorAll("[data-v]").forEach(el => {
+          const v = el.dataset.v;
+          const a = () => {
+            if (!multi) vals[key] = v;                 // ★ 不猜多选语义
+            else {
+              const cur = Array.isArray(vals[key]) ? vals[key] : [vals[key]];
+              const i = cur.indexOf(v);
+              if (i >= 0) cur.splice(i, 1); else cur.push(v);
+              vals[key] = cur;
+            }
+            paint();
+          };
+          this._a11y(el, String(v), a);
+          el.addEventListener("click", a);
+        });
+        paint();
+      });
+
+      const close = (r) => { ov.remove(); resolve(r); };
+      const ok = () => {
+        sheet.querySelectorAll("input[data-kind]").forEach((inp) => {
+          const key = inp.dataset.key;
+          vals[key] = inp.dataset.kind === "num" ? Number(inp.value) : inp.value;
+        });
+        close(vals);
+      };
+      sheet.querySelector("#ok").addEventListener("click", ok);
+      sheet.querySelector("#cx").addEventListener("click", () => close(null));
+      this._a11y(sheet.querySelector("#ok"), "确定", ok);
+    });
+  }
+
   _choose(title, labels) {
     return new Promise((resolve) => {
       const ov = document.createElement("div");

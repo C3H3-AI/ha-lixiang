@@ -192,6 +192,18 @@ def _mk(key, spec):
     return SensorEntityDescription(**kw)
 
 
+def _task_dict_describe(coordinator) -> str:
+    """任务字典的一行摘要（含拉取错误），供诊断属性使用。"""
+    try:
+        from . import task_dict as _td
+
+        desc = _td.describe(getattr(coordinator, "task_dict", None))
+        err = getattr(coordinator, "task_dict_error", "") or ""
+        return f"{desc}｜{err}" if err else desc
+    except Exception:  # noqa: BLE001
+        return "未知"
+
+
 SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(key="online_status", name="在线状态", icon="mdi:car-connected"),
     # ═══ 2026-10-11 M 系（理想ONE）实时状态通道 ═══
@@ -443,6 +455,9 @@ class LiTaskMasterSensor(CoordinatorEntity, SensorEntity):
             # ★ 拉取失败时这里会显示具体错误（HTTP 状态/服务端响应），
             #   成功后自动消失 —— 排查"任务数=0"先看这个属性
             "拉取错误": (self.coordinator.data or {}).get("task_error") or "无",
+            # ★ 条件/动作字典（服务端下发）：摘要 + 拉取错误，
+            #   便于判断"新建任务表单为空"是字典没拿到还是别的原因。
+            "字典": _task_dict_describe(self.coordinator),
         }
 
 

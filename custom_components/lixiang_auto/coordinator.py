@@ -74,6 +74,24 @@ def _fail_if_credential(err: BaseException) -> None:
         ) from err
 
 
+def _config_dir(hass) -> str:
+    """取 HA 配置目录。
+
+    ★ `hass.config.path` 在不同 HA 版本里是**属性**或**方法**（实测新版是方法），
+      直接 getattr 取属性会拿到 bound method → os.path.join 抛 TypeError。
+    """
+    cfg = getattr(hass, "config", None)
+    if cfg is None:
+        return ""
+    path = getattr(cfg, "path", None)
+    if callable(path):
+        try:
+            path = path()
+        except Exception:  # noqa: BLE001
+            return ""
+    return str(path) if isinstance(path, str) else ""
+
+
 class LiCarCoordinator(DataUpdateCoordinator[dict]):
     """理想汽车数据协调器.
 
@@ -115,6 +133,10 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
         self._task_ts: dict[str, float] = {}
         self._task_cache: dict[str, list] = {}
         self._task_error: dict[str, str] = {}   # route_id → 最近一次拉取错误
+        # ★ 2026-10-11：任务条件/动作字典（服务端下发，见 task_dict.py）
+        #   启动时读本地 → 立即可用；后台按新鲜度刷新，不阻塞 UI。
+        self._task_dict: dict | None = None
+        self._task_dict_error: str = ""
         # ★ 2026-10-10：账号角色缓存（True=车主 False=非车主 None=未知）。
         #   角色判定要走同步 HTTP（get_vehicles），不能在事件循环里调 ——
         #   否则触发 HA blocking-call 告警（实测）。缓存 6 小时。
@@ -349,6 +371,62 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
         if seen:
             return False             # 全部为 False → 离线
         return None                  # 无有效值 → 未知
+
+    # ---------- 任务条件/动作字典（服务端下发 + 本地持久化）----------
+    @property
+    def task_dict(self) -> dict | None:
+        """条件/动作字典（可能为 None = 尚未获取）。"""
+        return self._task_dict
+
+    @property
+    def task_dict_error(self) -> str:
+        """最近一次拉取失败原因（成功或用缓存时为空）。"""
+        return self._task_dict_error
+
+    async def async_load_task_dict(self) -> None:
+        """启动时调用：先读本地（UI 立即可用），再按新鲜度后台刷新。"""
+        from . import task_dict as _td
+
+        config_dir = _config_dir(self.hass)
+        # ★ 文件 IO 必须走 executor —— 直接 open() 会触发 HA 的
+        #   "Detected blocking call to open" 告警（实测）。
+        cached = await self.hass.async_add_executor_job(_td.load, config_dir) if config_dir else None
+        if cached:
+            self._task_dict = cached
+        if not config_dir:
+            return
+        # 无缓存或已过期 → 立即拉一次（首启动没有本地数据，UI 需要它）
+        if cached is None or _td.is_stale(cached):
+            await self.async_refresh_task_dict()
+
+    async def async_refresh_task_dict(self) -> bool:
+        """拉取字典并落盘。**失败不清空已有缓存**（服务端临时不可用不该让 UI 空掉）。"""
+        api = self.li_api
+        if api is None or not hasattr(api, "get_task_dict"):
+            self._task_dict_error = "集成未提供 get_task_dict（请检查部署是否完整）"
+            return False
+        try:
+            raw = await self.hass.async_add_executor_job(api.get_task_dict)
+        except Exception as err:  # noqa: BLE001
+            self._task_dict_error = f"拉取异常：{err}"[:120]
+            return False
+        if not raw:
+            self._task_dict_error = "服务端未返回字典（权限或临时不可用）"
+            return False
+        from . import task_dict as _td
+
+        norm = _td.normalize(raw)
+        if not norm.get("conditions"):
+            self._task_dict_error = "字典内容为空（已保留本地缓存）"
+            return False
+        self._task_dict = norm
+        self._task_dict_error = ""
+        config_dir = _config_dir(self.hass)
+        if config_dir:
+            await self.hass.async_add_executor_job(_td.save, config_dir, norm)
+        c, a = _td.count_items(norm)
+        _LOGGER.info("任务字典已更新：%d 条件 / %d 动作（已落盘）", c, a)
+        return True
 
     def invalidate_task_cache(self) -> None:
         """任务创建/启停成功后调用：清列表时间戳 → 下次刷新立即重拉。
