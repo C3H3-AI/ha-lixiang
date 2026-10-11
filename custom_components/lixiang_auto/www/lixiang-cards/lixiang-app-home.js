@@ -10,7 +10,7 @@
  *   · 卡片行1：空调卡 | 位置卡
  *   · 卡片行2：本月陪伴里程+折线图 | 剩余电量 / 哨兵模式
  *   · 入口：车辆健康 | 任务大师 / 钥匙管理 | 情景模式 / 车辆设置
- *   · 理想AD学习平台（★ 2026-10-12 按车主指示移除「服务专家」卡）
+ *   （★ 2026-10-12 按车主指示移除「服务专家」与「理想AD学习平台」）
  *   · 图标用 _lisa 粗线版
  */
 
@@ -216,8 +216,6 @@ const STYLE = `
 
   .big { background:var(--lx-card); border-radius:18px; padding:18px 16px; }
   .divider { height:1px; background:var(--lx-line); margin:16px 0; }
-  .adrow { display:flex; align-items:center; gap:12px; cursor:pointer; }
-  .adrow .ar { margin-left:auto; color:var(--lx-t3); font-size:18px; }
 
   .toast { position:fixed; left:50%; bottom:90px; transform:translate(-50%,14px);
            background:rgba(0,0,0,.84); color:#fff; font-size:13px; padding:10px 18px;
@@ -614,14 +612,6 @@ class LixiangAppHome extends HTMLElement {
             <img class="ic" src="${__iconBase}/ic_home_control.webp" alt="">
             <div class="tx"><div class="nm">车辆设置</div></div></div>
         </div>
-        <div class="big">
-          <div class="adrow" id="btn-ad" role="button" tabindex="0">
-            <img class="ic" src="${__iconBase}/ic_home_navigation.webp" alt="">
-            <div class="tx"><div class="nm">理想AD学习平台</div>
-              <div class="sd">辅助驾驶必修课</div></div>
-            <span class="ar">›</span>
-          </div>
-        </div>
       </div>
       <div class="toast" role="status" aria-live="polite"></div>
     `;
@@ -798,9 +788,7 @@ class LixiangAppHome extends HTMLElement {
       this._a11y(senEl, "切换哨兵模式", act);
       senEl.addEventListener("click", act);
     }
-    // ★ 2026-10-12：车主指示「专家服务模块不要了」→ 已移除服务专家卡
-    //   （保留「理想AD学习平台」入口）
-    wire("#btn-ad", nav.ad);
+    // ★ 2026-10-12：车主指示移除「服务专家」与「理想AD学习平台」两个入口
 
     this._built = true;
   }
@@ -1157,6 +1145,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: CARD_TAG,
   name: "理想车控首页（v3 · 对齐 App）",
-  description: "8 圆按钮 · 双态 3D · 空调/位置/里程/电量/哨兵 · 各页入口 · 理想AD学习平台",
+  description: "8 圆按钮 · 双态 3D · 空调/位置/里程/电量/哨兵 · 各页入口",
   preview: true,
 });
