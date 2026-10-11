@@ -66,6 +66,7 @@ def harness(cfg: dict, states: dict) -> str:
         "    return null; },\n"
         "  _st(id) { return (id && this._hass) ? this._hass.states[id] : null; },\n"
         "  _toast(msg, kind) { TOASTS.push([msg, kind || '']); },\n"
+        "  async _ensureDict() { return false; },   // 桩：默认走旧简表路径\n"
         "  async _choose(title, labels) { PICKED.push(labels); return 0; },\n"
         "  _draft: { trigger: null },\n"
         "  _render() {},\n"
