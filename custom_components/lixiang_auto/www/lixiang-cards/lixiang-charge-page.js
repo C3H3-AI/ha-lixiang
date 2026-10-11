@@ -49,6 +49,16 @@ const I18N = {
   min: "分钟",
 };
 
+/** ★ 2026-10-11：充电类型筛选（对齐 App）。
+ *  value 直传服务端 charging_type：0=聚合全部 / 1=DC 直流 / 2=AC 交流 /
+ *  "hpc"=理想超充(服务端聚合 5C+4C5C)。 */
+const _CTYPES = [
+  { value: 0,     label: "全部" },
+  { value: 2,     label: "交流慢充" },
+  { value: 1,     label: "直流快充" },
+  { value: "hpc", label: "理想超充" },
+];
+
 const STYLE = `
   @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_medium.ttf");  font-weight:500; font-display:swap; }
@@ -137,6 +147,15 @@ const STYLE = `
 
   /* ── 记录（年折叠）── */
   .sect { padding:18px 20px 0; }
+  /* ★ 2026-10-11：充电类型筛选（对齐 App 的「全部/交流慢充/直流快充/理想超充」）*/
+  .ctabs { display:flex; gap:22px; padding:2px 16px 0; overflow-x:auto;
+           -webkit-overflow-scrolling:touch; }
+  .ctab { font-size:14px; color:var(--lx-t3); padding:9px 0 11px; cursor:pointer;
+          white-space:nowrap; position:relative; transition:color .15s; }
+  .ctab:hover { color:var(--lx-t2); }
+  .ctab.on { color:var(--lx-t1); font-weight:600; }
+  .ctab.on::after { content:""; position:absolute; left:0; right:0; bottom:5px;
+                    height:2.5px; border-radius:2px; background:var(--lx-blue); }
   .sect h2 { font-size:14px; font-weight:500; margin:0 0 10px; }
   .year { border-radius:14px; background:var(--lx-card); margin-bottom:10px; overflow:hidden; }
   .yhead { display:flex; align-items:center; min-height:52px; padding:0 16px;
@@ -278,6 +297,9 @@ class LixiangChargePage extends HTMLElement {
     this._openYears = new Set();
     this._selMonth = null;
     this._years = null;
+    // ★ 充电类型筛选：默认 0=全部（聚合 4 种类型，与 App 一致）
+    if (this._ctIdx === undefined) { this._ctIdx = 0; }
+    if (this._ctype === undefined) { this._ctype = _CTYPES[0].value; }
     this._monthRecords = null;
     this._built = false;
   }
@@ -358,6 +380,12 @@ class LixiangChargePage extends HTMLElement {
         <span class="pill" id="p-appt"><span class="d"></span>${I18N.appt} <b id="v-appt">—</b></span>
         <span class="pill" id="p-fault"><span class="d"></span>${I18N.fault} <b id="v-fault">—</b></span>
       </div>
+      <div class="ctabs" id="ctabs" role="tablist"
+           aria-label="${I18N.history}${I18N.chargeType}">
+        ${_CTYPES.map((c, i) => `<span class="ctab${i === 0 ? " on" : ""}" role="tab"
+            data-ct="${i}" tabindex="0"
+            aria-selected="${i === 0 ? "true" : "false"}">${c.label}</span>`).join("")}
+      </div>
       <div class="sect">
         <h2>${I18N.history}</h2>
         <div id="years"><div class="empty">${I18N.loading}</div></div>
@@ -374,6 +402,8 @@ class LixiangChargePage extends HTMLElement {
       history.pushState(null, "", p);
       this.dispatchEvent(new CustomEvent("location-changed", { bubbles: true, composed: true }));
     });
+    // ★ 2026-10-11：充电类型筛选绑定（漏了这行就只是"画了不响应"）
+    this._bindCTypes();
     const rf2 = this.querySelector("#refresh");
     const doRefresh2 = () => this._refreshAll();
     this._a11y(rf2, "刷新数据", doRefresh2);
@@ -515,11 +545,48 @@ class LixiangChargePage extends HTMLElement {
     }
   }
 
+  /** ★ 2026-10-11：绑定充电类型筛选（切换后重新拉取该类型的统计）。 */
+  _bindCTypes() {
+    const box = this.querySelector("#ctabs");
+    if (!box) return;
+    box.querySelectorAll(".ctab").forEach((el) => {
+      const i = Number(el.dataset.ct);
+      const a = () => this._switchCType(i);
+      this._a11y(el, _CTYPES[i] ? _CTYPES[i].label : "筛选", a);
+      el.addEventListener("click", a);
+      // 键盘可达（role=tab）
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); a(); }
+      });
+    });
+  }
+
+  _switchCType(i) {
+    if (!_CTYPES[i] || this._ctIdx === i) return;
+    this._ctIdx = i;
+    this._ctype = _CTYPES[i].value;
+    // 视觉：选中态 + aria
+    this.querySelectorAll(".ctab").forEach((el, k) => {
+      const on = k === i;
+      el.classList.toggle("on", on);
+      el.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    // 数据：清缓存 → 重新拉该类型（_fetchStats 的守卫依赖 _years 为空）
+    this._years = null;
+    this._selMonth = null;
+    this._error = null;
+    const box = this.querySelector("#years");
+    if (box) box.innerHTML = `<div class="empty">${I18N.loading}</div>`;
+    this._fetchStats();
+  }
+
   async _fetchStats() {
     if (!this._hass || this._years || this._fetching) return;
     this._fetching = true;
     try {
-      const r = await this._hass.callService("lixiang_auto", "get_charge", {}, undefined, true, true);
+      // ★ 带上当前筛选类型（0=全部聚合 / 1=DC / 2=AC / "hpc"=理想超充）
+      const r = await this._hass.callService("lixiang_auto", "get_charge",
+        { charging_type: this._ctype }, undefined, true, true);
       const payload = (r && r.response) || r;
       const first = payload && Object.values(payload)[0];
       const rows = first && first.data;   // [{year, month, chargingTimes, chargingCapacity}]
