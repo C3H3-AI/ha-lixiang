@@ -61,7 +61,11 @@ from __future__ import annotations
 # 匹配规则：path.endswith(suffix)
 VALUE_MAPS: dict[str, dict] = {
     # ---------- 座椅加热/通风（0=关，1/2/3=档位）----------
+    #   [实测] 2026-10-11 车主确认：1/2/3 即 1档/2档/3档（与旧表一致，非推翻）
+    #   ⚠️ App 侧静态查不到该对照（只有路径 `Vehicle.Cabin.Seat.*SeatHeatState`
+    #      与 getter 名，无判值/文案）→ 语义只能由实测给定。
     "SeatHeatState":        {0: "关闭", 1: "1档", 2: "2档", 3: "3档"},
+    #   [实测] 2026-10-11 车主确认（同上）
     "SeatVentilationState": {0: "关闭", 1: "1档", 2: "2档", 3: "3档"},
     "WarmOnOff":            {0: "关闭", 1: "开启"},
 
