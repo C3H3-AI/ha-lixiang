@@ -9,8 +9,10 @@
 - `.srvrow` / `.cbtn` 两组 CSS（共 8 条规则）
 - 卡片 `description` 里的"服务专家"字样
 
-★ **保留**「理想AD学习平台」入口（`.adrow` / `btn-ad`）—— 车主只说了"专家服务模块"，
-  没有让删 AD 学习平台。本测试专门守住这一点，防止后人顺手把整块 `.big` 删掉。
+第二轮（同日）：车主追加「**学习平台也不要**」→ 连同 AD 学习平台一并移除。
+
+★ 但 `.big` **样式必须保留** —— 它有 3 处使用（里程卡数值、电量卡数值、以及那个
+  已被删掉的 AD 容器）。删 CSS 会连带破坏里程/电量卡版式。本测试守住这一点。
 """
 from __future__ import annotations
 
@@ -69,27 +71,56 @@ class TestExpertServiceRemoved:
         assert "服务专家" not in m.group(1), "卡片描述还在提服务专家"
 
 
-class TestAdPlatformKept:
-    """★ 防误删：车主只让删服务专家，AD 学习平台应保留。"""
+class TestAdPlatformRemoved:
+    """第二轮：车主「学习平台也不要」→ AD 学习平台入口也移除。"""
 
-    def test_ad_row_still_present(self):
+    def test_ad_row_gone(self):
         s = _strip_comments(_src())
-        assert 'class="adrow" id="btn-ad"' in s, "「理想AD学习平台」入口被误删"
-        assert "理想AD学习平台" in s
+        assert 'class="adrow"' not in s, "AD 学习平台行还在"
+        assert 'id="btn-ad"' not in s, "AD 入口按钮还在"
 
-    def test_ad_binding_kept(self):
+    def test_ad_binding_gone(self):
         s = _strip_comments(_src())
-        assert 'wire("#btn-ad", nav.ad)' in s, "AD 入口绑定丢了"
+        assert 'wire("#btn-ad"' not in s, "还绑着已删除的 AD 入口"
 
-    def test_ad_css_kept(self):
+    def test_ad_css_gone(self):
         s = _strip_comments(_src())
-        assert re.search(r'^\s*\.adrow\b', s, re.M), "缺失 .adrow 样式"
+        assert not re.search(r'^\s*\.adrow\b', s, re.M), "残留 .adrow 样式"
 
-    def test_big_container_kept(self):
-        """`.big` 是卡片外壳（背景/圆角/内边距），去掉会破坏版式。"""
+    def test_no_ad_text(self):
+        s = _src()
+        m = re.search(r'description:\s*"([^"]*)"', s)
+        assert m and "AD学习" not in m.group(1), "卡片描述还在提 AD 学习平台"
+
+
+class TestBigContainerPreserved:
+    """★★ 关键防误删：`.big` 是**共用样式**，删了会破坏里程/电量卡。
+
+    `class="big"` 有 3 处使用：里程卡数值、电量卡数值、以及被删掉的 AD 容器。
+    删掉 AD 容器后应剩 **2 处**，且 `.big { … }` 规则必须还在。
+    """
+
+    def test_big_css_kept(self):
         s = _strip_comments(_src())
-        assert re.search(r'^\s*\.big\s*\{', s, re.M), "缺 .big 样式"
-        assert '<div class="big">' in s, "缺 .big 容器"
+        assert re.search(r'^\s*\.big\s*\{', s, re.M), \
+            ".big 样式被误删 —— 里程/电量卡的数值容器会失去版式"
+
+    def test_big_still_used_twice(self):
+        s = _strip_comments(_src())
+        assert s.count('class="big"') == 2, \
+            "删掉 AD 容器后应剩 2 处 .big（里程卡 + 电量卡）"
+
+    def test_big3d_untouched(self):
+        """`.big3d`（3D 车模 iframe 容器）名字相近，不能被误伤。
+
+        ★ 断言必须落在**具体规则**上 —— `.big3d` 在文件里出现 10 次，
+          只查"字符串存在"的话，改坏其中一条规则测试照样绿（本测试初版就被骗过）。
+        """
+        s = _strip_comments(_src())
+        assert re.search(r'^\s*\.big3d\s*\{', s, re.M), "缺 .big3d 主样式规则"
+        assert ".big3d, .big3d iframe" in s, "big3d 的 touch-action 规则被改动"
+        assert ".big3d iframe {" in s, "缺 big3d iframe 规则"
+        assert 'class="big3d"' in s, "缺 big3d 容器"
 
 
 class TestSyntax:
