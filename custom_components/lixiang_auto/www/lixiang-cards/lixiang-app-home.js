@@ -65,6 +65,13 @@ const STYLE = `
   .root.stuck .head .title { font-size:18px; line-height:1.25; }
   .root.stuck .head .ranges { margin-top:0; gap:10px; }
   .root.stuck .head .parked { margin-top:0; font-size:12px; }
+  /* 插枪徽标（插电时显示） */
+  .plug { display:inline-flex; align-items:center; gap:3px; margin-left:8px;
+          vertical-align:middle; font-size:11px; padding:2px 7px; border-radius:8px;
+          color:#0A7B3E; background:rgba(10,123,62,.10); }
+  .plug img { width:12px; height:12px; display:block; }
+  .plug b { font-weight:500; }
+  [data-theme="dark"] .plug { color:#30D158; background:rgba(48,209,88,.14); }
   .root.stuck .head .mini { display:none; }
   .hrow { display:flex; align-items:flex-start; gap:10px; }
   .hleft { flex:1; min-width:0; }
@@ -541,6 +548,13 @@ class LixiangAppHome extends HTMLElement {
                 <span class="v" id="v-fuel">—</span><span class="u">km</span></span>
             </div>
             <div class="parked" id="v-status">—</div>
+            <!-- ★ 2026-10-12：插电标识。App 在【插枪时】才显示充电桩
+                 （车主两次截图对比确认）；我们用徽标表达同一信息，
+                 且放在头部 —— 3D 展开/收起都能看到。 -->
+            <span class="plug" id="v-plug" style="display:none" role="status">
+              <img src="${__iconBase}/icon_charge_lighting.webp" alt="" onerror="this.style.display='none'">
+              <b id="v-plug-t">已插枪</b>
+            </span>
           </div>
           <div class="mini" id="mini" role="button" tabindex="0" aria-label="展开车辆 3D"></div>
         </div>
@@ -1055,6 +1069,21 @@ class LixiangAppHome extends HTMLElement {
     const sen = this._eid("sentry") ? this._on(this._eid("sentry")) : false;
     const senEl = q("#c-sentry"); if (senEl) senEl.className = "card sentry" + (sen ? " on" : "");
     q("#v-sentry").textContent = this._eid("sentry") ? (sen ? "已激活" : "未激活") : "未接入";
+
+    // ★ 插电标识（对齐 App：插枪时才有充电桩/插枪提示）。
+    //   交流枪与直流枪任一插入即显示；都没有则整块隐藏（不留空隙）。
+    const plugEl = q("#v-plug");
+    if (plugEl) {
+      const acGun = this._on(this._eid("ac_gun"));
+      const dcGun = this._on(this._eid("dc_gun"));
+      if (acGun || dcGun) {
+        plugEl.style.display = "";
+        const pt = q("#v-plug-t");
+        if (pt) pt.textContent = dcGun ? "直流快充已插枪" : "交流慢充已插枪";
+      } else {
+        plugEl.style.display = "none";
+      }
+    }
 
     // 副标题显示车型（真实数据）；拿不到就留空，不再显示假状态
     const vk = q("#v-key");
