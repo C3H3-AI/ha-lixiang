@@ -115,9 +115,17 @@ const STYLE = `
   .m .mu { font-size:11px; color:var(--lx-t3); margin-left:3px; }
   .m.sel .mn { color:var(--lx-blue); font-weight:500; }
   .daily { padding:4px 0 8px; }
-  .drow { display:flex; justify-content:space-between; padding:7px 0; font-size:12.5px; }
-  .drow .dd { color:var(--lx-t2); }
-  .drow .dn { font-family:"LxNum"; font-weight:500; }
+  .drow { display:flex; align-items:center; gap:8px; padding:7px 0; font-size:12.5px; }
+  .drow .dd { color:var(--lx-t2); min-width:44px; }
+  .drow .dn { font-family:"LxNum"; font-weight:500; min-width:64px; text-align:right; }
+  /* ★ 2026-10-11 迷你条：一眼看出"哪天跑得多"（原来只有数字，要逐行对比） */
+  .dbar { flex:1; height:6px; border-radius:3px; background:var(--lx-line,rgba(0,0,0,.06)); overflow:hidden; }
+  .dbar > i { display:block; height:100%; border-radius:3px; background:#2C6BFF; }
+  .drow.top .dd, .drow.top .dn { color:var(--lx-t1); font-weight:600; }
+  .drow.top .dbar > i { background:#3CC75A; }
+  .sortbtn { font-size:12px; color:var(--lx-t3); cursor:pointer; padding:2px 6px;
+             border:1px solid var(--lx-line,rgba(0,0,0,.08)); border-radius:7px; }
+  .sortbtn.on { color:#2C6BFF; border-color:#2C6BFF; }
   .tabs { display:flex; gap:8px; margin:6px 0 10px; }
   .tab { padding:6px 13px; border-radius:9px; font-size:12px; cursor:pointer;
          background:var(--lx-bg); color:var(--lx-t3); }
@@ -413,18 +421,39 @@ class LixiangEnergyPage extends HTMLElement {
         <div class="tab${this._tab === "mileage" ? " on" : ""}" data-tab="mileage">每日里程</div>
         <div class="tab${this._tab === "elec" ? " on" : ""}" data-tab="elec">每日耗电</div>
         <div class="tab${this._tab === "fuel" ? " on" : ""}" data-tab="fuel">每日耗油</div>
-      </div>`;
+      </div>
+      <div class="sortbtn${this._sort ? " on" : ""}" id="dsort" role="button" tabindex="0"
+           aria-label="按数值排序">${this._sort ? "按数值 ↓" : "按日期"}</div>`;
     if (!rows.length) { box.innerHTML = head + `<div class="empty">${I18N.noData}</div>`; this._bindTabs(); return; }
     const pick = { mileage:"mileage", elec:"elecEnergy", fuel:"fuelConsumption" }[this._tab];
     const unit = this._tab === "mileage" ? "km" : (this._tab === "elec" ? "kWh" : "L");
+    // ★ 迷你条以【当月最大值】为基准；排序可选（默认按日期）
+    const max = Math.max(...rows.map(r => Number(r[pick]) || 0), 0);
+    const list = this._sort
+      ? rows.slice().sort((a, b) => (Number(b[pick]) || 0) - (Number(a[pick]) || 0))
+      : rows;
     box.innerHTML = head + `<div style="font-size:12px;color:var(--lx-t3);padding:4px 0 6px">
         ${this._selMonth.year}年${this._selMonth.month}月</div>` +
-      rows.map((r) => {
-        const v = r[pick];
-        return `<div class="drow"><span class="dd">${r.dayOfMonth} 日</span>
+      list.map((r) => {
+        const v = Number(r[pick]) || 0;
+        const pct = max > 0 ? Math.max(v > 0 ? 3 : 0, Math.round(v / max * 100)) : 0;
+        const top = max > 0 && v === max;
+        return `<div class="drow${top ? " top" : ""}">
+          <span class="dd">${r.dayOfMonth} 日</span>
+          <span class="dbar"><i style="width:${pct}%"></i></span>
           <span class="dn">${v ? v + " " + unit : "—"}</span></div>`;
       }).join("");
     this._bindTabs();
+    this._bindSort();
+  }
+
+  /** 排序切换（按日期 / 按数值）——★ 2026-10-11 */
+  _bindSort() {
+    const b = this.querySelector("#dsort");
+    if (!b) return;
+    const act = () => { this._sort = !this._sort; this._renderDaily(); };
+    this._a11y(b, b.textContent, act);
+    b.addEventListener("click", act);
   }
 
   _bindTabs() {
