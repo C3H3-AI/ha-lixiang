@@ -137,6 +137,19 @@ def _custom(control_type: str, level: int) -> dict:
 
 # (唯一后缀, 名称, 图标, 状态key, controlType)
 # (唯一后缀, 名称, 图标, 状态key, controlType, 所属功能)
+def _state_signal_present(coordinator, state_key: str | None) -> bool:
+    """该信号是否在上报（用于"能力表没有开关"的车型匹配）。
+
+    ★ 状态信号存在 = 硬件存在（App 侧同款思路：能力表未列但有状态就说明支持）。
+      state_key 为 None（如前排通风，无状态回读）→ 一律放行。
+    """
+    if not state_key:
+        return True
+    vss = (getattr(coordinator, "data", None) or {}).get("vss") or {}
+    sig = vss.get(state_key) or {}
+    return sig.get("value") is not None
+
+
 SWITCHES = (
     # ★ 2026-09-28 方向盘加热从 fan 平台迁回 switch（用户反馈「只有开关，没有三档」）
     #
@@ -233,6 +246,28 @@ SWITCHES = (
     #   ✅ 实车实测：开/关均生效（660s 后按 App 语义自动停止）
     ("mirror_heat", "后视镜加热", "mdi:mirror",
      "mirror_heat_left", "__RM_CTRL__", None),
+
+    # ★ 2026-10-11 新增：后视镜**折叠/展开**（与后视镜加热共用 rmCtrl，仅 ctrlType 不同）
+    #   APK 反编译实证（XVehicleJobHelper.remoteVehOpen/CloseRearMirro）：
+    #     cmdKey  = rmCtrl
+    #     cmdData = {"ctrlType":"FOLD", "ctrlValue":"ON"(展开)/"OFF"(收起)}
+    #     expireAt = 0x7530 = 30000ms（30 秒超时）
+    #   状态源：mirror_left / mirror_right（LRearMirro/RRearMirro，**1=收起、0=展开**）
+    #   ★ 车型匹配：该能力表没有"后视镜折叠"开关（App 认为全系标配）→
+    #     改为**状态信号存在性门控**：车机能上报折叠状态才创建该实体，
+    #     手动折叠镜的老车自然不出现（见 setup 里的 _mirror_fold_supported）
+    ("mirror_fold", "后视镜折叠", "mdi:car-door",
+     "mirror_left", "__RM_FOLD__", None),
+
+    # ★ 2026-10-11 新增：前排通风（ABS 风道，与哨兵共用 ssCtrl，仅 ctrlType 不同）
+    #   APK 反编译实证（XVehicleJobHelper.remoteVehAbatVentControl）：
+    #     cmdKey  = ssCtrl
+    #     cmdData = {"ctrlType":"ABS", "fPos":"2", "rPos":1}   ← 主驾 2 档、副驾 1 档
+    #     （值来自 smali const/4: fPos=2, rPos=1；TimeOut=30000ms）
+    #   状态源：VSS 无对应路径（App 侧也无状态回读）→ 开=乐观态，靠 last_command_result 佐证
+    #   ★ 车型匹配：用户确认**全系都有**前排通风；无能力开关（全系默认能力）
+    ("front_vent", "前排通风", "mdi:air-conditioner",
+     None, "__ABAT_VENT__", None),
 )
 
 
@@ -259,6 +294,12 @@ async def async_setup_entry(
     specs = [
         spec for spec in SWITCHES
         if len(spec) < 6 or features.get(spec[5], True)
+        # ★ 2026-10-11：状态存在性门控（车型匹配的第二条依据）。
+        #   App 能力表里【没有】"后视镜折叠"开关（认为全系标配），
+        #   所以按【车机是否上报该状态】决定：能上报 LRearMirro/RRearMirro
+        #   才说明这台车真能电动折叠；手动镜的老车自然不出现该实体。
+        #   （前排通风全系都有且无状态回读 → 不走这条）
+        and _state_signal_present(coordinator, spec[3])
     ]
     skipped = [spec[1] for spec in SWITCHES if spec not in specs]
     if skipped:
@@ -362,6 +403,28 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
                     vss_val = None if iv == -1 else iv != 0
                 except (TypeError, ValueError):
                     vss_val = None
+            elif self._control_type == "__RM_FOLD__":
+                # ★ 后视镜折叠：1 = 收起（折叠），0 = 展开（2026-10-11 实测修正）
+                #   2026-10-11 之前这里曾按"0=收起"解读 → 显示颠倒，已修正
+                _vss = (self.coordinator.data or {}).get("vss", {})
+
+                def _fold(kk: str) -> bool | None:
+                    sig2 = _vss.get(kk) or {}
+                    vv = sig2.get("value")
+                    if vv is None:
+                        return None
+                    try:
+                        return int(float(vv)) == 1      # 1 = 收起
+                    except (TypeError, ValueError):
+                        return bool(vv)
+
+                _l2, _r2 = _fold("mirror_left"), _fold("mirror_right")
+                _vals = [x for x in (_l2, _r2) if x is not None]
+                vss_val = (any(_vals) if _vals else None)   # 任一收起 → on（收起）
+            elif self._control_type == "__ABAT_VENT__":
+                # ★ 前排通风：App/VSS 均无状态回读 → 只能靠乐观态
+                #   （last_command_result 会记录服务端 pushState 作为佐证）
+                vss_val = None
             elif self._control_type == "__RM_CTRL__":
                 # ★ 后视镜加热：左/右任一非 0 → on；两路皆缺 → unknown
                 _vss = (self.coordinator.data or {}).get("vss", {})
@@ -416,6 +479,22 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
                 "cmd_data_协议": '开={"cpOpen":"ON"} / 关={"cpOpen":"OFF"}',
                 "cmd_data_来源": "APK 反编译 XVehicleJobHelper.handleCmdKey（理想 App 8.27.0）",
                 "实车验证": "2026-10-09 实测开/关均生效",
+            })
+        elif self._control_type == "__RM_FOLD__":
+            attrs.update({
+                "cmd_key": "rmCtrl",
+                "cmd_data_协议": '收起={"ctrlType":"FOLD","ctrlValue":"OFF"} / 展开="ON"',
+                "cmd_data_来源": "APK 反编译 XVehicleJobHelper.remoteVehOpen/CloseRearMirro（8.27.0）",
+                "状态语义": "on = 收起（LRearMirro=1），off = 展开（=0）",
+                "实车验证": "⚠️ 待验证（需真车点一次；无法由自动化代劳）",
+            })
+        elif self._control_type == "__ABAT_VENT__":
+            attrs.update({
+                "cmd_key": "ssCtrl",
+                "cmd_data_协议": '开={"ctrlType":"ABS","fPos":2,"rPos":1} / 关=fPos=0,rPos=0',
+                "cmd_data_来源": "APK 反编译 XVehicleJobHelper.remoteVehAbatVentControl（8.27.0）",
+                "状态回读": "无（App 与 VSS 均为控制型，状态以乐观态 + last_command_result 为准）",
+                "实车验证": "⚠️ 待验证（需真车点一次）",
             })
         elif self._control_type == "__RM_CTRL__":
             # ★ 后视镜加热（2026-10-07 APK 反编译实证；2026-10-09 实车实测通过）
@@ -561,6 +640,22 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
             #     li_api.LONG_RUNNING_CMD_KEYS 已含 rmCtrl（jobExpire=900）
             cmd_key = "rmCtrl"
             cmd_data = {"ctrlType": "HEAT", "ctrlValue": "ON" if level != 0 else "OFF"}
+        elif self._control_type == "__RM_FOLD__":
+            # ★ 后视镜折叠/展开：cmdKey=rmCtrl，仅 ctrlType 与加热不同（APK 实证）
+            #   开关语义：on = 收起（folded），off = 展开
+            #   ⚠️ 与后视镜加热共用 rmCtrl → 属长命令通道（jobExpire 900s）
+            cmd_key = "rmCtrl"
+            cmd_data = {
+                "ctrlType": "FOLD",
+                "ctrlValue": "OFF" if level != 0 else "ON",   # 收起=OFF/展开=ON（App 原值）
+            }
+        elif self._control_type == "__ABAT_VENT__":
+            # ★ 前排通风：cmdKey=ssCtrl，ctrlType=ABS（APK 实证 remoteVehAbatVentControl）
+            #   fPos/rPos 是【档位】：App 默认 fPos=2、rPos=1（smali const/4）
+            #   开关语义：on = 通风开（主驾 2 档 / 副驾 1 档），off = 关
+            cmd_key = "ssCtrl"
+            cmd_data = ({"ctrlType": "ABS", "fPos": 2, "rPos": 1} if level != 0
+                        else {"ctrlType": "ABS", "fPos": 0, "rPos": 0})
         else:
             cmd_key = CMD_AC
             cmd_data = _custom(self._control_type, level)
