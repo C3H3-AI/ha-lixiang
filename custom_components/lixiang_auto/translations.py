@@ -100,9 +100,14 @@ VALUE_MAPS: dict[str, dict] = {
     "OrderChargingMode":      {0: "未设置", 1: "按时间", 2: "按电价"},
     "MSG_DCDCFltLvl":         {0: "正常", 1: "一级故障", 2: "二级故障", 3: "三级故障"},
     "LowVolPwrMdSts":         {0: "正常", 1: "低压模式"},
-    "LowVolPwrMdFlag":        {0: "关闭", 1: "开启"},
-    "BatteryInsulation":      {0: "未开启", 1: "已开启"},
-    "EVESFltStopChrg":        {0: "正常", 1: "故障"},
+    # ⚠️ 2026-10-11 清理：以下三个键在本表中曾被【定义两次】且文案冲突，
+    #   Python 字典后者覆盖前者 → 前者从未生效（静默丢语义，无任何测试发现）。
+    #     LowVolPwrMdFlag：{关闭,开启} 被 {正常,低电量} 覆盖
+    #     BatteryInsulation：{未开启,已开启} 被 {关闭,开启} 覆盖
+    #     EVESFltStopChrg：{正常,故障} 被 {正常,故障停止充电} 覆盖
+    #   处理：删除被覆盖的那条（**不改变任何用户可见行为**），
+    #        保留生效中的定义；并加守卫禁止重复键再次出现。
+    #   ⚠️ 保留的那条仍属 [推断]：语义待实测确认（勿当成已验证）。
     "CaseCoverStatus":        {0: "未装", 1: "已装"},
     # 开关状态（0=已关闭 / 1=开启中 / 2=已开启）
     # ★ 2026-09-23 源码修正（XDoorDataHandle.smali:310）：
@@ -145,9 +150,11 @@ VALUE_MAPS: dict[str, dict] = {
     "DCChrgngGunActuSts":   {0: "充电枪未插入", 1: "充电枪已插入"},
     "VehicleChrgComplete":  {0: "未完成", 1: "已完成", 2: "未充电"},
     "ChargeFaults":         {0: "正常"},
+    #   [推断] ⚠️ 待实测：曾与上方同名键冲突（见上方清理说明）
     "EVESFltStopChrg":      {0: "正常", 1: "故障停止充电"},
     "ScheduledCharging.Switch": {0: "关闭", 1: "开启"},
     "ScheduledCharging.State":  {0: "未预约", 1: "已预约", 2: "已预约"},
+    #   [推断] ⚠️ 待实测：曾与上方同名键冲突（见上方清理说明）
     "BatteryInsulation":    {0: "关闭", 1: "开启"},
 
     # ---------- 轮胎 ----------
@@ -163,6 +170,7 @@ VALUE_MAPS: dict[str, dict] = {
     # ---------- 其他状态 ----------
     "LowBatteryMode":       {0: "关闭", 1: "开启"},
     "LowVolEngyMngtMd":     {0: "关闭", 1: "开启"},
+    #   [推断] ⚠️ 待实测：与上方同名键曾冲突（见上方清理说明）；语义未验证
     "LowVolPwrMdFlag":      {0: "正常", 1: "低电量"},
     # Vehicle.CarSettings.Privacy.PosService —— 车辆定位服务授权
     # 源码 (XLocationDataHandle):

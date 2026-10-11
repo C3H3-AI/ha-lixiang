@@ -142,6 +142,24 @@ class TestEvidencePolicy:
             "\n→ 新增映射必须：① 标 [实测]/[实证] 并写明依据，"
             "或 ② 先标 [推断] 并把 MAX_UNVERIFIED 一并上调（等于承认这是猜测）")
 
+    def test_no_duplicate_keys(self):
+        """★ 禁止同一键被定义两次（2026-10-11 新增）。
+
+        事故：VALUE_MAPS 里 `LowVolPwrMdFlag` / `BatteryInsulation` /
+        `EVESFltStopChrg` 各被定义**两次**且文案冲突 ——
+        Python 字典后者覆盖前者 → 前者**从未生效**（静默丢语义）。
+        为什么没被任何测试发现：既有测试只验证"能查到值"，
+        从不验证"查到的是不是**对的那一条**"。
+        """
+        seen: dict[str, list[str]] = {}
+        for _, ln in _value_map_lines():
+            key = re.match(r'^\s*"([^"]+)"', ln).group(1)
+            seen.setdefault(key, []).append(ln.strip())
+        dups = {k: v for k, v in seen.items() if len(v) > 1}
+        assert not dups, (
+            f"翻译表存在重复键（后者会静默覆盖前者）：{dups}\n"
+            "→ 合并成一个定义；若语义真的不同，说明字段名选错了，需核对路径")
+
     def test_cap_only_decreases(self):
         """上限必须是非负且合理的整数（防止有人把它改成 9999 绕过守卫）。"""
         assert isinstance(MAX_UNVERIFIED, int)
