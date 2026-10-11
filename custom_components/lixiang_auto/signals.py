@@ -56,7 +56,7 @@ class Semantics(StrEnum):
     LOCKED = "locked"          # 0=已锁 → on = 未落锁
     DOOR_OPEN = "door_open"    # ==1 才开（XDoorDataHandle）
     TRUNK = "trunk"            # 尾门：锁优先聚合（getTrunkState）
-    PLUGGED = "plugged"        # 非0 = 已连接
+    PLUGGED = "plugged"        # AC==2 / DC==1 = 已连接（App 实证；非「非0」）
     CONNECTED = "connected"    # 非0 = 已连接
     ALARM = "alarm"            # 非0 = 告警
     SWITCH_ON = "switch_on"    # 非0 = 开启

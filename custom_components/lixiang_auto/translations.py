@@ -139,8 +139,10 @@ VALUE_MAPS: dict[str, dict] = {
     #   [实测] 2026-10-10 测试机 L6：未插枪时 VSS 返回 15
     "ChargeStatus":         {0: "未充电", 10: "已插枪", 15: "未充电",
                              30: "充电中", 70: "充电中", 130: "充电完成"},
-    "ACChgrActualConnSts":  {0: "充电枪未插入", 1: "充电枪已插入", 2: "充电枪已插入"},
-    "DCChrgngGunActuSts":   {0: "充电枪未插入", 1: "充电枪已插入", 2: "充电枪已插入"},
+    # ★ 2026-10-11 androguard 反汇编实证（LXLiMeshStateDelegate 四处一致）：
+    #   AC == 2 插枪 / DC == 1 插枪；1≠交流插枪态、2≠直流插枪态（旧表误报来源）
+    "ACChgrActualConnSts":  {0: "充电枪未插入", 2: "充电枪已插入"},
+    "DCChrgngGunActuSts":   {0: "充电枪未插入", 1: "充电枪已插入"},
     "VehicleChrgComplete":  {0: "未完成", 1: "已完成", 2: "未充电"},
     "ChargeFaults":         {0: "正常"},
     "EVESFltStopChrg":      {0: "正常", 1: "故障停止充电"},
