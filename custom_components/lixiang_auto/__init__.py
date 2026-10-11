@@ -190,6 +190,45 @@ class LiXiangAssetVersionView(HomeAssistantView):
             content_type="application/javascript")
 
 
+
+class LiXiangTaskDictView(HomeAssistantView):
+    """把任务条件/动作字典暴露给前端卡片。
+
+    ★ 卡片只能访问 `hass`（拿不到 coordinator），所以字典必须经 REST 出去。
+      路径：/lixiang_auto/task-dict.json
+      返回：{ok:true, saved_at, conditions:[...], actions:[...], summary}
+            {ok:false, error:"..."} —— 取不到时**如实报错**，前端据此回退旧简表
+    """
+
+    url = "/lixiang_auto/task-dict.json"
+    name = "api:lixiang_auto:task_dict"
+    requires_auth = False      # 与 asset-version 一致：不含敏感信息
+
+    def __init__(self, hass: HomeAssistant, coordinator=None) -> None:
+        self.hass = hass
+        self._coordinator = coordinator
+
+    async def get(self, request: web.Request) -> web.Response:
+        """返回字典；未获取到时给 ok=false + 原因（前端据此回退，不显示空表单）。"""
+        try:
+            from . import task_dict as _td
+        except Exception as err:  # noqa: BLE001
+            return web.json_response({"ok": False, "error": f"模块不可用：{err}"[:160]})
+        coord = self._coordinator
+        data = getattr(coord, "task_dict", None) if coord else None
+        if not data:
+            err = (getattr(coord, "task_dict_error", "") if coord else "") \
+                or "字典尚未获取（可能首次启动未联网，或服务端未返回）"
+            return web.json_response({"ok": False, "error": err})
+        payload = {
+            "ok": True,
+            "saved_at": data.get("saved_at"),
+            "summary": _td.describe(data),
+            "conditions": data.get("conditions") or [],
+            "actions": data.get("actions") or [],
+        }
+        return web.json_response(payload)
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # ★ 前端卡片静态资源（7 个自定义卡片随集成发布）
     #   URL: /lixiang_auto/lixiang-cards/<name>.js
@@ -315,6 +354,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # 首次刷新（验证凭据）
     await coordinator.async_config_entry_first_refresh()
+    # ★ 2026-10-11：加载任务条件/动作字典（读本地 → 立即可用；后台按新鲜度刷新）。
+    #   放在 first_refresh 之后：此时 hass/lifecycle 就绪，且不阻塞集成加载
+    #   （字典缺失只影响「新建任务」表单，不影响已有任务的展示与开关）。
+    await coordinator.async_load_task_dict()
+    # ★ 任务字典视图：卡片只能访问 hass（拿不到 coordinator）→ 必须经 REST。
+    #   放在这里是因为需要 coordinator 已存在（注册时代码才拿得到它）。
+    try:
+        hass.http.register_view(LiXiangTaskDictView(hass, coordinator))
+    except Exception as _tdverr:  # noqa: BLE001
+        _LOGGER.debug("注册任务字典视图失败（新建任务将回退简表）: %s", _tdverr)
 
     # 车型功能探测（VSS 信号探测法; 失败则全部按不支持处理, 不影响只读实体）
     features: dict[str, bool] = {}
