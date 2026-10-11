@@ -6,6 +6,35 @@
 
 ## 一、快速安装
 
+### ★ 推荐方式：一张卡片（3 步）
+
+```yaml
+# 1) 注册 1 个资源
+/lixiang_auto/lixiang-cards/lixiang-app.js    (module)
+
+# 2) 建 1 个 dashboard 视图，3) 加 1 张卡片
+type: custom:lixiang-app
+```
+
+`lixiang-app` 会在内部**按需加载**全部子卡片（用 `import.meta.url` 解析同级路径，
+所以 `/local/lixiang-cards/` 部署方式同样适用），并提供内部导航。
+
+| 可选配置 | 说明 |
+|---|---|
+| `page: charge` | 起始页（默认 `app`，取值为页面 key：charge/energy/climate/seat/…）|
+| `vin: HLX32XXXXXXXXXXXX` | 多车时指定 |
+| `child: {...}` | 透传给子卡片的额外配置 |
+
+> 总卡片只拦截**能映射到内部页面**的导航（如 `/lixiang/charge`）；
+> HA 自身的路由原样放行，断开时会恢复 `history.pushState`（带引用计数）。
+
+---
+
+## 一之二、分页面安装（高级用法，多视图）
+
+> 下面的方式需要注册 13 个卡片资源并建 13 个视图 —— 仅在你想把某个页面
+> 单独放进现有 dashboard 时需要。**一般用户用上面的「一张卡片」即可。**
+
 ### 1. 注册资源
 
 卡片随集成发布，URL 前缀是 `/<domain>/`：
