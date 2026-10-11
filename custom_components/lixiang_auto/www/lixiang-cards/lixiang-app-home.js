@@ -189,6 +189,10 @@ const STYLE = `
   .mile .axis { display:flex; justify-content:space-between; font-size:10px;
                 color:var(--lx-t3); margin-top:3px; }
   .batt .row { display:flex; align-items:center; gap:9px; }
+  /* 充电中的剩余时间（App 同款：小字 + 闪电） */
+  .batt .batt-remain { display:flex; align-items:center; gap:4px; margin-top:6px;
+                       font-size:12px; color:var(--lx-t2); }
+  .batt .batt-remain .ic { font-size:11px; }
   .batt .row img { width:26px; height:26px; }
   .batt .big { font-family:"LxNum","Licium"; font-size:28px; font-weight:600; line-height:1.05; }
   .batt .big small { font-size:15px; font-weight:500; color:var(--lx-t2); }
@@ -591,6 +595,11 @@ class LixiangAppHome extends HTMLElement {
               <div class="row"><img src="${__iconBase}/ic_home_battery.webp" alt="">
                 <div><div class="big"><span id="v-batt">—</span><small>%</small></div>
                 <div class="lbl" style="margin-top:2px">剩余电量</div></div></div>
+              <!-- ★ 2026-10-11：充电中显示剩余时间（对齐 App「剩余2小时25分钟」）。
+                   非充电态隐藏。数据源：charge_remain_time（ChargeSurplusTime/min） -->
+              <div class="batt-remain" id="batt-remain" style="display:none">
+                <span class="ic">⚡</span><span id="v-remain">—</span>
+              </div>
             </div>
             <div class="card sentry" id="c-sentry" role="button" tabindex="0">
               <img src="${__iconBase}/ic_home_sentry.png" alt="" onerror="this.style.visibility='hidden'">
@@ -1024,6 +1033,23 @@ class LixiangAppHome extends HTMLElement {
 
     q("#v-mile").textContent = (mk => mk == null ? "—" : mk)(this._num(this._eid("month_km")));
     q("#v-batt").textContent = soc == null ? "—" : soc;
+
+    // ★ 2026-10-11：充电中显示「剩余2小时25分钟」（对齐 App）。
+    //   判据：ChargeSurplusTime(剩余充电时间) > 0 —— 无需依赖额外的充电状态实体。
+    //   非充电态（无该实体 / 值为 0 / 未知）→ 整行隐藏，不留空位。
+    const rmEl = q("#batt-remain");
+    if (rmEl) {
+      const rmRaw = this._txt(this._eid("remain_time"));
+      const rmMin = Number(rmRaw);
+      if (rmRaw && Number.isFinite(rmMin) && rmMin > 0) {
+        rmEl.style.display = "";
+        const _h = Math.floor(rmMin / 60), _m = Math.round(rmMin % 60);
+        q("#v-remain").textContent =
+          (_h ? _h + "小时" : "") + (_m ? _m + "分钟" : (_h ? "整" : "—"));
+      } else {
+        rmEl.style.display = "none";
+      }
+    }
 
     const sen = this._eid("sentry") ? this._on(this._eid("sentry")) : false;
     const senEl = q("#c-sentry"); if (senEl) senEl.className = "card sentry" + (sen ? " on" : "");
