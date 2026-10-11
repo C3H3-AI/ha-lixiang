@@ -34,7 +34,11 @@ const STYLE = `
     :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
-  .root { background:var(--lx-bg); color:var(--lx-t1); padding-bottom:14px;
+  /* 2026-10-12：兜底 —— 长内容不得撑破视口（车主："手机上右边溢出"）。
+     真正修复是把 grid 列改成 minmax(0,1fr)；这里再加一道保险。 */
+  :host { display:block; max-width:100%; overflow-x:hidden; }
+  .wrap > *, .row2 > *, .entries > *, .quick > * { min-width:0; }
+  .root { background:var(--lx-bg); color:var(--lx-t1); padding-bottom:14px; overflow-x:hidden;
     font-family:"Licium",-apple-system,"PingFang SC",sans-serif;
     -webkit-tap-highlight-color:transparent; }
   .root[data-theme="light"] { --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
@@ -90,7 +94,8 @@ const STYLE = `
   .big3d, .big3d iframe { touch-action:none; }
   .big3d img { width:100%; height:100%; object-fit:contain; }
 
-  .quick { display:grid; grid-template-columns:repeat(4,1fr); gap:6px;
+  /* minmax(0,1fr)：裸 1fr 的默认 min-width:auto 会让长内容撑破容器 → 手机右侧溢出 */
+  .quick { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px;
            padding:18px 12px 0; }
   /* ★ 车型无快捷功能时的空态（2026-10-11） */
   .qempty { grid-column:1/-1; padding:22px 10px; text-align:center;
@@ -127,7 +132,7 @@ const STYLE = `
   .root.collapsed3d .chev img { transform:rotate(180deg); }
 
   .wrap { padding:12px 20px 0; display:grid; gap:12px; }
-  .row2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .row2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
   .card { background:var(--lx-card); border-radius:18px; padding:16px;
           cursor:pointer; transition:transform .13s, box-shadow .18s; position:relative; }
   .card:hover { box-shadow:0 3px 14px rgba(0,0,0,.07); }
@@ -202,7 +207,7 @@ const STYLE = `
   .sentry .s { font-size:12px; color:var(--lx-t3); margin-top:3px; }
   .sentry.on .t { color:var(--lx-blue); }
 
-  .entries { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .entries { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
   .entry { background:var(--lx-card); border-radius:18px; padding:16px;
            display:flex; align-items:center; gap:12px; cursor:pointer;
            min-height:64px; transition:transform .13s, box-shadow .18s; }
@@ -770,8 +775,11 @@ class LixiangAppHome extends HTMLElement {
     wire("#e-key", nav.vinfo || "/lixiang/vinfo");
     wire("#e-task", nav.task || "/lixiang/task");
     wire("#e-scene", nav.scene || "/lixiang/scene");
-    wire("#e-health", nav.health);
-    wire("#e-setting", nav.setting);
+    // 2026-10-12 修复（车主："车辆设置二级页面错误"）：这两行此前没有默认路径。
+    // nav.setting / nav.health 未配置时是 undefined → go(undefined) → if (!p) return
+    // → 点击完全没反应。与其他入口一致，补上默认路径。
+    wire("#e-health", nav.health || "/lixiang/health");
+    wire("#e-setting", nav.setting || "/lixiang/setting");
     // 哨兵卡：点击直接切换（可控制），键盘同样支持
     const senEl = this.querySelector("#c-sentry");
     if (senEl) {
