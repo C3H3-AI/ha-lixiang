@@ -40,8 +40,15 @@ const I18N = {
   totalKwh: "累计充电量",
   history: "充电记录",
   dc: "直流",
+  // ★ 2026-10-11：明细标签按充电类型显示（此前只有"直流/交流"两种，
+  //   5C/4C 超充被错误地标成了"交流"）
+  ctDc: "直流快充",
+  ctAc: "交流慢充",
+  ct5c: "5C超充",
+  ct4c: "4C超充",
   ac: "交流",
   times: "次",
+  chargePrefix: "充电",
   noData: "暂无数据",
   loading: "加载中…",
   settings: "充电设置",
@@ -156,32 +163,42 @@ const STYLE = `
   .ctab.on { color:var(--lx-t1); font-weight:600; }
   .ctab.on::after { content:""; position:absolute; left:0; right:0; bottom:5px;
                     height:2.5px; border-radius:2px; background:var(--lx-blue); }
+  .rec .tag.hpc { color:#B45309; background:rgba(180,83,9,.10); }
+  @media (prefers-color-scheme: dark) {
+    .rec .tag.hpc { color:#FBBF24; background:rgba(251,191,36,.14); }
+  }
   .sect h2 { font-size:14px; font-weight:500; margin:0 0 10px; }
-  .year { border-radius:14px; background:var(--lx-card); margin-bottom:10px; overflow:hidden; }
-  .yhead { display:flex; align-items:center; min-height:52px; padding:0 16px;
-           cursor:pointer; transition:background .15s; }
-  .yhead:hover { background:rgba(0,0,0,.03); }
-  .yhead .yn { font-size:15px; font-weight:500; }
-  .yhead .ys { margin-left:10px; font-size:12px; color:var(--lx-t3); }
-  .yhead .ar { margin-left:auto; color:var(--lx-t3); transition:transform .2s; }
-  .year.open .yhead .ar { transform:rotate(90deg); }
-  .ymonths { display:none; padding:0 16px 8px; }
-  .year.open .ymonths { display:block; }
-  .m { display:flex; align-items:center; min-height:46px; cursor:pointer;
-       border-top:1px solid var(--lx-line); }
-  .m:hover { background:rgba(0,0,0,.02); }
-  .m .mn { font-size:14px; color:var(--lx-t2); }
-  .m .mv { margin-left:auto; font-family:"LxNum"; font-size:14px; font-weight:500; }
-  .m .mu { font-size:11px; color:var(--lx-t3); margin-left:3px; }
-  .m .mt { font-size:11px; color:var(--lx-t3); margin-left:8px; min-width:34px; text-align:right; }
+  .month { border-radius:14px; background:var(--lx-card); margin-bottom:10px;
+           overflow:hidden; }
+  .month .mh { display:flex; align-items:center; min-height:56px; padding:0 16px;
+               cursor:pointer; transition:background .15s; }
+  .month .mh:hover { background:rgba(0,0,0,.03); }
+  .month .mn { font-size:15px; font-weight:500; white-space:nowrap; }
+  .month .ar { margin-left:6px; color:var(--lx-t3); transition:transform .2s;
+               display:inline-block; }
+  .month.open .ar { transform:rotate(90deg); }
+  /* ★ 内联明细：点开即在下方，不用滚到页面底部 */
+  .month .md { display:none; padding:0 16px 10px; }
+  .month.open .md { display:block; }
+  .month .md .rec { display:flex; align-items:center; min-height:42px;
+                    border-top:1px solid var(--lx-line); font-size:13px; }
+  .month .md .rec .t { color:var(--lx-t2); min-width:104px; }
+  .month .md .rec .tag { font-size:11px; padding:2px 7px; border-radius:6px;
+                         color:var(--lx-t3); background:var(--lx-line); margin-right:8px; }
+  .month .md .rec .tag.ac { color:#0A7B3E; background:rgba(10,123,62,.10); }
+  .month .md .rec .c { margin-left:auto; font-family:"LxNum"; font-weight:500; }
+  .month .md .rec .u { font-size:11px; color:var(--lx-t3); margin-left:3px; }
+  .month .mbar { flex:1; height:6px; border-radius:3px; background:var(--lx-line);
+                 overflow:hidden; margin:0 10px; min-width:30px; }
+  .month .mbar > i { display:block; height:100%; border-radius:3px; background:#2C6BFF;
+                     transition:width .3s ease; }
+  .month.top .mv { color:var(--lx-t1); font-weight:600; }
+  .month .mt { font-size:11px; color:var(--lx-t3); margin-left:8px; min-width:52px;
+               text-align:right; white-space:nowrap; }
+  .month .mv { font-family:"LxNum"; font-size:14px; font-weight:500; }
+  .month .mu { font-size:11px; color:var(--lx-t3); margin-left:3px; }
   /* ★ 2026-10-11：月电量迷你条形（与能量页 .dbar 风格统一 —— 两处都是"历史数据"，
      不应该一个可视化一个纯文字）。宽度按【当年最大月】归一，最小 3% 保证可见。 */
-  .m .mbar { flex:1; height:6px; border-radius:3px; background:var(--lx-line);
-             overflow:hidden; margin:0 10px; min-width:30px; }
-  .m .mbar > i { display:block; height:100%; border-radius:3px; background:#2C6BFF;
-                 transition:width .3s ease; }
-  .m.top .mv { color:var(--lx-t1); font-weight:600; }
-  .m.top .mbar > i { background:#1E5AE0; }
   .empty { text-align:center; color:var(--lx-t3); font-size:13px; padding:16px 0; }
 
   /* ── 明细列表 ── */
@@ -199,8 +216,8 @@ const STYLE = `
 
   /* ── 键盘可达：统一焦点样式（无障碍）── */
   [role="button"]:focus-visible, .card:focus-visible, .entry:focus-visible,
-  .row.click:focus-visible, .m:focus-visible, .yhead:focus-visible,
-  .year .yhead:focus-visible, button:focus-visible, input:focus-visible {
+  .row.click:focus-visible, .m:focus-visible,
+  button:focus-visible, input:focus-visible {
     outline: 2px solid var(--lx-blue, #0A58F6);
     outline-offset: 2px;
     border-radius: 8px;
@@ -390,7 +407,6 @@ class LixiangChargePage extends HTMLElement {
         <h2>${I18N.history}</h2>
         <div id="years"><div class="empty">${I18N.loading}</div></div>
       </div>
-      <div class="list" id="list"></div>
       <div class="toast" role="status" aria-live="polite"></div>
     `;
     this.appendChild(root);
@@ -614,24 +630,30 @@ class LixiangChargePage extends HTMLElement {
     if (!this._hass) return;
     this._monthRecords = null; this._renderList();
     try {
+      // ★★ 2026-10-11 修复（与月度统计同类）：
+      //   原来手写两次请求，只拉 AC(2) + DC(1) —— **漏掉 5C(3)/4C(4) 超充**，
+      //   且**不跟随筛选**（选「理想超充」仍显示全部类型）。
+      //   服务端 charging_type=0 会聚合全部 4 种；"hpc" 聚合 3+4。
+      //   故一次请求即可，并把当前筛选传下去。
       const r = await this._hass.callService("lixiang_auto", "get_charge",
-        { dt: `${year}-${month}`, charging_type: 2 }, undefined, true, true);
+        { dt: `${year}-${month}`, charging_type: this._ctype }, undefined, true, true);
       const payload = (r && r.response) || r;
       const first = payload && Object.values(payload)[0];
       const rows = first && first.data;
       if (Array.isArray(rows)) this._monthRecords = rows;
-      // 也拉直流
-      const r2 = await this._hass.callService("lixiang_auto", "get_charge",
-        { dt: `${year}-${month}`, charging_type: 1 }, undefined, true, true);
-      const p2 = (r2 && r2.response) || r2;
-      const f2 = p2 && Object.values(p2)[0];
-      if (Array.isArray(f2 && f2.data)) {
-        this._monthRecords = (this._monthRecords || []).concat(f2.data);
-      }
     } catch (e) { /* 静默 */ }
     this._renderList();
   }
 
+  /** 渲染月度列表。
+   *
+   * ★★ 2026-10-11 结构重构（车主反馈：「点击10月，明细在下面，根本看不到」）：
+   *   原先按【年折叠】+ 明细渲染在页面底部的另一个区域（#list）→ 用户点完
+   *   要滚到页面下方才看得到，体验很差。
+   *   现改为 App 的结构：**扁平月度列表 + 点击月份内联展开明细**。
+   *   · 非最新年份显示「2025年8月」前缀（同年只显示「8月」），与 App 一致
+   *   · 明细插在该月**下方**，点开即见
+   */
   _renderYears() {
     const box = this.querySelector("#years");
     if (!box) return;
@@ -653,68 +675,99 @@ class LixiangChargePage extends HTMLElement {
       }
       return;
     }
-    box.innerHTML = yl.map((y) => {
-      const tot = y.months.reduce((a, m) => a + Number(m.chargingCapacity || 0), 0);
-      const cnt = y.months.reduce((a, m) => a + Number(m.chargingTimes || 0), 0);
-      const open = this._openYears.has(String(y.year));
-      // ★ 2026-10-11：月电量条形 —— 以【当年最大月】为基准（跨年不可比，故按年归一）
-      const mvals = y.months.map((m) => Number(m.chargingCapacity) || 0);
-      const mmax = Math.max(1, ...mvals);
-      const mtop = mvals.length ? mvals.indexOf(Math.max(...mvals)) : -1;
-      const rows = y.months.map((m, mi) => {
-        const sel = this._selMonth && this._selMonth.year === y.year && this._selMonth.month === m.month;
-        const v = mvals[mi];
-        const w = v > 0 ? Math.max(3, Math.round((v / mmax) * 100)) : 0;
-        const isTop = mi === mtop && v > 0;
-        return `<div class="m${sel ? " sel" : ""}${isTop ? " top" : ""}"
-                     data-y="${y.year}" data-m="${m.month}">
-            <span class="mn">${m.month} 月</span>
-            <span class="mt">${m.chargingTimes} ${I18N.times}</span>
-            <span class="mbar" aria-hidden="true"><i style="width:${w}%"></i></span>
-            <span class="mv">${Number(m.chargingCapacity).toFixed(1)}</span>
-            <span class="mu">kWh</span></div>`;
-      }).join("");
-      return `<div class="year${open ? " open" : ""}" data-year="${y.year}">
-          <div class="yhead"><span class="yn">${y.year} ${I18N.year}</span>
-            <span class="ys">${y.months.length} 个月 · ${cnt} ${I18N.times} · ${tot.toFixed(0)} kWh</span>
-            <span class="ar">›</span></div>
-          <div class="ymonths">${rows}</div></div>`;
-    }).join("");
-    box.querySelectorAll(".yhead").forEach((h) => {
-      this._a11y(h, `${h.parentElement.dataset.year} 年 展开/收起`, () => h.click());
-      h.addEventListener("click", () => {
-        const y = h.parentElement.dataset.year;
-        if (this._openYears.has(y)) this._openYears.delete(y); else this._openYears.add(y);
-        this._renderYears();
-      });
+    // 扁平化：yl 已按年倒序、年内按月倒序 → 平铺即时间倒序
+    const latestYear = yl[0] && yl[0].year;
+    const flat = [];
+    yl.forEach((y) => (y.months || []).forEach((m) => flat.push({ y: y.year, m })));
+    // 条形按【所在年】归一（跨年不可比）
+    const yearMax = {};
+    flat.forEach(({ y, m }) => {
+      const v = Number(m.chargingCapacity) || 0;
+      yearMax[y] = Math.max(yearMax[y] || 0, v);
     });
-    box.querySelectorAll(".m").forEach((m) => {
-      this._a11y(m, `${m.dataset.y} 年 ${m.dataset.m} 月 充电明细`, () => m.click());
-      m.addEventListener("click", async () => {
-        this._selMonth = { year: Number(m.dataset.y), month: Number(m.dataset.m) };
-        this._renderYears();
-        await this._fetchMonth(this._selMonth.year, this._selMonth.month);
+    box.innerHTML = flat.map(({ y, m }) => {
+      const sel = this._selMonth && this._selMonth.year === y && this._selMonth.month === m.month;
+      const v = Number(m.chargingCapacity) || 0;
+      const mx = Math.max(1, yearMax[y] || 0);
+      const w = v > 0 ? Math.max(3, Math.round((v / mx) * 100)) : 0;
+      const isTop = v > 0 && v >= mx;
+      const label = (y === latestYear) ? `${m.month} 月` : `${y} 年 ${m.month} 月`;
+      return `<div class="month${sel ? " open" : ""}${isTop ? " top" : ""}"
+                   data-y="${y}" data-m="${m.month}">
+          <div class="mh" role="button" tabindex="0"
+               aria-expanded="${sel ? "true" : "false"}">
+            <span class="mn">${label}</span>
+            <span class="mt">${I18N.chargePrefix || ""}${m.chargingTimes} ${I18N.times}</span>
+            <span class="mbar" aria-hidden="true"><i style="width:${w}%"></i></span>
+            <span class="mv">${Number(m.chargingCapacity).toFixed(2)}</span>
+            <span class="mu">kW·h</span>
+            <span class="ar">›</span>
+          </div>
+          <div class="md" id="md-${y}-${m.month}"></div>
+        </div>`;
+    }).join("");
+
+    box.querySelectorAll(".mh").forEach((h) => {
+      const wrap = h.parentElement;
+      const yy = Number(wrap.dataset.y), mm = Number(wrap.dataset.m);
+      const toggle = async () => {
+        const isOpen = this._selMonth && this._selMonth.year === yy
+                       && this._selMonth.month === mm;
+        if (isOpen) {
+          // 收起
+          this._selMonth = null; this._monthRecords = null;
+          wrap.classList.remove("open");
+          h.setAttribute("aria-expanded", "false");
+          const d = wrap.querySelector(".md"); if (d) d.innerHTML = "";
+          return;
+        }
+        // 展开：立即显示加载态（内联，看得见）
+        this._selMonth = { year: yy, month: mm };
+        box.querySelectorAll(".month.open").forEach((el) => {
+          el.classList.remove("open");
+          const hh = el.querySelector(".mh");
+          if (hh) hh.setAttribute("aria-expanded", "false");
+          const dd = el.querySelector(".md"); if (dd) dd.innerHTML = "";
+        });
+        wrap.classList.add("open");
+        h.setAttribute("aria-expanded", "true");
+        const container = wrap.querySelector(".md");
+        if (container) container.innerHTML = `<div class="empty">${I18N.loading}</div>`;
+        await this._fetchMonth(yy, mm);
+      };
+      this._a11y(h, `${yy} 年 ${mm} 月 充电明细`, toggle);
+      h.addEventListener("click", toggle);
+      h.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
       });
     });
   }
 
+  /** 渲染某月明细 —— ★ 内联到该月下方（不再用页面底部的 #list）。 */
   _renderList() {
-    const box = this.querySelector("#list");
+    if (!this._selMonth) return;
+    const box = this.querySelector(
+      `#md-${this._selMonth.year}-${this._selMonth.month}`);
     if (!box) return;
-    if (!this._selMonth) { box.innerHTML = ""; return; }
     const rows = this._monthRecords || [];
-    const head = `<div class="listhead">${this._selMonth.year} 年 ${this._selMonth.month} 月 · 充电明细</div>`;
-    if (!rows.length) { box.innerHTML = head + `<div class="empty">${I18N.noData}</div>`; return; }
+    if (!rows.length) {
+      box.innerHTML = `<div class="empty">${I18N.noData}</div>`;
+      return;
+    }
     const sorted = rows.slice().sort((a, b) => Number(b.startTime) - Number(a.startTime));
-    box.innerHTML = head + sorted.map((r) => {
+    box.innerHTML = sorted.map((r) => {
       const d = new Date(Number(r.startTime));
-      const mm = `${d.getMonth() + 1}/${d.getDate()}`;
+      const mm = `${d.getMonth() + 1}月${d.getDate()}日`;
       const hh = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-      const isDC = Number(r.chargingType) === 1;
+      // ★ 按 chargingType 给出准确类型名（1=DC / 2=AC / 3=5C / 4=4C超充）
+      const ct = Number(r.chargingType);
+      const _names = { 1: I18N.ctDc, 2: I18N.ctAc, 3: I18N.ct5c, 4: I18N.ct4c };
+      const _cls = { 1: "", 2: " ac", 3: " hpc", 4: " hpc" };
+      const tagName = _names[ct] || I18N.ctDc;
       return `<div class="rec">
-          <span class="tag${isDC ? "" : " ac"}">${isDC ? I18N.dc : I18N.ac}</span>
           <span class="t">${mm} ${hh}</span>
-          <span class="c">${Number(r.chargingCapacity).toFixed(2)}</span><span class="u">kWh</span>
+          <span class="tag${_cls[ct] !== undefined ? _cls[ct] : ""}">${tagName}</span>
+          <span class="c">${Number(r.chargingCapacity).toFixed(2)}</span><span class="u">kW·h</span>
         </div>`;
     }).join("");
   }

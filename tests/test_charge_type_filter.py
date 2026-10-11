@@ -208,3 +208,141 @@ class TestTabsRender:
         assert out.count('class="ctab on"') == 1, "只应有一个默认选中"
         for label in ("全部", "交流慢充", "直流快充", "理想超充"):
             assert label in out
+
+class TestDetailListIncludesSupercharge:
+    """★★ 同类第二个 bug：**明细**（点开某月）也只拉 AC/DC，漏 5C/4C 超充。
+
+    原实现手写两次请求 `charging_type: 2` + `charging_type: 1` ——
+    既漏超充，又不跟随筛选。App 明细显示 `5C超充 29.43 / 4C超充 23.76`。
+    """
+
+    def _src(self) -> str:
+        return PAGE.read_text(encoding="utf-8")
+
+    def test_no_hardcoded_type_pair(self):
+        """★ 回归防护：不能再硬编码只拉 1 和 2。"""
+        s = self._src()
+        i = s.index("async _fetchMonth(")
+        j = s.index("_renderYears()", i)
+        blk = s[i:j]
+        assert "charging_type: this._ctype" in blk, \
+            "明细请求必须跟随当前筛选（this._ctype）"
+        assert "charging_type: 2 }" not in blk and "charging_type: 1 }" not in blk, \
+            "还有硬编码的单类型请求（只拉 AC/DC，漏超充）"
+
+    def test_single_request(self):
+        """一次请求即可（服务端 0/hpc 会聚合），不该再手写两次。"""
+        s = self._src()
+        i = s.index("async _fetchMonth(")
+        j = s.index("_renderYears()", i)
+        assert s[i:j].count('callService("lixiang_auto", "get_charge"') == 1, \
+            "明细应一次请求（此前两次分别拉 AC/DC）"
+
+    def test_detail_labels_four_types(self):
+        """★ 标签必须区分 4 种 —— 此前只有「直流/交流」，5C/4C 被误标成交流。"""
+        s = self._src()
+        i = s.index("_renderList() {")
+        blk = s[i:i + 1600]
+        assert "ct5c" in blk and "ct4c" in blk, "明细标签缺 5C/4C 超充"
+        assert "I18N.ctAc" in blk and "I18N.ctDc" in blk
+
+    def test_i18n_has_four_names(self):
+        s = self._src()
+        for k in ("ctDc", "ctAc", "ct5c", "ct4c"):
+            assert f'{k}:' in s, f"I18N 缺 {k}"
+        assert "5C超充" in s and "4C超充" in s, "类型名应与 App 用词一致"
+
+    def test_backend_detail_supports_subset(self):
+        """★ 断言必须用**完整表达式** —— 只查 "types"/"wanted" 关键词存在，
+        `wanted = None` 这种"过滤失效"的写法照样能骗过测试（本测试初版就被骗过一次）。
+        """
+        s = LI_API.read_text(encoding="utf-8")
+        i = s.index("def get_charge_records_monthly_all(")
+        blk = s[i:i + 1800]
+        assert "types: tuple[int, ...] | None = None" in blk, "签名应接受 types 参数"
+        assert "wanted = set(types) if types else None" in blk, \
+            "必须真的把 types 转成过滤集合（写成 wanted = None 会让过滤失效）"
+        assert "if wanted is not None and ct not in wanted:" in blk, \
+            "必须真的用它跳过不需要的类型"
+
+    def test_backend_dt_branch_handles_hpc(self):
+        """★ 防 `int("hpc")` 崩溃：dt 分支也要识别"理想超充"。"""
+        s = INIT.read_text(encoding="utf-8")
+        i = s.index('_raw = str(ctype)')
+        blk = s[i:i + 1600]
+        assert '"hpc"' in blk, "dt 分支应识别 hpc"
+        # hpc 分支必须出现在 int(ctype) 之前
+        assert blk.index('"hpc"') < blk.index("ct = int(ctype)"), \
+            'int("hpc") 会抛异常 —— hpc 必须在前面的分支里处理'
+
+
+class TestFlatListInlineDetail:
+    """★★ 结构重构（车主反馈：「点击10月，明细在下面，根本看不到」）。
+
+    原结构：按年折叠 + 明细渲染在页面底部的 #list → 点完要滚到下方才看得见。
+    现结构（照 App）：**扁平月度列表 + 点击月份内联展开**。
+    """
+
+    def _src(self) -> str:
+        return PAGE.read_text(encoding="utf-8")
+
+    def test_no_bottom_list_container(self):
+        """★ 底部 #list 容器必须移除（明细不再渲染到那里）。"""
+        s = self._src()
+        assert 'id="list"' not in s, "底部明细容器还在 —— 明细会被渲染到看不见的地方"
+
+    def test_detail_container_is_inline(self):
+        """明细容器必须在月行**内部**（id=md-{年}-{月}）。"""
+        s = self._src()
+        assert 'class="md" id="md-${y}-${m.month}"' in s, "缺内联明细容器"
+        # 容器应在 .month 卡片内（模板里 mh 之后）
+        i = s.index('class="md" id="md-')
+        seg = s[max(0, i - 1400):i]
+        assert 'class="mh"' in seg, "内联容器应紧跟月份行（同属 .month 卡片）"
+
+    def test_render_list_targets_inline(self):
+        """★ 明细渲染必须定位到内联容器，不是 #list。"""
+        s = self._src()
+        i = s.index("_renderList() {")
+        blk = s[i:i + 500]
+        assert "#md-${this._selMonth.year}" in blk, "应渲染到内联容器"
+        assert 'querySelector("#list")' not in blk, "又渲染回底部容器了"
+
+    def test_flat_not_year_folded(self):
+        """扁平渲染：不再有「按年折叠」的 .yhead/.ymonths。"""
+        s = self._src()
+        assert 'class="yhead"' not in s and 'class="ymonths"' not in s, \
+            "还在按年折叠 —— 应与 App 一样扁平"
+        i = s.index("_renderYears() {")
+        blk = s[i:s.index("_renderList() {", i)]
+        assert "flat.push(" in blk or "const flat" in blk, "应扁平化月份列表"
+
+    def test_year_prefix_only_for_older_years(self):
+        """★ 非最新年份才显示「2025年8月」前缀（App 的做法）。"""
+        s = self._src()
+        i = s.index("_renderYears() {")
+        blk = s[i:s.index("_renderList() {", i)]
+        assert "latestYear" in blk, "应取最新年份做比较"
+        assert "y === latestYear" in blk, "同年不显示年份、跨年才显示"
+
+    def test_click_toggles_inline(self):
+        """点击展开/收起（App 的箭头行为）。"""
+        s = self._src()
+        i = s.index("_renderYears() {")
+        # ★ 用下一个方法名做终点 —— 固定窗口（3000 字符）会截断长方法，
+        #   导致断言假失败/假通过（本测试初版就栽在这）
+        blk = s[i:s.index("_renderList() {", i)]
+        assert "classList.add(\"open\")" in blk or "classList.add('open')" in blk
+        assert "classList.remove(\"open\")" in blk, "应支持收起"
+        assert 'aria-expanded' in blk, "展开状态需 aria-expanded"
+
+    def test_dead_css_removed(self):
+        """旧类 CSS 应清理（避免死代码）。"""
+        s = self._src()
+        for cls in (".yhead {", ".ymonths {"):
+            assert cls not in s, f"残留死 CSS: {cls}"
+
+    def test_js_syntax(self):
+        r = subprocess.run(["node", "--check", str(PAGE)],
+                           capture_output=True, text=True, timeout=60)
+        assert r.returncode == 0, r.stderr[:300]
