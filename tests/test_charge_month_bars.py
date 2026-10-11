@@ -213,6 +213,53 @@ class TestYearFolding:
         blk = s[i:s.index("_renderList() {", i)]
         assert "!this._openYears.size" in blk, "应有默认展开最新年的逻辑"
 
+    def test_collapse_sticks_after_rerender(self):
+        """★★ 车主实测 bug：「26年好像折叠不了」。
+
+        原写法 `if (!this._openYears.size) add(latest)` 在**每次渲染**都检查 →
+        折叠唯一展开的年份后集合变空 → 重渲染又被自动展开 → 永远折不上。
+
+        本测试**真跑两次渲染**：首次自动展开最新年 → 手动折叠 → 再渲染 →
+        断言**仍然折叠**（修复后 `_yearsInited` 只初始化一次）。
+        """
+        s = PAGE.read_text(encoding="utf-8")
+        i = s.index("_renderYears() {")
+        j = s.index("_renderList() {", i)
+        body = s[i:j]
+        body = body[body.index("{") + 1:body.rindex("}")]      # 去签名与结尾括号
+        code = (
+            HARNESS_HEAD.replace("DATA", json.dumps(
+                [{"year": 2026, "months": [
+                    {"year": 2026, "month": 10, "chargingTimes": 1,
+                     "chargingCapacity": 10.0}]}], ensure_ascii=False))
+            + body
+            + """
+  return BOX.innerHTML;
+};
+const f = function () {
+""" + body + """
+  return BOX.innerHTML;
+};
+const first = f.call(ctx);
+const hadOpen = /class="year open"/.test(first);
+ctx._openYears.delete("2026");          // 模拟用户点年份头折叠
+const second = f.call(ctx);
+console.log(JSON.stringify({ hadOpen, stillOpen: /class="year open"/.test(second) }));
+"""
+        )
+        out = run_node(code)
+        data = json.loads(out)
+        assert data["hadOpen"] is True, "首次渲染应自动展开最新年"
+        assert data["stillOpen"] is False, \
+            "折叠后重渲染又被自动展开 —— 正是车主报的「折不了」"
+
+    def test_switch_filter_resets_year_state(self):
+        """切换充电类型筛选后，应是新一轮数据（重新默认展开最新年）。"""
+        s = PAGE.read_text(encoding="utf-8")
+        i = s.index("_switchCType(i) {")
+        blk = s[i:i + 1400]
+        assert "_yearsInited = false" in blk, "切换筛选应重置年份初始化标志"
+
     def test_multiple_years_both_have_headers(self):
         rows = [{"year": 2026, "month": 10, "chargingTimes": 1, "chargingCapacity": 10.0}]
         older = [{"year": 2025, "months": [

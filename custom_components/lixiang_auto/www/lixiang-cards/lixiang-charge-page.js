@@ -606,6 +606,9 @@ class LixiangChargePage extends HTMLElement {
     this._years = null;
     this._selMonth = null;
     this._error = null;
+    // ★ 新一轮数据：重置年份展开状态，让其重新默认展开最新年
+    this._yearsInited = false;
+    this._openYears = new Set();
     const box = this.querySelector("#years");
     if (box) box.innerHTML = `<div class="empty">${I18N.loading}</div>`;
     this._fetchStats();
@@ -701,9 +704,15 @@ class LixiangChargePage extends HTMLElement {
       return;
     }
     if (!(this._openYears instanceof Set)) this._openYears = new Set();
-    // ★ 有数据后默认展开最新年份（否则用户先看到一个全收起的列表）
+    // ★★ 2026-10-12 修复（车主："26年好像折叠不了"）：
+    //   原写法 `if (!this._openYears.size) add(latest)` 会在**每次渲染**时检查，
+    //   于是「折叠唯一展开的年份 → 集合变空 → 重渲染又被自动展开」→ **永远折不上**。
+    //   改为【每个数据周期只初始化一次】：切换筛选/重新拉取时才重置。
     const latest = yl[0] && yl[0].year;
-    if (latest != null && !this._openYears.size) this._openYears.add(String(latest));
+    if (!this._yearsInited) {
+      this._yearsInited = true;
+      if (latest != null) this._openYears.add(String(latest));
+    }
 
     box.innerHTML = yl.map((y) => {
       const months = y.months || [];
