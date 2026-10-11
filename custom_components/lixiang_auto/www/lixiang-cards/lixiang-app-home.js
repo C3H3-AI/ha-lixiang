@@ -92,6 +92,9 @@ const STYLE = `
 
   .quick { display:grid; grid-template-columns:repeat(4,1fr); gap:6px;
            padding:18px 12px 0; }
+  /* ★ 车型无快捷功能时的空态（2026-10-11） */
+  .qempty { grid-column:1/-1; padding:22px 10px; text-align:center;
+            color:var(--lx-t3,#9A9A9A); font-size:13px; }
   .q { display:flex; flex-direction:column; align-items:center; gap:8px;
        min-height:52px; padding:6px 0 4px; border-radius:16px; cursor:pointer;
        position:relative; transition:background .15s; }
@@ -263,6 +266,10 @@ const STYLE = `
                animation:spin .8s linear infinite; }
 `;
 
+// ★ 2026-10-11 车型适配：QUICK 是数据表，但**不再无条件全部渲染** ——
+//   渲染前先问 _supports(it)：该功能对应的实体在这台车上不存在 → 整块不显示。
+//   理由：之前不支持的车也会出现入口，点了只提示"该功能尚未接入"（体验差，
+//   而且用户会以为集成坏了）。实体存在性由**服务端能力门控**决定，不是前端猜车型。
 const QUICK = [
   { key:"lock",   name:"车锁",       off:"ic_home_lock_off_lisa.png",           on:"ic_home_lock_open_lisa.png" },
   { key:"window", name:"车窗",       off:"ic_home_window_off_lisa.png",         on:"ic_home_window_on_lisa.png" },
@@ -271,7 +278,7 @@ const QUICK = [
   //   可执行实体与状态显示实体分开：auth=动作，stateField=授权状态。
   { key:"auth",   name:"授权驾驶", stateField:"auth_state",
     off:"ic_home_authorization_off_lisa.png",  on:"ic_home_authorization_on_lisa.png" },
-  { key:"summon", name:"直线召唤", note:"集成暂未支持（命令走 JOB 通道）",
+  { key:"summon", name:"直线召唤", unsupported:true, note:"命令走 JOB 通道，HTTP 不可达",
     off:"ic_home_parkingout_off_lisa.png",     on:"ic_home_parkingout_on_lisa.png" },
   { key:"find",   name:"寻车",       off:"ic_summon_lisa.png",                  on:"ic_summon_lisa.png" },
   // optimMs：充电盖开合需数秒、状态回读慢 → 乐观值多留一会儿
@@ -337,6 +344,27 @@ class LixiangAppHome extends HTMLElement {
     if (typeof m === "string" && m.includes(".")) return m;
     if (m && typeof m === "object" && m.entity) return m.entity;
     return (this._autoBind() || {})[key] || null;
+  }
+
+  /**
+   * 该快捷功能在这台车上是否可用（车型适配的第一道门）。
+   * ★ 判据 = **实体是否真实存在**（服务端已按车型能力门控），
+   *   前端不猜车型、不维护车型→功能的映射表。
+   * @param {boolean} warmup 首帧可能还没拿到全部实体 → 放宽，避免闪烁
+   */
+  _supports(def, warmup) {
+    // 明确标注"集成暂未支持"的（如直线召唤走 JOB 通道）→ 不显示，
+    // 避免给用户一个必然失败的入口。
+    if (def.unsupported) return false;
+    const eid = this._eidIn("quick", def.key);
+    if (!eid) return false;
+    if (this._st(eid)) return true;
+    // 首帧/刷新瞬间实体表可能未就绪：只要配置里**声明过**就先渲染，等回读再隐藏
+    if (warmup) {
+      const cfgMap = (this._config || {}).quick || {};
+      return typeof cfgMap[def.key] === "string" || !!(cfgMap[def.key] || {}).entity;
+    }
+    return false;
   }
 
   /**
@@ -720,7 +748,15 @@ class LixiangAppHome extends HTMLElement {
     }
 
     const q = this.querySelector("#quick");
-    QUICK.forEach(it => {
+    // ★ 车型适配：只渲染这台车**真实支持**的功能
+    const warmup = !this._hass || !Object.keys(this._hass.states || {}).length;
+    const avail = QUICK.filter(it => this._supports(it, warmup));
+    q.dataset.shown = String(avail.length);
+    if (!avail.length) {
+      q.innerHTML = '<div class="qempty">该车型暂无可用快捷功能</div>';
+      return;
+    }
+    avail.forEach(it => {
       const d = document.createElement("div");
       d.className = "q"; d.dataset.key = it.key;
       d.setAttribute("role","button"); d.setAttribute("tabindex","0");
