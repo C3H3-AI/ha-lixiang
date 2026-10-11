@@ -10,7 +10,7 @@
  *   · 卡片行1：空调卡 | 位置卡
  *   · 卡片行2：本月陪伴里程+折线图 | 剩余电量 / 哨兵模式
  *   · 入口：车辆健康 | 任务大师 / 钥匙管理 | 情景模式 / 车辆设置
- *   · 服务专家大卡 + 理想AD学习平台
+ *   · 理想AD学习平台（★ 2026-10-12 按车主指示移除「服务专家」卡）
  *   · 图标用 _lisa 粗线版
  */
 
@@ -215,16 +215,6 @@ const STYLE = `
   .entry .sd { font-size:12px; color:var(--lx-t3); margin-top:3px; }
 
   .big { background:var(--lx-card); border-radius:18px; padding:18px 16px; }
-  .srvrow { display:flex; align-items:center; gap:12px; }
-  .srvrow > img.ic { width:26px; height:26px; }
-  .srvrow .tx { flex:1; min-width:0; }
-  .srvrow .nm { font-size:15px; }
-  .srvrow .sd { font-size:12px; color:var(--lx-t3); margin-top:3px; }
-  .cbtn { width:40px; height:40px; border-radius:50%; background:var(--lx-bg);
-          display:flex; align-items:center; justify-content:center; cursor:pointer;
-          box-shadow:0 1px 4px rgba(0,0,0,.06); transition:transform .13s; }
-  .cbtn:active { transform:scale(.92); }
-  .cbtn img { width:19px; height:19px; }
   .divider { height:1px; background:var(--lx-line); margin:16px 0; }
   .adrow { display:flex; align-items:center; gap:12px; cursor:pointer; }
   .adrow .ar { margin-left:auto; color:var(--lx-t3); font-size:18px; }
@@ -625,15 +615,6 @@ class LixiangAppHome extends HTMLElement {
             <div class="tx"><div class="nm">车辆设置</div></div></div>
         </div>
         <div class="big">
-          <div class="srvrow">
-            <img class="ic" src="${__iconBase}/icon_car_owner_consultant.png" alt="" onerror="this.style.visibility='hidden'">
-            <div class="tx"><div class="nm">服务专家</div><div class="sd">7x24小时为您服务</div></div>
-            <div class="cbtn" id="btn-chat" role="button" tabindex="0" aria-label="在线客服">
-              <img src="${__iconBase}/ic_home_dialogue.png" alt="" onerror="this.style.visibility='hidden'"></div>
-            <div class="cbtn" id="btn-call" role="button" tabindex="0" aria-label="电话客服">
-              <img src="${__iconBase}/ic_home_telephone.png" alt=""></div>
-          </div>
-          <div class="divider"></div>
           <div class="adrow" id="btn-ad" role="button" tabindex="0">
             <img class="ic" src="${__iconBase}/ic_home_navigation.webp" alt="">
             <div class="tx"><div class="nm">理想AD学习平台</div>
@@ -817,7 +798,9 @@ class LixiangAppHome extends HTMLElement {
       this._a11y(senEl, "切换哨兵模式", act);
       senEl.addEventListener("click", act);
     }
-    wire("#btn-chat", nav.service); wire("#btn-ad", nav.ad);
+    // ★ 2026-10-12：车主指示「专家服务模块不要了」→ 已移除服务专家卡
+    //   （保留「理想AD学习平台」入口）
+    wire("#btn-ad", nav.ad);
 
     this._built = true;
   }
@@ -1174,6 +1157,6 @@ window.customCards = window.customCards || [];
 window.customCards.push({
   type: CARD_TAG,
   name: "理想车控首页（v3 · 对齐 App）",
-  description: "8 圆按钮 · 双态 3D · 空调/位置/里程/电量/哨兵 · 入口 + 服务专家",
+  description: "8 圆按钮 · 双态 3D · 空调/位置/里程/电量/哨兵 · 各页入口 · 理想AD学习平台",
   preview: true,
 });
