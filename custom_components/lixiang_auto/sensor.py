@@ -194,6 +194,20 @@ def _mk(key, spec):
 
 SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     SensorEntityDescription(key="online_status", name="在线状态", icon="mdi:car-connected"),
+    # ═══ 2026-10-11 M 系（理想ONE）实时状态通道 ═══
+    # 值来自 real-time-state v3（车主 2026-10-11 实测回传），不走 VSS 轮询
+    # ⚠️ 座椅加热/通风的 1/2/3 各档含义未实测（仅"关=0"有样本）→ 翻译沿用旧表，属 [推断]
+    _mk("seat_heat_vent_fl", ('主驾座椅加热通风', None, None, None, 'mdi:car-seat-heater', '座椅')),
+    _mk("seat_heat_vent_fr", ('副驾座椅加热通风', None, None, None, 'mdi:car-seat-heater', '座椅')),
+    _mk("seat_heat_vent_rl", ('左后座椅加热通风', None, None, None, 'mdi:car-seat-heater', '座椅')),
+    _mk("seat_heat_vent_rr", ('右后座椅加热通风', None, None, None, 'mdi:car-seat-heater', '座椅')),
+    _mk("ac_auto_mode", ('空调自动模式', None, None, None, 'mdi:air-conditioner', '空调')),
+    _mk("ac_fan_speed_level", ('空调风量档位', None, None, None, 'mdi:fan', '空调')),
+    _mk("ac_set_temp_fl", ('主驾设定温度', 'TEMPERATURE', '°C', 'MEASUREMENT', 'mdi:thermometer', '空调')),
+    _mk("ac_set_temp_fr", ('副驾设定温度', 'TEMPERATURE', '°C', 'MEASUREMENT', 'mdi:thermometer', '空调')),
+    _mk("ring_light", ('环形灯', None, None, None, 'mdi:lightbulb', '灯光')),
+    _mk("key_in_car_warning", ('车内有钥匙提醒', None, None, None, 'mdi:key', '其他')),
+    _mk("gear", ('挡位', None, None, None, 'mdi:car-shift-pattern', '其他')),
     # ---- 电池 ----
     _mk("battery_level", ('电池电量', 'BATTERY', 'PERCENTAGE', 'MEASUREMENT', 'mdi:battery-high', '电池')),
     _mk("charge_status", ('充电状态', None, None, None, 'mdi:ev-station', '电池')),

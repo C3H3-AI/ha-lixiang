@@ -192,6 +192,62 @@ SIGNALS: dict[str, SignalSpec] = {
         category="空调",
         universal=True,
     ),  # 有翻译映射
+    # ═══ 2026-10-11 按车主回传的【实测响应】新增（理想ONE real-time-state v3）═══
+    # 依据：realtime_state_v3 原始响应 ok=true/code=0，实测字段名与形态如下：
+    #   seatStatus.<座>SeatHeatVentState = {"value":"0","timestamp":...}
+    #   airConditioningStatus.<X>        = {"value":..,"timestamp":...}
+    #   chargeSetting.enduranceStatus.residueFuel / travelStatus.gear
+    #   ringLightStatus.status / keyInCarWarning.warning
+    # ⚠️ 座椅加热/通风的 1/2/3 各档含义**未实测**（只覆盖"关=0"）→ 与旧表一致，属 [推断]
+
+    "seat_heat_vent_fl": SignalSpec(
+        key="seat_heat_vent_fl", path="", name="主驾座椅加热通风",
+        icon="mdi:car-seat-heater", category="座椅", universal=True,
+    ),
+    "seat_heat_vent_fr": SignalSpec(
+        key="seat_heat_vent_fr", path="", name="副驾座椅加热通风",
+        icon="mdi:car-seat-heater", category="座椅", universal=True,
+    ),
+    "seat_heat_vent_rl": SignalSpec(
+        key="seat_heat_vent_rl", path="", name="左后座椅加热通风",
+        icon="mdi:car-seat-heater", category="座椅", universal=True,
+    ),
+    "seat_heat_vent_rr": SignalSpec(
+        key="seat_heat_vent_rr", path="", name="右后座椅加热通风",
+        icon="mdi:car-seat-heater", category="座椅", universal=True,
+    ),
+    # ── M 系（理想ONE）空调：与 L 系共用实体，但 L 系无对应 VSS 路径的细分项 ──
+    # ⚠️ 档位/模式语义未实测（仅"关=0"有样本）→ 属 [推断]
+    "ac_auto_mode": SignalSpec(
+        key="ac_auto_mode", path="", freq=Freq.HIGH, name="空调自动模式",
+        icon="mdi:air-conditioner", category="空调", universal=True,
+    ),
+    "ac_fan_speed_level": SignalSpec(
+        key="ac_fan_speed_level", path="", freq=Freq.HIGH, name="空调风量档位",
+        icon="mdi:fan", category="空调", universal=True,
+    ),
+    "ac_set_temp_fl": SignalSpec(
+        key="ac_set_temp_fl", path="", freq=Freq.HIGH, name="主驾设定温度",
+        state_class="MEASUREMENT", unit="°C",
+        icon="mdi:thermometer", category="空调", universal=True,
+    ),
+    "ac_set_temp_fr": SignalSpec(
+        key="ac_set_temp_fr", path="", freq=Freq.HIGH, name="副驾设定温度",
+        state_class="MEASUREMENT", unit="°C",
+        icon="mdi:thermometer", category="空调", universal=True,
+    ),
+    "gear": SignalSpec(
+        key="gear", path="", freq=Freq.HIGH, name="挡位",
+        icon="mdi:car-shift-pattern", category="其他", universal=True,
+    ),
+    "ring_light": SignalSpec(
+        key="ring_light", path="", name="环形灯",
+        icon="mdi:lightbulb", category="灯光", universal=True,
+    ),
+    "key_in_car_warning": SignalSpec(
+        key="key_in_car_warning", path="", name="车内有钥匙提醒",
+        icon="mdi:key", category="其他", universal=True,
+    ),
     "air_pollution": SignalSpec(
         key="air_pollution",
         path="Vehicle.Cabin.AirPollutionIndex",

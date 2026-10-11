@@ -45,7 +45,14 @@ class TestSignalTable:
                                "stat_total_mileage", "stat_engine_mileage",
                                "stat_ad_mileage", "stat_noa_mileage",
                                "stat_acc_mileage",
-                               "stat_lcc_mileage", "stat_cd_mileage", "stat_ad_days"), \
+                               "stat_lcc_mileage", "stat_cd_mileage", "stat_ad_days",
+                               # ★ 2026-10-11：M 系（理想ONE）实时状态通道派生的虚拟信号
+                               #   值来自 real-time-state v3 响应（owner 2026-10-11 实测回传）
+                               "seat_heat_vent_fl", "seat_heat_vent_fr",
+                               "seat_heat_vent_rl", "seat_heat_vent_rr",
+                               "ac_auto_mode", "ac_fan_speed_level",
+                               "ac_set_temp_fl", "ac_set_temp_fr", "ring_light",
+                               "key_in_car_warning", "gear"), \
                     f"{key}: 空路径但不是已知虚拟信号"
 
     def test_alias_signals_resolve(self):
