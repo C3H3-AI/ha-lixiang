@@ -25,7 +25,7 @@ _LOGGER = logging.getLogger(LOGGER_NAME)
 # kind 决定值的语义:
 #   lock   : 0=已锁, 非0=未锁   → on = 未落锁
 #   door   : 0=关闭, 非0=打开   → on = 打开
-#   plug   : 0=未插, 非0=已插   → on = 已连接
+#   plug   : AC==2 / DC==1 = 已插（App 实证）   → on = 已连接
 #   conn   : False=断, True=连  → on = 已连接
 #   warn   : 0=正常, 非0=告警   → on = 告警
 #   heat   : 0=关, 非0=开       → on = 开启
@@ -202,7 +202,7 @@ class LiCarBinarySensor(CoordinatorEntity, BinarySensorEntity):
           LOCKED     0=已落锁 → on=未落锁
           DOOR_OPEN  ==1 才开（XDoorDataHandle.smali:310）
           TRUNK      锁优先聚合（LXLiMeshStateDelegate.getTrunkState）
-          PLUGGED    非0 = 已插入
+          PLUGGED    AC==2 / DC==1 才算已插入（App 四处反汇编实证，非「非0」）
           CHARGE_LID -1=无效(unknown)，0=关，非0=开
           CONNECTED  非0 = 已连接
           ALARM      非0 = 告警
@@ -264,9 +264,18 @@ class LiCarBinarySensor(CoordinatorEntity, BinarySensorEntity):
             return n != 0 if n in (0, 1) else (n == 1)
 
         if sem == Semantics.PLUGGED:
-            # ★ App 用 ACChgrActualConnSts == 2 判「已插枪」
-            #   （XChargeDataHandle.smali:102）
-            #   ⚠️ 值 1 的含义未在源码中确证，保留宽松判定
+            # ★ 2026-10-11 androguard 反汇编实证（LXLiMeshStateDelegate 四处一致：
+            #   getChargeCurrent / getChargeVoltage / getChargingMode / getChargingStatus）：
+            #     ACChgrActualConnSts == 2 → 交流枪已插
+            #     DCChrgngGunActuSts  == 1 → 直流枪已插
+            #   （XChargeDataHandle.smali:102 亦为 AC == 2）
+            #   ⚠️ 旧规则 `n != 0` 会把 AC=1 / DC=2 等非插枪态误判为已插入
+            #     —— 用户实测：未插枪却显示已插（2026-10-11 报告）
+            key = self.entity_description.key
+            if key == "charge_gun_dc":
+                return n == 1
+            if key == "charge_gun_ac":
+                return n == 2
             return n != 0
 
         if sem == Semantics.CHARGE_LID:
