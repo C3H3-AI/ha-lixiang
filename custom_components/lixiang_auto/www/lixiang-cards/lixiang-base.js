@@ -30,9 +30,9 @@ export function fontFaceCss(fontBase) {
 export const BASE_CSS = `
   :host { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
-    --lx-card:#F5F5F7; --lx-bg:#FFF; --lx-line:#EDEDF0; }
+    --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-blue:#4C9AFF; --lx-t1:#FFF; --lx-t2:#AAA; --lx-t3:#777;
+    :host { --lx-blue:#4C9AFF; --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; }
   }
   .wrap { font-family:"Licium",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;

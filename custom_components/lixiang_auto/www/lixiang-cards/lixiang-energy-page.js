@@ -36,8 +36,8 @@ const STYLE = `
   @font-face { font-family:"LxNum";  src:url("${__fontBase}/roboto_medium_numbers.ttf"); font-display:swap; }
   :host { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
-    --lx-green:#3CC75A; --lx-orange:#FF9500; --lx-red:#FF3B30;
-    --lx-card:#F5F5F7; --lx-bg:#FFF; --lx-line:#F0F0F2; }
+    --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
+    --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
     :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
@@ -45,7 +45,7 @@ const STYLE = `
     .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
     .root[data-theme="light"] { --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
-            --lx-card:#F5F5F7; --lx-bg:#FFF; --lx-line:#F0F0F2; --lx-blue:#0A58F6; }
+            --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; --lx-blue:#0A58F6; }
   .root { background:var(--lx-bg); color:var(--lx-t1); padding-bottom:20px;
     font-family:"Licium",-apple-system,"PingFang SC",sans-serif; }
 
@@ -122,7 +122,7 @@ const STYLE = `
   .dbar { flex:1; height:6px; border-radius:3px; background:var(--lx-line,rgba(0,0,0,.06)); overflow:hidden; }
   .dbar > i { display:block; height:100%; border-radius:3px; background:#2C6BFF; }
   .drow.top .dd, .drow.top .dn { color:var(--lx-t1); font-weight:600; }
-  .drow.top .dbar > i { background:#3CC75A; }
+  .drow.top .dbar > i { background:#34C759; }
   .sortbtn { font-size:12px; color:var(--lx-t3); cursor:pointer; padding:2px 6px;
              border:1px solid var(--lx-line,rgba(0,0,0,.08)); border-radius:7px; }
   .sortbtn.on { color:#2C6BFF; border-color:#2C6BFF; }
@@ -499,7 +499,7 @@ class LixiangEnergyPage extends HTMLElement {
       fuelFrac = Math.max(0, 1 - elecFrac);
     }
     this._drawRing(q("#ring2"), [
-      { value: elecFrac, color: "#3CC75A" },
+      { value: elecFrac, color: "#34C759" },
       { value: fuelFrac, color: "#2C6BFF" },
     ], { size: 272, stroke: 20, trackColor: "rgba(0,0,0,.04)" });
     q("#lg-elec-p").textContent = Math.round(elecFrac * 100) + "%";
