@@ -30,6 +30,7 @@ def _src() -> str:
 
 def _strip_comments(s: str) -> str:
     """去掉注释 —— 否则断言会命中「已移除服务专家」这类说明文字而恒为真。"""
+    s = re.sub(r'<!--.*?-->', '', s, flags=re.S)      # ★ HTML 注释也要删（模板字符串里）
     s = re.sub(r'/\*.*?\*/', '', s, flags=re.S)
     s = re.sub(r'^\s*//.*$', '', s, flags=re.M)
     s = re.sub(r'^\s*\*.*$', '', s, flags=re.M)
@@ -209,3 +210,46 @@ class TestNoHorizontalOverflow:
     def test_row2_and_entries_fixed(self):
         s = _strip_comments(_src())
         assert "repeat(2,minmax(0,1fr))" in s, "row2/entries 的 grid 未修复"
+
+
+class TestKeyManagementNamingFix:
+    """★★ 车主反馈：「钥匙管理显示的设置的内容」（2026-10-12）。
+
+    根因是**三处名称不一致**：
+
+    | 位置 | 原名 | 实际内容 |
+    |---|---|---|
+    | 首页入口 | 钥匙管理 | — |
+    | 页面标题 | 车辆设置 | 车辆昵称/车牌/型号/车架号 |
+    | 卡片名   | 车辆信息 | 同上 |
+
+    且首页副标题的「未连接」来自 `_eid("key_connected")` —— 这个绑定键
+    **在 auto-bind 里根本不存在**，所以永远显示**假状态**。
+
+    现统一为「车辆信息」，并去掉假状态。
+    """
+
+    def test_vehicle_page_title_is_vehicle_info(self):
+        s = (ROOT / "custom_components" / "lixiang_auto" / "www" / "lixiang-cards" / "lixiang-vehicle-info-page.js").read_text(encoding="utf-8")
+        assert "<h1>车辆信息</h1>" in s, "页面标题不是「车辆信息」"
+        assert "<h1>车辆设置</h1>" not in s, "页面标题仍是「车辆设置」（与内容不符）"
+
+    def test_home_entry_renamed(self):
+        s = _strip_comments(_src())
+        assert "<div class=\"nm\">车辆信息</div>" in s, "首页入口未改名"
+        assert "钥匙管理" not in s, "首页入口仍叫「钥匙管理」"
+
+    def test_no_fake_key_connected(self):
+        """★ `key_connected` 在 auto-bind 里不存在 → 不能拿它显示状态。"""
+        s = _strip_comments(_src())
+        assert "key_connected" not in s, "仍在使用不存在的 key_connected 绑定"
+
+    def test_key_connected_is_truly_absent_from_autobind(self):
+        """坐实前提：auto-bind 里确实没有这个键。"""
+        ab = (ROOT / "custom_components" / "lixiang_auto" / "www" / "lixiang-cards" / "lixiang-auto-bind.js").read_text(encoding="utf-8")
+        assert "key_connected" not in ab, \
+            "auto-bind 里居然有了 key_connected —— 那这条测试的前提要重估"
+
+    def test_subtitle_uses_real_data(self):
+        s = _strip_comments(_src())
+        assert 'this._eid("vehicle_cfg")' in s, "副标题未改用真实车型数据"
