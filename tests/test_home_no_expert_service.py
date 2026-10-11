@@ -136,3 +136,76 @@ class TestSyntax:
         for sel in ('id="e-scene"', 'id="e-setting"', 'id="e-health"',
                     'id="e-task"', 'id="e-key"'):
             assert sel in s, f"{sel} 被误删"
+
+class TestSecondaryNavDefaults:
+    """★★ 修复（车主："车辆设置二级页面错误"）。
+
+    `e-health` / `e-setting` 此前**没有默认路径**：
+
+    ```js
+    wire("#e-health",  nav.health);     // nav.health 未配置 → undefined
+    wire("#e-setting", nav.setting);    // → go(undefined) → if (!p) return（点击无反应）
+    ```
+
+    其他入口都有 `nav.x || "/lixiang/x"` 兜底，唯独这两个漏了。
+    """
+
+    def test_health_has_default(self):
+        s = _strip_comments(_src())
+        assert 'wire("#e-health", nav.health || "/lixiang/health")' in s, \
+            "车辆健康缺默认路径 → 点击无反应"
+
+    def test_setting_has_default(self):
+        s = _strip_comments(_src())
+        assert 'wire("#e-setting", nav.setting || "/lixiang/setting")' in s, \
+            "车辆设置缺默认路径 → 点击无反应"
+
+    def test_all_entry_wires_have_fallback(self):
+        """★ 通用守卫：所有 wire("#e-xxx", …) 都必须有 `|| "/lixiang/…"` 兜底。"""
+        s = _strip_comments(_src())
+        bad = []
+        for m in re.finditer(r'wire\(\s*"(#e-[a-z]+)"\s*,\s*([^)]*)\)', s):
+            sel, arg = m.group(1), m.group(2)
+            if "||" not in arg:
+                bad.append(f"{sel} → {arg.strip()}")
+        assert not bad, f"这些入口缺默认路径（未配置就点不动）：{bad}"
+
+    def test_vinfo_entry_present(self):
+        """「钥匙管理」入口走 vinfo。"""
+        s = _strip_comments(_src())
+        assert 'wire("#e-key", nav.vinfo || "/lixiang/vinfo")' in s
+
+
+class TestNoHorizontalOverflow:
+    """★★ 修复（车主："手机上右边溢出"）。
+
+    根因：grid 用 `1fr` —— 其默认 `min-width:auto` 会让**长内容撑破容器**
+    （地址/数值等），在窄屏上表现为右侧溢出。标准修复是 `minmax(0,1fr)`。
+    """
+
+    def test_grids_use_minmax(self):
+        s = _strip_comments(_src())
+        offenders = []
+        for m in re.finditer(r'grid-template-columns:\s*([^;]+);', s):
+            val = m.group(1)
+            if re.search(r'(?<![\w(])1fr(?![\w)])', val) and "minmax" not in val:
+                offenders.append(val.strip())
+        assert not offenders, f"这些 grid 仍用裸 1fr（长内容会撑破容器）：{offenders}"
+
+    def test_root_hidden_overflow(self):
+        """兜底：根节点不得横向溢出。"""
+        s = _strip_comments(_src())
+        assert "overflow-x:hidden" in s, "缺横向溢出兜底"
+
+    def test_children_can_shrink(self):
+        """grid/flex 子项要允许收缩（min-width:0）。"""
+        s = _strip_comments(_src())
+        assert "min-width:0" in s, "缺 min-width:0 —— 子项无法收缩"
+
+    def test_quick_grid_fixed(self):
+        s = _strip_comments(_src())
+        assert "repeat(4,minmax(0,1fr))" in s, "8 圆按钮的 grid 未修复"
+
+    def test_row2_and_entries_fixed(self):
+        s = _strip_comments(_src())
+        assert "repeat(2,minmax(0,1fr))" in s, "row2/entries 的 grid 未修复"
