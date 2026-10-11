@@ -9,6 +9,21 @@
   · 对 App 明确【隐藏】的功能，创建实体但默认禁用（而不是删除）
   · 避免给家人账号展示 App 认为不该展示的东西
 
+★★ 2026-10-11 重要：车辆信息必须**落盘缓存**，不能每次重取
+------------------------------------------------------------------
+`get_vehicles()` 走 `saos_vehicle`（audience `7gbeHMwBPMZA5SU1b2awIo`）token，
+而该 audience 的**白名单只认主 App client（lixiang）**
+（li_api._exchange_client_order 注释：A/C ❌ → B/D ✅ 实测）。
+
+后果：每次取车辆信息 → 先撞一次 livis 被拒 → **回退 lixiang client 换取**
+→ 而理想账号是**单设备登录** → **顶掉用户手机 App**。
+实测用户现象：「App 的任务大师无法连接，禁用集成 + 重新登录 App 才恢复」。
+
+而本模块的角色信息**仅用于展示策略**（见上文「只用于①」），
+为此每次顶掉用户 App 完全不值得 → 故加落盘缓存（默认 7 天）。
+
+车辆条目（VIN/车型/角色）几乎不变；账号关系变化时最多 7 天同步一次。
+
 ★ 但注意（2026-09-28 实测）：App 的"限制"分三类，不要一概而论
     ① UI 隐藏但服务端放行  → 位置 / 保养 / 里程（我们实测能拿到）
     ② 服务端真拦           → OTA / 行程自定义查询（120001）
@@ -48,7 +63,10 @@ FamilyShareInviting=4  FamilySharedAuthorized=5  ExperienceDriving=6
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import time
 from typing import Any
 
 # 兼容两种导入方式（便于单测，与 translations.py 保持一致）：
@@ -193,13 +211,96 @@ def relation_name(vehicle: dict[str, Any] | None) -> str:
     return RELATION_NAMES.get(relation_of(vehicle), "unknown")
 
 
-def current_vehicle(li_api: Any) -> dict[str, Any] | None:
-    """取当前车辆的条目（失败返回 None，不影响主流程）。"""
+#: 车辆信息落盘文件名（放 HA 配置目录）
+VEHICLE_CACHE_FILENAME = "lixiang_vehicle_info.json"
+
+#: 缓存有效期：车辆/账号关系极少变化（★ 每次重取都会顶用户 App，见模块头注释）
+VEHICLE_CACHE_TTL = 7 * 86400
+
+
+def cache_path(config_dir: str) -> str:
+    """缓存文件路径。
+
+    ★ 空 config_dir 必须返回空串 —— `os.path.join("", name)` 会得到**相对路径**，
+      于是文件被写到进程的当前工作目录（HA 里就是 /config 之外的随机位置）。
+      宁可"不缓存"，也不要写错地方。
+    """
+    d = str(config_dir or "").strip()
+    return os.path.join(d, VEHICLE_CACHE_FILENAME) if d else ""
+
+
+def load_cached_vehicle(config_dir: str) -> dict[str, Any] | None:
+    """读本地车辆信息；不存在/损坏/过期返回 None（调用方转入网取）。"""
+    path = cache_path(config_dir)
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            d = json.load(fh)
+    except (OSError, json.JSONDecodeError) as err:
+        _LOGGER.warning("车辆信息缓存损坏（将重取）: %s", err)
+        return None
+    if not isinstance(d, dict) or not isinstance(d.get("vehicle"), dict):
+        return None
+    ts = d.get("saved_at")
+    if not isinstance(ts, (int, float)) or (time.time() - ts) > VEHICLE_CACHE_TTL:
+        return None
+    return d["vehicle"]
+
+
+def save_cached_vehicle(config_dir: str, vehicle: dict[str, Any]) -> bool:
+    """原子写 + 仅属主可读（与 identity.py / task_dict.py 一致）。"""
+    path = cache_path(config_dir)
+    if not path or not isinstance(vehicle, dict):
+        return False
+    try:
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"saved_at": int(time.time()), "vehicle": vehicle},
+                      fh, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+        return True
+    except OSError as err:
+        _LOGGER.warning("保存车辆信息缓存失败: %s", err)
+        return False
+
+
+def current_vehicle(li_api: Any, config_dir: str = "") -> dict[str, Any] | None:
+    """取当前车辆条目 —— **优先本地缓存**，避免每次换 saos_vehicle token 顶掉 App。
+
+    ★ 2026-10-11：加了 config_dir 参数。传了就先读缓存（7 天内有效），
+      命中则**完全不发请求**；未命中才联网，成功后落盘。
+      不传 config_dir 时行为与旧版一致（直接联网）——保证向后兼容。
+    """
+    if config_dir:
+        cached = load_cached_vehicle(config_dir)
+        if cached:
+            return cached
     try:
         veh = li_api.get_vehicles() or []
-        return veh[0] if veh else None
+        first = veh[0] if veh else None
+        if first and config_dir:
+            save_cached_vehicle(config_dir, first)
+        return first
     except Exception as err:  # noqa: BLE001
         _LOGGER.debug("读取车辆条目失败（忽略）: %s", err)
+        # ★ 联网失败时用**过期缓存兜底** —— 有数据总比没有好，
+        #   且能避免"失败→重试→再顶一次 App"的连锁。
+        if config_dir:
+            path = cache_path(config_dir)
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    d = json.load(fh)
+                v = d.get("vehicle")
+                if isinstance(v, dict):
+                    _LOGGER.debug("车辆信息改用过期缓存（联网失败）")
+                    return v
+            except Exception:  # noqa: BLE001
+                pass
         return None
 
 
