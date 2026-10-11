@@ -16,7 +16,7 @@ cmdData 均为 APK 反编译实证（8.27.0 `XVehicleJobHelper`）：
 
 ★ 状态语义的关键修正（同一轮发现的另一个 bug）：
   裸值 **1 = 收起**（App 符号 `RearviewMirrorFolded` + 2026-10-11 实测），
-  开关 **on = 收起**；与后视镜加热不同，别混。
+  开关 **on = 展开**（用户要求：打开 = 展开，与其他开关同向）；与后视镜加热不同，别混。
 """
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ class _Coord:
 
 
 class TestMirrorFoldState:
-    """★ on = 收起（folded）；裸值 1 = 收起。"""
+    """★ on = 展开（unfolded）；裸值 1 = 收起。两者方向相反，勿混。"""
 
     def test_one_is_folded(self):
         s = _src()
@@ -76,10 +76,24 @@ class TestMirrorFoldState:
         assert '== 1' in blk, "折叠判定必须按『1=收起』"
         assert 'any(_vals)' in blk or 'any(' in blk, "任一镜子收起即视为收起"
 
+    def test_state_mapping_direction(self):
+        """★ on=展开 的判定必须是 `not any(收起)` —— 方向反了就是"打开=收起"。
+
+        （这条是为了防【语义方向】回归：与后视镜加热不同，
+          裸值 1=收起，但开关 on 必须表示展开。）
+        """
+        src = _src()
+        i = src.index('elif self._control_type == "__RM_FOLD__":')
+        blk = src[i:i + 1200]
+        assert "== 1" in blk, "裸值判定仍应是 1 = 收起"
+        assert "not any(_vals)" in blk, (
+            "开关判定必须是 not any(收起) → on=展开；"
+            "若写成 any(_vals) 则 on=收起（方向反了）")
+
     def test_fold_switch_exists_with_right_semantics(self):
         s = _src()
         assert '("mirror_fold", "后视镜折叠"' in s, "缺少后视镜折叠开关"
-        assert '"on = 收起' in s or 'on = 收起' in s, "诊断属性未标注 on=收起"
+        assert '"on = 展开' in s, "诊断属性必须标注 on = 展开"
 
     def test_fold_cmd_data_from_apk(self):
         s = _src()
