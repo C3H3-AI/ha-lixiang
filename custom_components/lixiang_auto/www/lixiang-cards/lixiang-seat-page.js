@@ -105,6 +105,9 @@ const STYLE = `
   .dial .t sup { font-size:20px; font-weight:400; }
   .tlbl { text-align:center; font-size:12px; color:var(--lx-t3); margin-top:6px; }
   .modes { display:grid; grid-template-columns:repeat(4,1fr); gap:6px; margin-top:20px; }
+  /* ★ 2026-10-11 该车型无可用模式时的空态 */
+  .mempty { grid-column:1/-1; padding:26px 12px; text-align:center;
+            color:var(--lx-t3,#9A9A9A); font-size:13px; }
   .m { display:flex; flex-direction:column; align-items:center; gap:6px;
        cursor:pointer; padding:4px 0; border-radius:12px; }
   .m:hover { background:var(--lx-card); }
@@ -194,6 +197,10 @@ class LixiangSeatPage extends HTMLElement {
     const heat = keys.heat ? this._eid(keys.heat) : null;
     const vent = keys.vent ? this._eid(keys.vent) : null;
     const o = opts || {};
+    // ★ 2026-10-11 车型适配：整排都没有可控件 → 整排不渲染。
+    //   否则会出现"一个空座椅图形，点不动"（如 5 座车的二排中、
+    //   或这台车只有前排座椅加热）。
+    if (!heat && !vent) return "";
     return `<div class="seat${o.bench ? " bench" : ""}" data-seat="${label}">
       <div class="pile"></div>
       ${heat ? `<button class="btn" data-fan="${keys.heat}" aria-label="${label}加热">
@@ -201,6 +208,28 @@ class LixiangSeatPage extends HTMLElement {
       ${vent ? `<button class="btn" data-fan="${keys.vent}" aria-label="${label}通风">
         <span class="ic" style="color:#9A9A9A">${ICON_FAN}</span><span class="sp"></span></button>` : ""}
     </div>`;
+  }
+
+  /** 模式定义（★ 提到方法里，与空调页同构）。 */
+  _modes() {
+    return [
+      { key:"ac",      name:"空调",     icon:"ic_home_fan_on.webp",  src:"ac" },
+      { key:"cool",    name:"极速制冷", icon:"ic_home_ice_cool.webp", src:"ac_fast_cold" },
+      { key:"heat",    name:"极速制热", icon:"ic_home_fan_off.webp",  src:"ac_fast_hot" },
+      { key:"defrost", name:"除雪除冰", icon:"ic_home_ice_heat.webp", src:"ac_defrost" },
+    ];
+  }
+
+  /**
+   * 该模式在这台车上是否可用（车型适配）。
+   * ★ 判据 = 实体是否存在（服务端已按车型能力门控），与首页/空调/设置页一致。
+   */
+  _modeSupported(m, warmup) {
+    const eid = this._eid(m.src);
+    if (!eid) return false;
+    if (this._st(eid)) return true;
+    if (warmup) return !!(this._config || {})[m.src];
+    return false;
   }
 
   _build() {
@@ -229,16 +258,16 @@ class LixiangSeatPage extends HTMLElement {
             <span class="ic" style="color:#9A9A9A">${ICON_HEAT}</span><span class="sp"></span></button>
         </div>` : ""}
 
-        <div class="row2seat">
-          ${this._seatHtml({heat:"seat_fl_heat", vent:"seat_fl_vent"}, "主驾")}
-          ${this._seatHtml({heat:"seat_fr_heat", vent:"seat_fr_vent"}, "副驾")}
-        </div>
-
-        <div class="row3seat">
-          ${this._seatHtml({heat:"seat_rl_heat", vent:"seat_rl_vent"}, "二排左", {bench:true})}
-          ${this._seatHtml({heat:"seat_rc_heat"}, "二排中", {bench:true})}
-          ${this._seatHtml({heat:"seat_rr_heat", vent:"seat_rr_vent"}, "二排右", {bench:true})}
-        </div>
+        ${(() => {
+          const r2 = [this._seatHtml({heat:"seat_fl_heat", vent:"seat_fl_vent"}, "主驾"),
+                      this._seatHtml({heat:"seat_fr_heat", vent:"seat_fr_vent"}, "副驾")].filter(Boolean).join("");
+          const r3 = [this._seatHtml({heat:"seat_rl_heat", vent:"seat_rl_vent"}, "二排左", {bench:true}),
+                      this._seatHtml({heat:"seat_rc_heat"}, "二排中", {bench:true}),
+                      this._seatHtml({heat:"seat_rr_heat", vent:"seat_rr_vent"}, "二排右", {bench:true})].filter(Boolean).join("");
+          // ★ 整排都为空 → 该排容器也不出现
+          return (r2 ? `<div class="row2seat">${r2}</div>` : "")
+               + (r3 ? `<div class="row3seat">${r3}</div>` : "");
+        })()}
       </div>
 
       <div class="sheet">
@@ -285,24 +314,23 @@ class LixiangSeatPage extends HTMLElement {
     this.querySelector("#dec").addEventListener("click", () => step(-0.5));
     this.querySelector("#inc").addEventListener("click", () => step(+0.5));
 
-    // 4 个模式（复用空调页）
-    const MODES = [
-      { key:"ac",      name:"空调",     icon:"ic_home_fan_on.webp",  src:"ac" },
-      { key:"cool",    name:"极速制冷", icon:"ic_home_ice_cool.webp", src:"ac_fast_cold" },
-      { key:"heat",    name:"极速制热", icon:"ic_home_fan_off.webp",  src:"ac_fast_hot" },
-      { key:"defrost", name:"除雪除冰", icon:"ic_home_ice_heat.webp", src:"ac_defrost" },
-    ];
+    // 模式（★ 2026-10-11 按车型能力过滤，与空调页同一套）
     const mb = this.querySelector("#modes");
-    MODES.forEach(m => {
-      const d = document.createElement("div");
-      d.className = "m"; d.dataset.k = m.key;
-      d.innerHTML = `<div class="c"><img src="${__iconBase}/${m.icon}" alt=""
-        onerror="this.src='${__iconBase}/ic_home_fan_on.webp'"></div><div class="n">${m.name}</div>`;
-      const act = () => this._tapMode(m);
-      this._a11y(d, m.name, act);
-      d.addEventListener("click", act);
-      mb.appendChild(d);
-    });
+    const modes = this._modes().filter(m => this._modeSupported(m));
+    if (!modes.length) {
+      mb.innerHTML = '<div class="mempty">该车型暂无可用模式</div>';
+    } else {
+      modes.forEach(m => {
+        const d = document.createElement("div");
+        d.className = "m"; d.dataset.k = m.key;
+        d.innerHTML = `<div class="c"><img src="${__iconBase}/${m.icon}" alt=""
+          onerror="this.src='${__iconBase}/ic_home_fan_on.webp'"></div><div class="n">${m.name}</div>`;
+        const act = () => this._tapMode(m);
+        this._a11y(d, m.name, act);
+        d.addEventListener("click", act);
+        mb.appendChild(d);
+      });
+    }
 
     this._built = true;
   }
@@ -378,7 +406,9 @@ class LixiangSeatPage extends HTMLElement {
     const t = this._num(this._eid("target_temp"));
     q("#v-temp").textContent = t == null ? "—" : (Number.isInteger(t) ? t : t.toFixed(1));
 
-    const MODES = { ac:"ac", cool:"ac_fast_cold", heat:"ac_fast_hot", defrost:"ac_defrost" };
+    // ★ 从 _modes() 派生（避免第二份硬编码数据源）
+    const MODES = {};
+    this._modes().forEach(m => { MODES[m.key] = this._eid(m.src); });
     Object.entries(MODES).forEach(([k, f]) => {
       const el = q(`.m[data-k="${k}"]`); if (!el) return;
       const eid = this._eid(f);
