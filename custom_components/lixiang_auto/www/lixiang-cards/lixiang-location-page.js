@@ -594,6 +594,39 @@ class LixiangLocationPage extends HTMLElement {
   }
 
   /** 按当前缩放/偏移算出需要的瓦片并放置。 */
+  /** ★★ 2026-10-11 修复：这个方法此前【只有调用、没有定义】（第 562 行
+   *  `this._positionTiles()`）→ 拖动地图立刻抛
+   *  `TypeError: this._positionTiles is not a function`（真机 frontend 日志实证）。
+   *
+   *  职责：**只重新定位已有瓦片**（不创建/删除）。
+   *  拖动时只需平移，用这个比重建 `_drawMap()` 快得多、也不闪。
+   *  瓦片范围变化（缩放/大跳）才走 `_drawMap()`。
+   *
+   *  定位算式与 `_drawMap` 同源（都来自瓦片坐标系的小数坐标）：
+   *    left = 车辆在容器中的像素位置 - 车辆所在瓦片内的偏移 + (瓦片整数坐标 - 中心瓦片) * 256
+   */
+  _positionTiles() {
+    const box = this.querySelector("#tiles");
+    const wrap = this.querySelector("#mapwrap");
+    if (!box || !wrap || !this._map) return;
+    const W = wrap.clientWidth || 400, H = wrap.clientHeight || 340;
+    const z = this._map.z;
+    const [cxExact, cyExact] = this._lonlatToTile(this._map.lat, this._map.lon, z);
+    const cxInt = Math.floor(cxExact), cyInt = Math.floor(cyExact);
+    const offX = (cxExact - cxInt) * 256;
+    const offY = (cyExact - cyInt) * 256;
+    const px = this._map.px || 0, py = this._map.py || 0;
+    const cpx = W / 2 + px, cpy = H / 2 + py;
+    box.querySelectorAll("img[data-k]").forEach((im) => {
+      const parts = String(im.dataset.k || "").split("_");
+      if (parts.length !== 2) return;
+      const tx = Number(parts[0]), ty = Number(parts[1]);
+      if (!Number.isFinite(tx) || !Number.isFinite(ty)) return;
+      im.style.left = Math.round(cpx - offX + (tx - cxInt) * 256) + "px";
+      im.style.top = Math.round(cpy - offY + (ty - cyInt) * 256) + "px";
+    });
+  }
+
   _drawMap() {
     const box = this.querySelector("#tiles");
     const wrap = this.querySelector("#mapwrap");
