@@ -1601,6 +1601,69 @@ class LiApiClient:
                                          self._travel_bearer(force_login=True))
         return r
 
+    def get_charge_monthly_stats_all(
+            self, types: tuple[int, ...] | None = None) -> dict:
+        """按月充电统计（**聚合全部 4 种充电类型**）。
+
+        ★★ 2026-10-11 修复一个用户可感知的数据错误：
+
+        服务端 `monthlyStatistics` 接口**必须带 `chargingType`**，且每个类型
+        **只返回该类型的统计** —— 没有"全部"这个取值（实测 0 返回空）。
+
+        而此前前端"按月统计"走的是 `get_charge_monthly_stats()`（默认
+        `charging_type=1` = 仅 DC 直流快充）→ **只显示实际电量的约 1/3**。
+
+        实测对照（车主 App 截图 vs 本方法聚合值，2026 年 8 个月全部吻合）：
+
+        | 月 | 单 type=1（旧）| 4 类型聚合（本方法）| App 显示 |
+        |---|---|---|---|
+        | 10月 | 6 次 / 78.65 | 13 次 / 223.32 | 13 次 / 223.32 ✅ |
+        |  9月 | 1 次 / 12.93 | 28 次 / 529.18 | 28 次 / 529.18 ✅ |
+        |  8月 | 12 次 / 151.3 | 40 次 / 611.00 | 40 次 / 611.00 ✅ |
+
+        返回结构与单类型一致：`{"code": 0, "data": [{year, month,
+        chargingTimes, chargingCapacity}]}`，按 (year, month) **求和**后
+        时间倒序。全部类型都失败才返回错误码（避免部分失败伪装成"没数据"）。
+
+        types: 只聚合指定的类型（如 ``(3, 4)`` = App 的「理想超充」，
+               含 5C 超充 + 4C/5C 理想超充）；``None`` = 全部 4 种。
+        """
+        wanted = set(types) if types else None
+        by_key: dict[tuple, dict] = {}
+        got = False
+        failed = 0
+        for ct, _pfx in CHARGE_TYPE_PREFIX:
+            if wanted is not None and ct not in wanted:
+                continue
+            try:
+                r = self.get_charge_monthly_stats(ct)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("充电统计 type=%s 失败: %s", ct, err)
+                failed += 1
+                continue
+            if r.get("code") not in (None, 0):
+                failed += 1
+                continue
+            for x in (r.get("data") or []):
+                if not isinstance(x, dict):
+                    continue
+                key = (x.get("year"), x.get("month"))
+                cur = by_key.setdefault(key, {
+                    "year": x.get("year"), "month": x.get("month"),
+                    "chargingTimes": 0, "chargingCapacity": 0.0,
+                })
+                cur["chargingTimes"] += int(x.get("chargingTimes") or 0)
+                cur["chargingCapacity"] += float(x.get("chargingCapacity") or 0)
+                got = True
+        if not got:
+            return {"code": -1, "msg": f"全部充电类型均失败({failed}/4)", "data": []}
+        out = sorted(by_key.values(),
+                     key=lambda a: (a.get("year") or 0, a.get("month") or 0),
+                     reverse=True)
+        for x in out:
+            x["chargingCapacity"] = round(x["chargingCapacity"], 2)
+        return {"code": 0, "data": out}
+
     def get_vss_state(self, paths: list[str]) -> dict:
         """读取实时 VSS 信号. 返回 {path: {"value":..,"ts":..}}; 未返回的路径不含在内.
 
