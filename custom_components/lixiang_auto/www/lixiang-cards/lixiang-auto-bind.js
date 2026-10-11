@@ -122,6 +122,9 @@ const AUTO_BIND = {
     power:          ["充电功率(CLTC)", "充电功率(WLTC)"],
     remain:         ["剩余充电时间"],
     soc:            ["电池电量"],
+    // ★ 2026-10-11：App 首页充电卡显示「剩余2小时25分钟」——
+    //   对应 VSS 信号 Vehicle.Powertrain.Battery.ChargeSurplusTime（剩余充电时间，min）
+    remain_time:    ["剩余充电时间", "剩余时间", "充电剩余"],
     fault:          ["充电故障"],
     month_times:    null,   // 集成无「次数」实体 → 由卡片从月度统计算（见 charge-page）
     /* 健康页别名 */
