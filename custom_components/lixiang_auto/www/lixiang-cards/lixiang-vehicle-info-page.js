@@ -1,5 +1,8 @@
 /**
- * lixiang-vehicle-info-page —— 车辆信息（二级页，对齐 App「车辆设置」）
+ * lixiang-vehicle-info-page —— 车辆信息（二级页）
+ *   ★ 2026-10-12 修正：标题原为「车辆设置」，与首页入口「钥匙管理」、
+ *     卡片名「车辆信息」三处不一致，车主反馈「钥匙管理显示的设置的内容」。
+ *     现统一为「车辆信息」—— 因为内容就是车辆昵称/车牌/型号/车架号/软件版本。
  *
  * App 实测结构（截图 1260×2844 @3x）：
  *   卡1（4 行）：🚗车辆昵称 理想L6 / 🚗车牌号 浙A12345 /
@@ -131,7 +134,7 @@ class LixiangVehicleInfoPage extends HTMLElement {
       <div class="topbar">
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
           <img src="${__iconBase}/ic_home_return.webp" alt=""></div>
-        <h1>车辆设置</h1>
+        <h1>车辆信息</h1>
       </div>
 
       ${renderCards({
