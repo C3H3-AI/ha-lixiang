@@ -9,7 +9,7 @@
  *   · 收起箭头
  *   · 卡片行1：空调卡 | 位置卡
  *   · 卡片行2：本月陪伴里程+折线图 | 剩余电量 / 哨兵模式
- *   · 入口：车辆健康 | 任务大师 / 钥匙管理 | 情景模式 / 车辆设置
+ *   · 入口：车辆健康 | 任务大师 / 车辆信息 | 情景模式 / 车辆设置
  *   （★ 2026-10-12 按车主指示移除「服务专家」与「理想AD学习平台」）
  *   · 图标用 _lisa 粗线版
  */
@@ -609,7 +609,11 @@ class LixiangAppHome extends HTMLElement {
             <div class="tx"><div class="nm">任务大师</div></div></div>
           <div class="entry" id="e-key" role="button" tabindex="0">
             <img class="ic" src="${__iconBase}/ic_home_bluetooth.webp" alt="">
-            <div class="tx"><div class="nm">钥匙管理</div><div class="sd" id="v-key">未连接</div></div></div>
+            <!-- ★ 2026-10-12：原为「钥匙管理 / 未连接」——
+                 ① 名称与页面内容（车辆信息）不符，车主据此误判「显示的设置的内容」；
+                 ② 「未连接」来自 _eid("key_connected")，但该绑定键根本不存在，
+                    所以永远显示假状态。现改为「车辆信息」+ 真实车型副标题。 -->
+            <div class="tx"><div class="nm">车辆信息</div><div class="sd" id="v-key">—</div></div></div>
           <div class="entry" id="e-scene" role="button" tabindex="0">
             <img class="ic" src="${__iconBase}/ic_home_scene_mode_lisa.png" alt="" onerror="this.src='${__iconBase}/ic_home_control.webp'">
             <div class="tx"><div class="nm">情景模式</div></div></div>
@@ -1034,8 +1038,12 @@ class LixiangAppHome extends HTMLElement {
     const senEl = q("#c-sentry"); if (senEl) senEl.className = "card sentry" + (sen ? " on" : "");
     q("#v-sentry").textContent = this._eid("sentry") ? (sen ? "已激活" : "未激活") : "未接入";
 
-    const keyOn = this._eid("key_connected") ? this._on(this._eid("key_connected")) : false;
-    q("#v-key").textContent = this._eid("key_connected") ? (keyOn ? "已连接" : "未连接") : "未连接";
+    // 副标题显示车型（真实数据）；拿不到就留空，不再显示假状态
+    const vk = q("#v-key");
+    if (vk) {
+      const cfg = this._txt(this._eid("vehicle_cfg"));
+      vk.textContent = cfg ? String(cfg).slice(0, 10) : "";
+    }
 
     this._applyQuick(); this._spark();
     this._fetchDaily();
