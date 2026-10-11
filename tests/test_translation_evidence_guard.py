@@ -39,7 +39,7 @@ TR = ROOT / "custom_components" / "lixiang_auto" / "translations.py"
 
 #: 2026-10-11 基线：VALUE_MAPS 里未标注 [实测]/[实证] 的条目数（= 视为 [推断]）
 #: 只能下降。每次有映射被实测确认，就下调这个数字（并在 translations.py 补标注）。
-MAX_UNVERIFIED = 26   # 基线实测值（2026-10-11），确认一条减一
+MAX_UNVERIFIED = 8   # 2026-10-11 精确基线，确认一条减一   # 基线实测值（2026-10-11），确认一条减一
 
 
 def _src() -> str:
@@ -82,19 +82,47 @@ class TestEvidencePolicy:
             "DoorLockStatus.MainDoor": "[实证]",
         }
         for key, tag in required.items():
-            idx = src.index(f'"{key}"')
-            # 往前看 12 行注释
-            ctx = src[max(0, idx - 900):idx]
+            entry = next(l for l in src.splitlines() if l.strip().startswith('"ChargeStatus"'))
+            ctx = self._comment_block_before(src, entry)
             assert tag in ctx, f"{key} 缺少 {tag} 标注（依据被删了？）"
 
     def test_mirror_keeps_its_incident_note(self):
         """后视镜那条必须保留"旧映射是推断、且伪装成有出处"的记述。"""
         src = _src()
-        idx = src.index('"LRearMirro"')
-        ctx = src[max(0, idx - 1200):idx]
+        entry = next(l for l in src.splitlines() if l.strip().startswith('"LRearMirro"'))
+        ctx = src[: src.index(entry)]
+        ctx = self._comment_block_before(src, entry) + "\n" + ctx[-1500:]
         assert "推断" in ctx, "后视镜映射必须写明旧值是推断而来"
         assert "638" in ctx or "只有路径常量" in ctx, \
             "必须点明所谓『来源行』其实只有路径常量（避免再次误信）"
+
+    @staticmethod
+    def _comment_block_before(src: str, entry_line: str) -> str:
+        """取该条目**紧邻上方**的注释块（遇空行/非注释即停）。
+
+        ★ 为什么不用固定字符窗口（2026-10-11 修正）：
+          原来用 `src[idx-900:idx]`，一旦别的条目在上方插入长注释，
+          窗口就会把**邻居的标注**误算到自己头上（或漏掉自己的），
+          表现为"合并别人的 PR 后上限突然超了"这种假警报。
+          这里改成按行回溯到最近的注释块边界，判定才稳定。
+        """
+        lines = src[: src.index(entry_line)].splitlines()
+        out: list[str] = []
+        seen_comment = False
+        for ln in reversed(lines):
+            t = ln.strip()
+            if t.startswith("#"):
+                out.append(t)
+                seen_comment = True
+            elif t == "":
+                if seen_comment:
+                    continue        # 注释块里的空行，继续往上收集
+                break               # 还没进入注释块就遇空行 → 到顶
+            elif t == ")" or t.endswith(","):
+                continue            # 上一个多行映射的收尾，不算边界
+            else:
+                break
+        return "\n".join(reversed(out))
 
     def test_unverified_count_within_cap(self):
         """★ 未标注 [实测]/[实证] 的映射数不得超过上限。
@@ -106,9 +134,7 @@ class TestEvidencePolicy:
         lines = _value_map_lines()
         unverified = 0
         for _, ln in lines:
-            key = re.match(r'^\s*"([^"]+)"', ln).group(1)
-            idx = src.index(ln)
-            ctx = src[max(0, idx - 900):idx]
+            ctx = self._comment_block_before(src, ln)
             if "[实测]" not in ctx and "[实证]" not in ctx:
                 unverified += 1
         assert unverified <= MAX_UNVERIFIED, (
