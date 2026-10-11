@@ -180,29 +180,45 @@ class TestExistingBehaviorPreserved:
         assert 'class="mbar" aria-hidden="true"' in out
 
 
-class TestFlatStructure:
-    """★ 扁平 + 内联明细（车主反馈后重构）。"""
+class TestYearFolding:
+    """★ 年份折叠 + 月份内联明细（车主："充电明细建议按年也折叠"）。
 
-    def test_inline_detail_container_present(self):
+    演进：按年折叠（明细在底部看不到）→ 扁平+内联 → **年份折叠+内联**（兼顾）。
+    """
+
+    def test_year_group_present(self):
         out = run_node(harness(SAMPLE))
-        assert out.count('class="md" id="md-2026-') == 3, \
-            "每个月都应有内联明细容器"
+        assert 'class="year' in out and 'data-year="2026"' in out, "应有年份分组"
 
-    def test_no_year_folding_markup(self):
+    def test_year_header_summary(self):
+        """年份头应带汇总（月数 / 次数 / 总电量）。"""
         out = run_node(harness(SAMPLE))
-        assert "yhead" not in out and "ymonths" not in out, "不应再有按年折叠的结构"
+        assert "3 个月" in out, "年份头应显示月数"
+        assert "15" in out, "年份头应显示总次数（5+8+2）"
+        assert "260.0" in out, "年份头应显示总电量（80+160+20）"
 
-    def test_no_bottom_list(self):
+    def test_month_rows_inside_year(self):
+        out = run_node(harness(SAMPLE))
+        assert out.count("class=\"month") == 3 or out.count('class="month') == 3
+
+    def test_inline_detail_container_kept(self):
+        """★ 月份内联明细必须保留（车主认可的交互，不要在重构中丢掉）。"""
+        out = run_node(harness(SAMPLE))
+        assert out.count('class="md" id="md-2026-') == 3, "每个月都要有内联明细容器"
+
+    def test_latest_year_expanded_by_default(self):
+        """有数据时默认展开最新年份（否则用户先看到全收起）。"""
         s = PAGE.read_text(encoding="utf-8")
-        assert 'id="list"' not in s, "底部明细容器应已移除"
+        i = s.index("_renderYears() {")
+        blk = s[i:s.index("_renderList() {", i)]
+        assert "!this._openYears.size" in blk, "应有默认展开最新年的逻辑"
 
-    def test_year_prefix_only_for_older(self):
+    def test_multiple_years_both_have_headers(self):
         rows = [{"year": 2026, "month": 10, "chargingTimes": 1, "chargingCapacity": 10.0}]
         older = [{"year": 2025, "months": [
             {"year": 2025, "month": 8, "chargingTimes": 2, "chargingCapacity": 53.88}]}]
         out = run_node(harness(rows, extra_years=older))
-        assert "10 月" in out, "同年不显示年份"
-        assert "2025 年 8 月" in out, "跨年才显示年份前缀"
+        assert 'data-year="2026"' in out and 'data-year="2025"' in out, "每年一个分组"
 
 
 class TestSourceGuards:
