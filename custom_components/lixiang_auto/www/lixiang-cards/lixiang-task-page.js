@@ -203,6 +203,10 @@ class LixiangTaskPage extends HTMLElement {
     if (typeof m === "string" && m.includes(".")) return m;
     return (this._autoBind() || {})[f] || null;
   }
+  // ★ 2026-10-11 新增：读实体状态（其他页面都有；此前本页缺它，
+  //   新加的触发条件过滤调用后会抛 TypeError → 被 test_frontend_bindings 抓到）
+  _st(id) { return (id && this._hass) ? this._hass.states[id] : null; }
+
 
   _a11y(el, label, handler) {
     if (!el || !handler) return;
@@ -497,7 +501,10 @@ class LixiangTaskPage extends HTMLElement {
       { label: "车辆上锁", t: { platform: "state", entity_id: this._eid("lock"), to: "locked" } },
       { label: "电量低于 20%", t: { platform: "numeric_state", entity_id: this._eid("battery"), below: 20 } },
       { label: "车内温度高于 30°C", t: { platform: "numeric_state", entity_id: this._eid("room_temp"), above: 30 } },
-    ];
+      // ★ 2026-10-11 与动作列表一致地过滤：实体不存在就别给这个选项，
+      //   否则用户选了 → 任务创建失败（服务端找不到该 entity_id）
+    ].filter(o => o.t && o.t.entity_id && this._st(o.t.entity_id));
+    if (!OPTS.length) { this._toast("这台车暂无可用触发条件（缺少状态实体）", "err"); return; }
     const pick = await this._choose("选择触发条件", OPTS.map(o => o.label));
     if (pick == null) return;
     this._draft.trigger = OPTS[pick].t;
