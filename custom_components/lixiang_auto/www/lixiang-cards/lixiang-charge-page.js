@@ -155,6 +155,14 @@ const STYLE = `
   .m .mv { margin-left:auto; font-family:"LxNum"; font-size:14px; font-weight:500; }
   .m .mu { font-size:11px; color:var(--lx-t3); margin-left:3px; }
   .m .mt { font-size:11px; color:var(--lx-t3); margin-left:8px; min-width:34px; text-align:right; }
+  /* ★ 2026-10-11：月电量迷你条形（与能量页 .dbar 风格统一 —— 两处都是"历史数据"，
+     不应该一个可视化一个纯文字）。宽度按【当年最大月】归一，最小 3% 保证可见。 */
+  .m .mbar { flex:1; height:6px; border-radius:3px; background:var(--lx-line);
+             overflow:hidden; margin:0 10px; min-width:30px; }
+  .m .mbar > i { display:block; height:100%; border-radius:3px; background:#2C6BFF;
+                 transition:width .3s ease; }
+  .m.top .mv { color:var(--lx-t1); font-weight:600; }
+  .m.top .mbar > i { background:#1E5AE0; }
   .empty { text-align:center; color:var(--lx-t3); font-size:13px; padding:16px 0; }
 
   /* ── 明细列表 ── */
@@ -582,11 +590,20 @@ class LixiangChargePage extends HTMLElement {
       const tot = y.months.reduce((a, m) => a + Number(m.chargingCapacity || 0), 0);
       const cnt = y.months.reduce((a, m) => a + Number(m.chargingTimes || 0), 0);
       const open = this._openYears.has(String(y.year));
-      const rows = y.months.map((m) => {
+      // ★ 2026-10-11：月电量条形 —— 以【当年最大月】为基准（跨年不可比，故按年归一）
+      const mvals = y.months.map((m) => Number(m.chargingCapacity) || 0);
+      const mmax = Math.max(1, ...mvals);
+      const mtop = mvals.length ? mvals.indexOf(Math.max(...mvals)) : -1;
+      const rows = y.months.map((m, mi) => {
         const sel = this._selMonth && this._selMonth.year === y.year && this._selMonth.month === m.month;
-        return `<div class="m${sel ? " sel" : ""}" data-y="${y.year}" data-m="${m.month}">
+        const v = mvals[mi];
+        const w = v > 0 ? Math.max(3, Math.round((v / mmax) * 100)) : 0;
+        const isTop = mi === mtop && v > 0;
+        return `<div class="m${sel ? " sel" : ""}${isTop ? " top" : ""}"
+                     data-y="${y.year}" data-m="${m.month}">
             <span class="mn">${m.month} 月</span>
             <span class="mt">${m.chargingTimes} ${I18N.times}</span>
+            <span class="mbar" aria-hidden="true"><i style="width:${w}%"></i></span>
             <span class="mv">${Number(m.chargingCapacity).toFixed(1)}</span>
             <span class="mu">kWh</span></div>`;
       }).join("");
