@@ -170,6 +170,12 @@ TASK_UA = "M01/8.27.0 (Xiaomi; 16)"    # user-agent
 TASK_DEVICE_MODEL = "23127PN0CC"       # x-chj-devicemodel（真机型号）
 TASK_META = '{"language":"zh","code":"102004"}'  # x-chj-metadata（travel 同款）
 
+# ★ 2026-10-11 实测更正：字典接口路径**必须带 /v1/**，漏掉会返回
+#   100012「没有接口访问权限」（与"无权限"无法区分，容易误判成路径错）。
+#   该接口在 APK 里搜不到任何字符串（连上面这条正在用的 task-config 也搜不到）
+#   → 路径本身也由服务端配置下发，逆向拿不到，只能运行时调。
+EP_TASK_DICT = "/ssp-task-master-service/v1/task-basic/mob/condition-and-action/{vin}"
+
 EP_TASK_LIST = "/ssp-task-master-service/v1/task-config/mob/my-task-by-vin/{vin}"
 EP_TASK_SAVE = "/ssp-task-master-service/v1/task-config/mob/save/{vin}"
 EP_TASK_UPDATE = "/ssp-task-master-service/v1/task-config/mob/update-task/{vin}"
@@ -2073,6 +2079,23 @@ class LiApiClient:
         if not isinstance(data, list):
             raise LiApiError(f"任务列表响应异常: {str(resp)[:200]}")
         return data
+
+    def get_task_dict(self) -> dict | None:
+        """拉取任务条件/动作字典（服务端下发；App 靠它渲染"添加条件"页）。
+
+        ★ 路径必须带 /v1/ —— 漏掉返回 100012，与"无权限"无法区分（实测踩过）。
+          返回 None 表示"拿不到"（调用方应继续用本地缓存，不要清空）。
+        """
+        try:
+            r = self._task_call("GET", EP_TASK_DICT.format(vin=self._vin))
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning("拉取任务字典失败（将沿用本地缓存）: %s", err)
+            return None
+        if not isinstance(r, dict) or r.get("code") != 0:
+            _LOGGER.warning("任务字典接口返回异常: %s",
+                           (r or {}).get("msg") if isinstance(r, dict) else r)
+            return None
+        return r
 
     def save_task(self, task: dict) -> dict:
         """创建任务 → POST /task-config/mob/save/{VIN}（body 用 build_task_payload）。"""
