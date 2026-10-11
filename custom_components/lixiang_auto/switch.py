@@ -418,9 +418,19 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
                     except (TypeError, ValueError):
                         return bool(vv)
 
-                _l2, _r2 = _fold("mirror_left"), _fold("mirror_right")
+                _l2, _r2 = _fold("mirror_left"), _fold("mirror_right")  # True = 收起
+
+
                 _vals = [x for x in (_l2, _r2) if x is not None]
-                vss_val = (any(_vals) if _vals else None)   # 任一收起 → on（收起）
+
+
+                # ★ on = 展开（用户要求：打开 = 展开，与其他开关"打开=功能开启"同向）
+
+
+                #   任一镜子收起 → off；两路都展开 → on
+
+
+                vss_val = ((not any(_vals)) if _vals else None)
             elif self._control_type == "__ABAT_VENT__":
                 # ★ 前排通风：App/VSS 均无状态回读 → 只能靠乐观态
                 #   （last_command_result 会记录服务端 pushState 作为佐证）
@@ -485,7 +495,7 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
                 "cmd_key": "rmCtrl",
                 "cmd_data_协议": '收起={"ctrlType":"FOLD","ctrlValue":"OFF"} / 展开="ON"',
                 "cmd_data_来源": "APK 反编译 XVehicleJobHelper.remoteVehOpen/CloseRearMirro（8.27.0）",
-                "状态语义": "on = 收起（LRearMirro=1），off = 展开（=0）",
+                "状态语义": "on = 展开（LRearMirro=0），off = 收起（=1）",
                 "实车验证": "⚠️ 待验证（需真车点一次；无法由自动化代劳）",
             })
         elif self._control_type == "__ABAT_VENT__":
