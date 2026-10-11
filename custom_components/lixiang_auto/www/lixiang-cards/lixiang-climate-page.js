@@ -72,6 +72,9 @@ const STYLE = `
      宽屏一行 5 个、窄屏自动换行，图标 54px 不会被压缩）*/
   .modes { display:grid; grid-template-columns:repeat(auto-fit,minmax(64px,1fr)); gap:8px;
            padding:22px 16px 0; }
+  /* ★ 2026-10-11 该车型无可用模式时的空态 */
+  .mempty { grid-column:1/-1; padding:26px 12px; text-align:center;
+            color:var(--lx-t3,#9A9A9A); font-size:13px; }
   .m { display:flex; flex-direction:column; align-items:center; gap:7px;
        cursor:pointer; padding:4px 0; border-radius:14px;
        transition:background .15s; }
@@ -177,6 +180,32 @@ class LixiangClimatePage extends HTMLElement {
     });
   }
 
+  /** 空调模式定义（★ 提到方法里：便于测试与复用）。 */
+  _modes() {
+    return [
+      { key:"ac",      name:"空调",       icon:"ic_home_fan_on.webp",   kind:"climate", field:"ac" },
+      { key:"cool",    name:"极速制冷",   icon:"ic_home_ice_cool.webp", kind:"switch",  field:"ac_fast_cold" },
+      { key:"heat",    name:"极速制热",   icon:"ic_home_fan_off.webp",  kind:"switch",  field:"ac_fast_hot" },
+      { key:"defrost", name:"除雪除冰",   icon:"ic_home_ice_heat.webp", kind:"switch",  field:"ac_defrost" },
+      // ★ 2026-10-09：后视镜加热（switch rmCtrl，实车实测可用）
+      { key:"mirror",  name:"后视镜加热", icon:"ic_home_rearmirroheat_on_lisa.png",
+        kind:"switch", field:"mirror" },
+    ];
+  }
+
+  /**
+   * 该模式在这台车上是否可用（车型适配）。
+   * ★ 判据 = 实体是否存在（服务端已按车型能力门控），与首页/设置页同一套思路。
+   *   首帧实体表未就绪时放宽，避免闪烁。
+   */
+  _modeSupported(m, warmup) {
+    const eid = this._eid(m.field || "ac");
+    if (!eid) return false;
+    if (this._st(eid)) return true;
+    if (warmup) return !!(this._config || {})[m.field || "ac"];
+    return false;
+  }
+
   _build() {
     while (this.firstChild) this.removeChild(this.firstChild);
     const st = document.createElement("style"); st.textContent = STYLE; this.appendChild(st);
@@ -241,28 +270,24 @@ class LixiangClimatePage extends HTMLElement {
     this.querySelector("#dec").addEventListener("click", () => step(-0.5));
     this.querySelector("#inc").addEventListener("click", () => step(+0.5));
 
-    // 4 个模式按钮
-    const MODES = [
-      { key:"ac",      name:"空调",       icon:"ic_home_fan_on.webp",       kind:"climate", field:"ac" },
-      { key:"cool",    name:"极速制冷",   icon:"ic_home_ice_cool.webp",     kind:"switch",  field:"ac_fast_cold" },
-      { key:"heat",    name:"极速制热",   icon:"ic_home_fan_off.webp",      kind:"switch",  field:"ac_fast_hot" },
-      { key:"defrost", name:"除雪除冰",   icon:"ic_home_ice_heat.webp",     kind:"switch",  field:"ac_defrost" },
-      // ★ 2026-10-09 新增：后视镜加热（switch rmCtrl，实车实测可用）
-      { key:"mirror",  name:"后视镜加热", icon:"ic_home_rearmirroheat_on_lisa.png",
-        kind:"switch", field:"mirror" },
-    ];
+    // 模式按钮（★ 2026-10-11 按车型能力过滤：没有的模式整块不出现）
     const box = this.querySelector("#modes");
-    MODES.forEach(m => {
-      const d = document.createElement("div");
-      d.className = "m"; d.dataset.k = m.key;
-      d.innerHTML = `<div class="c" style="position:relative"><img src="${__iconBase}/${m.icon}" alt=""
-        onerror="this.src='${__iconBase}/ic_home_fan_on.webp'"><div class="sp"></div></div>
-        <div class="n">${m.name}</div>`;
-      const act = () => this._tapMode(m);
-      this._a11y(d, m.name, act);
-      d.addEventListener("click", act);
-      box.appendChild(d);
-    });
+    const modes = this._modes().filter(m => this._modeSupported(m));
+    if (!modes.length) {
+      box.innerHTML = '<div class="mempty">该车型暂无可用空调模式</div>';
+    } else {
+      modes.forEach(m => {
+        const d = document.createElement("div");
+        d.className = "m"; d.dataset.k = m.key;
+        d.innerHTML = `<div class="c" style="position:relative"><img src="${__iconBase}/${m.icon}" alt=""
+          onerror="this.src='${__iconBase}/ic_home_fan_on.webp'"><div class="sp"></div></div>
+          <div class="n">${m.name}</div>`;
+        const act = () => this._tapMode(m);
+        this._a11y(d, m.name, act);
+        d.addEventListener("click", act);
+        box.appendChild(d);
+      });
+    }
 
     // 添加按钮（只读）
     const add = () => this._toast("定时出发需在理想 App 内设置（JOB 通道未打通）");
@@ -349,13 +374,9 @@ class LixiangClimatePage extends HTMLElement {
     }
 
     // 5 个模式状态
-    const MAP = {
-      ac: this._eid("ac"),
-      cool: this._eid("ac_fast_cold"),
-      heat: this._eid("ac_fast_hot"),
-      defrost: this._eid("ac_defrost"),
-      mirror: this._eid("mirror"),
-    };
+    // ★ 从 _modes() 派生，避免"第二份硬编码数据源"（改一处漏一处）
+    const MAP = {};
+    this._modes().forEach(m => { MAP[m.key] = this._eid(m.field || "ac"); });
     Object.entries(MAP).forEach(([k, eid]) => {
       const el = q(`.m[data-k="${k}"]`); if (!el) return;
       const ok = !!eid && !!this._st(eid);
