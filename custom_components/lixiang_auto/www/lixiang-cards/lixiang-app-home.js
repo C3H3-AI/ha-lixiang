@@ -72,7 +72,11 @@ const STYLE = `
   .plug img { width:12px; height:12px; display:block; }
   .plug b { font-weight:500; }
   [data-theme="dark"] .plug { color:#30D158; background:rgba(48,209,88,.14); }
-  .root.stuck .head .mini { display:none; }
+  /* ★★ 2026-10-12 删除 '.root.stuck .head .mini { display:none }'：
+     它与「上滑收起成大图旁边的小图」的设计**直接冲突**，而且优先级更高
+     （3 个类 vs '.root.collapsed3d .mini' 只有 2 个类）——
+     结果是**一滚动小图就消失**，车主反馈「标题抬头固定做的不是很好」。
+     现在粘顶时保留小图（这才是 App 的行为）。 */
   .hrow { display:flex; align-items:flex-start; gap:10px; }
   .hleft { flex:1; min-width:0; }
   .title { font-size:25px; font-weight:600; letter-spacing:.2px; line-height:1.15; }
@@ -146,7 +150,11 @@ const STYLE = `
   .card:active { transform:scale(.985); }
   .card:focus-visible { outline:2px solid var(--lx-blue); outline-offset:2px; }
   .card .lbl { font-size:13px; color:var(--lx-t3); }
-  .ac { min-height:150px; display:flex; flex-direction:column;
+  /* ★ 2026-10-12：卡片高度对齐 App。
+     从车主截图量得：温度卡/位置卡约 180x183（**近正方形**）、里程卡约 180x213。
+     此前写死 150px → 卡片偏扁（比 App 矮约 20%）。改用 clamp 随视口缩放，
+     窄屏不过高、宽屏不过矮。 */
+  .ac { min-height:clamp(168px, 46vw, 200px); display:flex; flex-direction:column;
         justify-content:space-between; }
   .ac .temp { font-family:"LxNum"; font-size:30px; font-weight:600; line-height:1.1; }
   .ac .temp sup { font-size:15px; font-weight:500; }
@@ -168,9 +176,10 @@ const STYLE = `
   .ac .chip.on { background:rgba(10,88,246,.08); border-color:var(--lx-blue);
                  color:var(--lx-blue); }
   .ac .chip.on img { opacity:1; }
-  .loc { min-height:150px; display:flex; flex-direction:column; overflow:hidden; }
+  .loc { min-height:clamp(168px, 46vw, 200px); display:flex; flex-direction:column;
+         overflow:hidden; }
   .loc .map { flex:1; border-radius:12px; background:#E8EEF4; overflow:hidden;
-              position:relative; min-height:82px; }
+              position:relative; min-height:clamp(96px, 26vw, 120px); }
   .loc .map iframe { width:100%; height:100%; border:0; }
   /* ── 自建地图（高德瓦片，免 key/免登录）── */
   .loc .map .tiles { position:absolute; inset:0; overflow:hidden; cursor:pointer; }
@@ -190,7 +199,8 @@ const STYLE = `
   .loc .addr span { font-size:12.5px; color:var(--lx-t2); line-height:1.4;
                     display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
                     overflow:hidden; }
-  .mile { min-height:150px; }
+  /* 里程卡比上排略高（App 约 213px）—— 右列是「电量 + 哨兵」两张堆叠 */
+  .mile { min-height:clamp(196px, 54vw, 232px); }
   .mile .big { font-family:"LxNum","Licium"; font-size:30px; font-weight:600; line-height:1.1; }
   .mile .big small { font-size:14px; font-weight:500; color:var(--lx-t2); margin-left:3px; }
   .mile .cap { font-size:13px; color:var(--lx-t3); margin-top:4px; }
