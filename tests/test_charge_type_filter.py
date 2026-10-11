@@ -294,7 +294,7 @@ class TestFlatListInlineDetail:
     def test_detail_container_is_inline(self):
         """明细容器必须在月行**内部**（id=md-{年}-{月}）。"""
         s = self._src()
-        assert 'class="md" id="md-${y}-${m.month}"' in s, "缺内联明细容器"
+        assert 'class="md" id="md-${y.year}-${m.month}"' in s, "缺内联明细容器"
         # 容器应在 .month 卡片内（模板里 mh 之后）
         i = s.index('class="md" id="md-')
         seg = s[max(0, i - 1400):i]
@@ -308,22 +308,22 @@ class TestFlatListInlineDetail:
         assert "#md-${this._selMonth.year}" in blk, "应渲染到内联容器"
         assert 'querySelector("#list")' not in blk, "又渲染回底部容器了"
 
-    def test_flat_not_year_folded(self):
-        """扁平渲染：不再有「按年折叠」的 .yhead/.ymonths。"""
+    def test_year_folding_present(self):
+        """★ 车主拍板：**年份折叠 + 月份内联明细**（兼顾列表短与点开即见）。"""
         s = self._src()
-        assert 'class="yhead"' not in s and 'class="ymonths"' not in s, \
-            "还在按年折叠 —— 应与 App 一样扁平"
         i = s.index("_renderYears() {")
         blk = s[i:s.index("_renderList() {", i)]
-        assert "flat.push(" in blk or "const flat" in blk, "应扁平化月份列表"
+        assert 'class="year' in blk, "应有年份折叠分组"
+        assert "this._openYears" in blk, "年份展开状态应可切换"
 
-    def test_year_prefix_only_for_older_years(self):
-        """★ 非最新年份才显示「2025年8月」前缀（App 的做法）。"""
+    def test_year_shown_once_in_group_header(self):
+        """★ 年份只在分组头出现一次（不再是每月标签的前缀）——
+        这样列表更短，且不会重复。"""
         s = self._src()
         i = s.index("_renderYears() {")
         blk = s[i:s.index("_renderList() {", i)]
-        assert "latestYear" in blk, "应取最新年份做比较"
-        assert "y === latestYear" in blk, "同年不显示年份、跨年才显示"
+        assert '${y.year} 年' in blk, "年份应在分组头"
+        assert '${y} 年 ${m.month} 月' not in blk, "月份标签不应再带年份前缀"
 
     def test_click_toggles_inline(self):
         """点击展开/收起（App 的箭头行为）。"""
