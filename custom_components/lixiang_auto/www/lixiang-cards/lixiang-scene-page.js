@@ -92,14 +92,12 @@ const STYLE = `
               margin-top:11px; flex:1; }
 
   /* 开关 */
-  .sw { width:52px; height:31px; border-radius:16px; background:#D8D8DC;
-        position:relative; margin-top:16px; flex:0 0 auto;
-        transition:background .22s; }
-  .sw::after { content:""; position:absolute; top:2px; left:2px; width:27px;
-               height:27px; border-radius:50%; background:#fff;
-               box-shadow:0 1px 3px rgba(0,0,0,.18); transition:left .22s; }
-  .sw.on { background:var(--lx-blue); }
-  .sw.on::after { left:23px; }
+  /* ★ 2026-10-11 只读徽标：不用 switch 外形冒充可操作开关（技能 §2）
+     此前用开关造型 + switch 语义会让用户以为能点开，点后却只弹提示。 */
+  .ro-badge { font-size:11.5px; color:var(--lx-t3); background:var(--lx-card,rgba(0,0,0,.04));
+              padding:4px 9px; border-radius:8px; white-space:nowrap; }
+  .notice { margin:10px 12px 0; padding:10px 12px; border-radius:12px;
+            background:rgba(255,149,0,.10); color:var(--lx-t2); font-size:12px; line-height:1.5; }
   .sw.ro { opacity:.5; cursor:not-allowed; }
 
   /* 子按钮（宠物模式的舱内影像）*/
@@ -122,7 +120,7 @@ const STYLE = `
            max-width:82%; text-align:center; line-height:1.5; }
   .toast.show { opacity:1; transform:translate(-50%,0); }
   /* 无障碍：键盘焦点 + 动效偏好 */
-  [role="button"]:focus-visible, [role="switch"]:focus-visible,
+  [role="button"]:focus-visible,
   .btn:focus-visible, button:focus-visible {
     outline:2.5px solid var(--lx-blue); outline-offset:2px; border-radius:8px; }
   @media (prefers-reduced-motion: reduce) {
@@ -180,8 +178,7 @@ class LixiangScenePage extends HTMLElement {
           ${m.sub ? `<div class="sub" data-sub="${m.key}" role="button" tabindex="0">
             <img src="${__iconBase}/${m.sub.icon}" alt="" onerror="this.style.visibility='hidden'">
             ${m.sub.label}</div>` : ""}
-          <div class="sw ro" data-sw="${m.key}" role="switch" tabindex="0"
-            aria-checked="false" aria-label="${m.name}开关"></div>
+          <div class="ro-badge">需在 App / 车机开启</div>
         </div>
       </div>`).join("");
 
@@ -190,11 +187,14 @@ class LixiangScenePage extends HTMLElement {
         <div class="hd"><img src="${__iconBase}/${m.icon}" alt=""
           onerror="this.style.visibility='hidden'"><span class="n">${m.name}</span></div>
         <div class="d">${m.desc}</div>
-        <div class="sw ro" data-sw="${m.key}" role="switch" tabindex="0"
-          aria-checked="false" aria-label="${m.name}开关"></div>
+        <div class="ro-badge">需在 App / 车机开启</div>
       </div>`).join("");
 
     root.innerHTML = `
+      <div class="notice">
+        情景模式的**开启/关闭目前只能在本机 App 或车机里操作** ——
+        集成的控制通道（LiNdn/JOB）尚未打通，这里只做说明与状态展示。
+      </div>
       <div class="topbar">
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
           <img src="${__iconBase}/ic_home_return.webp" alt=""></div>
@@ -229,11 +229,15 @@ class LixiangScenePage extends HTMLElement {
     rf.addEventListener("click", doRf);
 
     // 开关（只读：点击说明）
-    this.querySelectorAll("[data-sw]").forEach(sw => {
-      const name = (MODES.find(m => m.key === sw.dataset.sw) || {}).name || "";
-      const act = () => this._toast(`${name}：需在理想 App 或车机中开启（集成暂不支持远程切换）`, null, 3400);
-      this._a11y(sw, `${name}开关`, act);
-      sw.addEventListener("click", act);
+    // ★ 2026-10-11 整页可点 → 统一说明
+    //   （原每个"开关"点了只弹同样的话，且 switch 外形会让人以为能远程开启）
+    //   技能 §2：不要用状态冒充开关
+    const sceneNote = () => this._toast("情景模式需在理想 App 或车机中开启（集成暂不支持远程切换）");
+    // 场景卡片用 data-k 标记（big/small 两类都是）
+    this.querySelectorAll("[data-k]").forEach(el => {
+      const nm = (MODES.find(m => m.key === el.dataset.k) || {}).name || "该场景";
+      this._a11y(el, `${nm} · 查看说明`, sceneNote);
+      el.addEventListener("click", sceneNote);
     });
 
     // 舱内影像
@@ -258,12 +262,11 @@ class LixiangScenePage extends HTMLElement {
     if (!this._built) return;
     // 场景模式数值 → 判断哪个模式激活（映射未知时只显示原始值在 title）
     const raw = this._txt(this._eid("scene_mode"));
-    const n = raw == null ? null : Number(raw);
-    // 已验证的映射有限：0/1 表示无激活或第一档；其余按位/序号推断不做承诺
-    this.querySelectorAll("[data-sw]").forEach(sw => {
-      sw.className = "sw ro";
-      sw.setAttribute("aria-checked", "false");
-    });
+    // ★ 已知限制（证据等级 **[推断]**，未证实）：情景模式数值 → 具体场景的映射
+    //   App 侧只有 ModeState 的 0=未设置/1=已设置，**没有场景枚举**；
+    //   此前 4 个开关恒显"关"属于**假状态** → 现不做逐场景判断，
+    //   只把原始值挂到 data-scene 供排查。
+    // 只读页：不再逐个维护开关状态（原本永远全 false，等于假状态）
     const root = this.querySelector(".root");
     if (root && raw != null) root.setAttribute("data-scene", String(raw));
   }
