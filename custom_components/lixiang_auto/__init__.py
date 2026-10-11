@@ -78,15 +78,18 @@ async def _owner_only_hint(hass, result) -> str:
     return "未找到 lixiang_auto 配置项（或 vin 不匹配）"
 
 
-def _is_non_owner(api) -> bool:
+def _is_non_owner(api, config_dir: str = "") -> bool:
     """当前 API 所属账号是否【确定不是车主】。
 
     角色探测失败一律返回 False（按"可试"处理），
     避免因车辆列表读取失败而误伤车主账号。
+
+    ★ 2026-10-11：传 config_dir 走落盘缓存 —— get_vehicles 的
+      saos_vehicle token 必须回退主 App client 换取，会顶掉用户手机 App。
     """
     try:
         from . import vehicle_role as _vr
-        veh = _vr.current_vehicle(api)
+        veh = _vr.current_vehicle(api, config_dir)
         if not veh:
             return False
         rel = _vr.relation_of(veh)
@@ -408,8 +411,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             try:
                 from .vehicle_role import (relation_label, relation_name,
                                            relation_of)
+                # ★ 2026-10-11：优先用落盘缓存 —— get_vehicles 走 saos_vehicle，
+                #   该 audience 白名单只认主 App client → 每次都会回退并
+                #   用主 App 凭据换取 → **顶掉用户手机 App**（单设备登录）。
+                #   角色信息仅用于展示策略，不值得每次付出这个代价。
+                from .vehicle_role import current_vehicle as _cv
+                _cd = getattr(getattr(hass, "config", None), "path", "")
+                _cd = _cd() if callable(_cd) else (_cd or "")
                 _veh = await hass.async_add_executor_job(
-                    lambda: (li_api.get_vehicles() or [None])[0])
+                    lambda: _cv(li_api, _cd))
                 _rel = relation_of(_veh)
                 _LOGGER.info(
                     "账号角色: %s (%s) — vehicleType=%s roleId=%s",

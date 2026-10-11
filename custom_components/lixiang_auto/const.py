@@ -202,6 +202,21 @@ CONF_SCAN_INTERVAL = "scan_interval"
 CONF_ENABLE_CONTROL = "enable_control"
 DEFAULT_ENABLE_CONTROL = True
 DEFAULT_SCAN_INTERVAL_SECONDS = 60
+
+#: 任务大师列表的后台轮询间隔（秒）
+#:
+#: ★ 2026-10-11 从 120 秒大幅放宽 —— 实测事故：
+#:   任务接口用的是【SSO 会话级 token】，而理想账号是**单设备登录**
+#:   （文档 `lixiang-reverse/docs/L6车控通道研究_20260906.md`：HA/MuMu/App 互相顶号）。
+#:   每 2 分钟一次的请求会持续顶掉手机 App 的会话 → 用户反馈
+#:   「App 的任务大师无法连接，禁用集成 + 重新登录 App 才恢复」。
+#:   任务列表本身**变化很慢**（用户偶尔改任务），10 分钟足够；
+#:   需要即时时由「任务页手动刷新」或写操作后的 invalidate 触发。
+TASK_POLL_INTERVAL_SECONDS = 600
+
+#: 任务操作（创建/启停/删除）后的**强制冷却**（秒）——
+#: 防止用户连点导致短时间多次请求，进一步压低顶号风险。
+TASK_FORCE_REFRESH_COOLDOWN = 60
 MIN_SCAN_INTERVAL_SECONDS = 30
 MAX_SCAN_INTERVAL_SECONDS = 3600
 

@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import scan_interval_seconds, DOMAIN, LOGGER_NAME, SCAN_INTERVAL_SECONDS
+from .const import scan_interval_seconds, DOMAIN, LOGGER_NAME, SCAN_INTERVAL_SECONDS, TASK_POLL_INTERVAL_SECONDS, TASK_FORCE_REFRESH_COOLDOWN
 from .pake_login import is_credential_rejection
 from .m01_state import map_realtime_state
 from .signals import VSS_PATHS_COMPAT as VSS_PATHS
@@ -129,7 +129,8 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
         # ★ 2026-10-02：本月里程 / 本月充电量（低频 1h）—— 与 App 首页对齐
         self._month_ts: dict[str, float] = {}
         self._month_cache: dict[str, dict] = {}
-        # ★ 2026-10-07：任务大师列表（HTTP 120s 一次；创建/启停后主动失效）
+        # ★ 2026-10-11：任务大师列表（HTTP 600s 一次；创建/启停后主动失效）
+        #   间隔放宽的原因见 const.TASK_POLL_INTERVAL_SECONDS（单设备登录顶号）
         self._task_ts: dict[str, float] = {}
         self._task_cache: dict[str, list] = {}
         self._task_error: dict[str, str] = {}   # route_id → 最近一次拉取错误
@@ -224,7 +225,9 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
     def _is_owner_account_sync(self) -> bool | None:
         """同步判定车主角色（内部走 HTTP，只能在 executor 线程调用）。"""
         try:
-            veh = _vr.current_vehicle(self.li_api)
+            # ★ 2026-10-11：传 config_dir → 优先读本地缓存，**避免每次
+            #   换 saos_vehicle token（须回退 lixiang client）顶掉用户 App**
+            veh = _vr.current_vehicle(self.li_api, _config_dir(self.hass))
         except Exception:  # noqa: BLE001
             return None
         if not veh:
@@ -564,7 +567,7 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             #   不跳过的话会「服务端拒绝 → 60s 重试」无限循环刷屏，用户无法解决
             if await self._owner_only_skip(_rid5):
                 _tasks = self._task_cache.get(_rid5) or []
-            elif (_now5 - _last5) > 120 or _last5 == 0.0:
+            elif (_now5 - _last5) > TASK_POLL_INTERVAL_SECONDS or _last5 == 0.0:
                 _api5 = self.li_api
                 if _api5 is not None and hasattr(_api5, "get_tasks"):
                     try:
@@ -580,7 +583,9 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                         _fail_if_credential(_err5)
                         # 失败 60s 后重试（不阻塞整轮更新）；
                         # ★ 错误上浮到传感器属性；内容变化才打 warning（防刷屏）
-                        self._task_ts[_rid5] = _now5 - 120 + 60
+                        # 失败退避：比正常间隔再久一点，避免连续失败时反复请求
+                        self._task_ts[_rid5] = (_now5 - TASK_POLL_INTERVAL_SECONDS
+                                                + TASK_FORCE_REFRESH_COOLDOWN)
                         _msg = f"{type(_err5).__name__}: {_err5}"[:300]
                         _prev = self._task_error.get(_rid5)
                         self._task_error[_rid5] = _msg
