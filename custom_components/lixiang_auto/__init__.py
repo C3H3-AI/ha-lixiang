@@ -232,10 +232,58 @@ class LiXiangTaskDictView(HomeAssistantView):
         }
         return web.json_response(payload)
 
+async def _async_enable_ui_required_entities(hass: HomeAssistant) -> int:
+    """启用「前端页面需要、但被诊断类规则默认禁用」的实体（2026-10-12）。
+
+    背景
+    ----
+    诊断类信号默认禁用（`entity_registry_enabled_default=False`）是为了减少实体数量，
+    但其中 6 个是**前端页面直接要用**的：
+
+        陪伴里程 / 陪伴天数 / 耗电行驶 → 能耗页缺 3 项
+        位置服务（地址）              → 位置页无地址
+        场景模式                      → 情景页 0/1 字段
+        车辆配置（车型）              → 钥匙管理页缺车型
+
+    车主报「二级页面内容错误」，实测根因就是这个（实体存在但前端 `hass.states`
+    里没有 → auto-bind 取不到 → 页面显示「—」）。
+
+    ★ 安全边界：**只动 `disabled_by == "integration"`**（集成自己的默认值），
+      绝不碰 `"user"` —— 用户主动禁用的实体必须保持禁用。
+    """
+    try:
+        from .signals import UI_REQUIRED_KEYS
+
+        reg = er.async_get(hass)
+        enabled = 0
+        for entry_obj in list(reg.entities.values()):
+            if entry_obj.platform != DOMAIN:
+                continue
+            # ★ 兼容枚举与字符串两种形态（不同 HA 版本/存储反序列化结果不同）
+            _dis = entry_obj.disabled_by
+            if _dis != er.RegistryEntryDisabler.INTEGRATION and str(_dis) not in (
+                    "integration", "RegistryEntryDisabler.INTEGRATION"):
+                continue          # ★ 只处理集成默认禁用的（不碰用户手动禁用的）
+            uid = entry_obj.unique_id or ""
+            if not any(k in uid for k in UI_REQUIRED_KEYS):
+                continue
+            reg.async_update_entity(entry_obj.entity_id, disabled_by=None)
+            enabled += 1
+        if enabled:
+            _LOGGER.info("已启用 %d 个前端页面所需的诊断类实体", enabled)
+        return enabled
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.warning("启用 UI 所需实体失败: %s", err, exc_info=True)
+        return 0
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # ★ 前端卡片静态资源（7 个自定义卡片随集成发布）
     #   URL: /lixiang_auto/lixiang-cards/<name>.js
     #   放在 entry 开头：只注册一次，且卡片不可用不应影响集成
+    # ★ 2026-10-12：启用前端页面需要的诊断类实体（老版本注册时被禁用，
+    #   导致二级页面拿不到数据）。只动集成自己禁用的，不动用户禁用的。
+    await _async_enable_ui_required_entities(hass)
     try:
         from pathlib import Path as _Path
 
