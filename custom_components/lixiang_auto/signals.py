@@ -202,19 +202,19 @@ SIGNALS: dict[str, SignalSpec] = {
 
     "seat_heat_vent_fl": SignalSpec(
         key="seat_heat_vent_fl", path="", name="主驾座椅加热通风",
-        icon="mdi:car-seat-heater", category="座椅", universal=True,
+        icon="mdi:car-seat-heater", category="座椅", requires="platform:1",
     ),
     "seat_heat_vent_fr": SignalSpec(
         key="seat_heat_vent_fr", path="", name="副驾座椅加热通风",
-        icon="mdi:car-seat-heater", category="座椅", universal=True,
+        icon="mdi:car-seat-heater", category="座椅", requires="platform:1",
     ),
     "seat_heat_vent_rl": SignalSpec(
         key="seat_heat_vent_rl", path="", name="左后座椅加热通风",
-        icon="mdi:car-seat-heater", category="座椅", universal=True,
+        icon="mdi:car-seat-heater", category="座椅", requires="platform:1",
     ),
     "seat_heat_vent_rr": SignalSpec(
         key="seat_heat_vent_rr", path="", name="右后座椅加热通风",
-        icon="mdi:car-seat-heater", category="座椅", universal=True,
+        icon="mdi:car-seat-heater", category="座椅", requires="platform:1",
     ),
     # ── M 系（理想ONE）空调：与 L 系共用实体，但 L 系无对应 VSS 路径的细分项 ──
     # ⚠️ 档位/模式语义未实测（仅"关=0"有样本）→ 属 [推断]
