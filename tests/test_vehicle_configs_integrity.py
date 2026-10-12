@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 
 import pytest
 
@@ -239,3 +240,64 @@ class TestAbilitySemantics:
         m = self._ability("952447875932008064").supported_features()
         x = self._ability("100167931652606785").supported_features()
         assert set(m) != set(x), "M 系与 L 系能力表相同，platform 门控会失去区分度"
+
+
+# ══════════════════════════════════════════════════════════════════
+#  ⑥ M 系专属能力的门控（2026-10-12 新增 upperlimit_continue）
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestMSeriesOnlyGating:
+    """`version:` 门控必须把「仅 M 系支持」的能力正确地只给 M 系。
+
+    实例：`upperLimitCharging`（未达充电上限继续充电）——
+    M01A/M01B 的 `version` 表里有且 isSupport=true，L 系**整条标签不存在**
+    （`is_supported()` 对缺失标签返回 False），所以信号
+    `upperlimit_continue` 只在 M 系出现。
+    """
+
+    M_ONLY = ("upperLimitCharging",)
+    L6PRO = "100167931652606785"
+
+    @pytest.mark.parametrize("tag", M_ONLY)
+    def test_supported_on_m_series(self, tag):
+        for mid in M_SERIES:
+            assert _VA.VehicleAbility(mid).is_supported(tag) is True, (
+                f"{M_SERIES[mid]}({mid}) 应支持 {tag}")
+
+    @pytest.mark.parametrize("tag", M_ONLY)
+    def test_not_supported_on_l_series(self, tag):
+        """L 系必须判为【不支持】—— 这是「只给 M 系建实体」的依据。
+
+        判据是「标签不存在」，不是 isSupport=false；
+        若哪天有人把 missing 标签当成 True，本测试会失败。
+        """
+        a = _VA.VehicleAbility(self.L6PRO)
+        assert tag not in (a.version_info(tag) or {}), f"L6Pro 意外出现了 {tag} 标签"
+        assert a.is_supported(tag) is False, f"L6Pro 不应支持 {tag}"
+
+    def test_signal_declares_the_gate(self):
+        """信号必须用 version: 门控。
+
+        用 version: 的好处：官方数据一改，门控自动跟着变，
+        不需要再维护一张「哪些车型有」的手工表。
+        """
+        sig = (CC / "signals.py").read_text(encoding="utf-8")
+        m = re.search(
+            r'key="upperlimit_continue"[\s\S]{0,400}?requires="([^"]+)"', sig)
+        assert m, "signals.py 里找不到 upperlimit_continue 的 requires"
+        assert m.group(1) == "version:upperLimitCharging", \
+            f"门控应为 version:upperLimitCharging，实际 {m.group(1)}"
+
+    def test_signal_is_read_only(self):
+        """必须是只读平台 —— 该命令走 JOB 长连接，HTTP 不可达。
+
+        若有人把它改成 switch，用户会以为能开，点了必然失败。
+        """
+        sig = (CC / "signals.py").read_text(encoding="utf-8")
+        m = re.search(r'key="upperlimit_continue"[\s\S]{0,600}?\),', sig)
+        assert m, "找不到 upperlimit_continue 定义块"
+        blk = m.group(0)
+        assert "binary_sensor" in blk, "upperlimit_continue 必须声明为 binary_sensor（只读）"
+        assert "'switch'" not in blk.replace("'binary_sensor'", ""), \
+            "upperlimit_continue 不应出现在 switch 平台"

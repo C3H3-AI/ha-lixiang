@@ -383,6 +383,32 @@ SIGNALS: dict[str, SignalSpec] = {
         category="充电桩",
         universal=True,
     ),
+    # ★ 2026-10-12 新增：未达充电上限继续充电（**仅 M 系支持**）
+    #
+    #   官方车型定义（assets/{modelId}.json 的 version 表）：
+    #     M01A / M01B : {"desc": "未达充电上限继续充电", "isSupport": true}
+    #     L 系（L6Pro）: **整条标签不存在** → is_supported() 返回 False
+    #   所以用 "version:upperLimitCharging" 门控即自动「只有 M 系建」，
+    #   无需 platform 判据。
+    #
+    #   path="" —— M 系的实时状态走 /real-time-state（m01_state.py），
+    #   不走 VSS；L 系本来也不该有这个实体。
+    #
+    #   ⚠️ 只读（binary_sensor），不能做成 switch：
+    #     其命令与「充电上限」同为 cmdKey=remote_charge_control，
+    #     而该 key 在 li_api._JOB_CHANNEL_COMMANDS 里 —— 走 App 的
+    #     LiNdn（JOB）长连接，HTTP cmd/send 实测 resultCode=2009。
+    #     把不可控的东西做成 switch 会让用户以为能开。
+    "upperlimit_continue": SignalSpec(
+        key="upperlimit_continue",
+        path="",
+        name="未达充电上限继续充电",
+        freq=Freq.HIGH,
+        icon="mdi:battery-sync-outline",
+        category="充电桩",
+        platforms=frozenset({'binary_sensor'}),
+        requires="version:upperLimitCharging",
+    ),
     "charge_order_mode": SignalSpec(
         key="charge_order_mode",
         path="Vehicle.Powertrain.ChargingPile.ScheduledCharging.OrderChargingMode",

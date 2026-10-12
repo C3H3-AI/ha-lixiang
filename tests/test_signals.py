@@ -52,7 +52,12 @@ class TestSignalTable:
                                "seat_heat_vent_rl", "seat_heat_vent_rr",
                                "ac_auto_mode", "ac_fan_speed_level",
                                "ac_set_temp_fl", "ac_set_temp_fr", "ring_light",
-                               "key_in_car_warning", "gear"), \
+                               "key_in_car_warning", "gear",
+                               # ★ 2026-10-12：未达充电上限继续充电（**仅 M 系**）
+                               #   官方车型定义里该能力只存在于 M01A/M01B；
+                               #   值来自 real-time-state 的 chargeSetting，
+                               #   不走 VSS（L 系压根没有这个能力）。
+                               "upperlimit_continue"), \
                     f"{key}: 空路径但不是已知虚拟信号"
 
     def test_alias_signals_resolve(self):
@@ -535,8 +540,14 @@ class TestBinaryEquivalence:
         ADDED_2026_09_28 = {
             "mirror_heat_left", "mirror_heat_right", "drv_seat_occupied",
         }
-        assert old - MOVED_TO_SWITCH == new - ADDED_2026_09_27 - ADDED_2026_09_28, (
-            f"多了: {new - old - ADDED_2026_09_27 - ADDED_2026_09_28}\n"
+        # ★ 2026-10-12：未达充电上限继续充电（**仅 M 系**，理想 ONE 专属能力）
+        #   官方车型定义 version 表里只有 M01A/M01B 有 upperLimitCharging，
+        #   L 系整条标签不存在 → 实体侧自动只给 M 系建。
+        #   只读（binary_sensor）：命令走 JOB 长连接，HTTP 不可达。
+        ADDED_2026_10_12 = {"upperlimit_continue"}
+        assert old - MOVED_TO_SWITCH == (
+            new - ADDED_2026_09_27 - ADDED_2026_09_28 - ADDED_2026_10_12), (
+            f"多了: {new - old - ADDED_2026_09_27 - ADDED_2026_09_28 - ADDED_2026_10_12}\n"
             f"少了: {old - new - MOVED_TO_SWITCH}")
 
     def test_names_match(self):

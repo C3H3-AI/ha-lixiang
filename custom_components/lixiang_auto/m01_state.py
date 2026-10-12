@@ -204,6 +204,23 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     cst = _dig(res, "chargeSetting", "chargeStatus")
     put("charge_status", _num(cst.get("chargeStatus")))
 
+    # ★ 2026-10-12 新增：未达充电上限继续充电（**仅 M 系有**，见 signals.py）
+    #   官方车型定义里这条能力只存在于 M01A/M01B（L 系整条标签不存在），
+    #   所以实体侧用 requires="version:upperLimitCharging" 门控。
+    #
+    #   ⚠️ 字段名来源与置信度：
+    #     值名 `upperlimitContinue`（注意是**小写 u**）来自 App 的
+    #     index.vehicle.bundle 字符串表，与同段的
+    #     isSupportUpperLimitCharging / UpperLimitSwitchValue /
+    #     getUpperlimitContinueText / isShowUpperLimitTips 属同一功能组。
+    #     但**未在 M 系真机上确认**该字段确实出现在 real-time-state 的
+    #     chargeSetting 下 —— 若无此字段，_dig 返回 {}，put 跳过，
+    #     实体表现为 unknown（不会报错、不会误报）。
+    #     M 系车主实测后请据实修正本行。
+    _ul = _dig(res, "chargeSetting", "upperlimitContinue")
+    if _ul:
+        put("upperlimit_continue", _int01(_ul.get("upperlimitContinue")))
+
     # 车内温度（temperatureStatus.indoorTemperature）
     put("inside_temp", _num(_dig(res, "temperatureStatus").get("indoorTemperature")))
     # 空气污染指数（temperatureStatus.airPollutionIndex —— App 的 getAirQuality）
