@@ -309,4 +309,75 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
             put(key, _window_pct(_dig(wins, src).get("openStatus")
                                  or wins.get(src)))
 
+    # ==================================================================
+    # ★ 2026-10-12：补齐 DynamicInfoRes 剩余字段
+    #
+    #   依据：`DynamicInfoRes` 在 App 里共 **26 个顶层字段**（smali 实测），
+    #   本文件此前只消费了 11 个，剩下的一律丢弃 —— 于是 M 系车主的
+    #   充电口盖 / 方向盘加热 / 里程统计 / OTA 版本 等实体长期 unknown。
+    #
+    #   下面分两类：
+    #     A. 填进**已有信号**（这些信号在 L 系由 VSS 提供，M 系一直没有值）；
+    #     B. 填进**新增的 M 系专属信号**（见 signals.py 的 platform:1 段）。
+    # ==================================================================
+
+    # ── A1. 充电口盖（caseCoverStatus.switchState: String）
+    #   映射到已有信号 charge_port_lid（Semantics.CHARGE_LID）
+    _ccv = _dig(res, "caseCoverStatus").get("switchState")
+    if _ccv is not None:
+        put("charge_port_lid", _int01(_ccv))
+
+    # ── A2. 方向盘加热（wheelWarmStatus.warmOnOff: String）
+    #   映射到已有信号 wheel_heat（L 系走 VSS，M 系此前恒为 unknown）
+    _ww = _raw(_dig(res, "wheelWarmStatus").get("warmOnOff"))
+    if _ww is not None:
+        put("wheel_heat", _int01(_ww))
+
+    # ── A3. OTA 目标版本（otaUpgradeInfo.targetVersion: String）
+    #   映射到已有信号 ota_version（"车机版本"）
+    _ota = _dig(res, "otaUpgradeInfo")
+    _otv = _raw(_ota.get("targetVersion"))
+    if isinstance(_otv, str) and _otv.strip():
+        put("ota_version", _otv.strip())
+
+    # ── A4. 月度里程 / 能耗（monthTravelData: 8 个 Double）
+    #   已有信号：stat_total_mileage / stat_elec_mileage / stat_engine_mileage
+    #           month_charge_kwh
+    _mtd = _dig(res, "monthTravelData")
+    put("stat_total_mileage", _num(_mtd.get("totalMileage")))
+    put("stat_elec_mileage", _num(_mtd.get("elecMileage")))
+    put("stat_engine_mileage", _num(_mtd.get("fuelMileage")))
+    put("month_charge_kwh", _num(_mtd.get("totalElecEnergy")))
+
+    # ── B. 新增 M 系专属信号（signals.py 里 requires="platform:1"）
+    #
+    #   B1. 实时告警条数（vehRealtimeAlarm.alarmCount: Int）
+    put("veh_alarm_count", _num(_dig(res, "vehRealtimeAlarm").get("alarmCount")))
+
+    #   B2. 保养到期项数（vehRealtimeMaint.expireItemCount: Int）
+    put("maint_expire_count",
+        _num(_dig(res, "vehRealtimeMaint").get("expireItemCount")))
+
+    #   B3. 电源模式（vehPowerMode.powerMode / powerModeFlag: String）
+    _pm = _raw(_dig(res, "vehPowerMode").get("powerMode"))
+    if isinstance(_pm, str) and _pm.strip():
+        put("power_mode", _pm.strip())
+
+    #   B4. 远程启动状态（remoteStartStatus.startStatus: String）
+    _rs = _raw(_dig(res, "remoteStartStatus").get("startStatus"))
+    if isinstance(_rs, str) and _rs.strip():
+        put("remote_start_status", _rs.strip())
+
+    #   B5-B7. 今日行程（vehEnergy.todayEnergy: {mileage, elecEnergy, fuelConsumption}）
+    _te = _dig(res, "vehEnergy", "todayEnergy")
+    put("today_mileage", _num(_te.get("mileage")))
+    put("today_elec_energy", _num(_te.get("elecEnergy")))
+    put("today_fuel_consumption", _num(_te.get("fuelConsumption")))
+
+    #   B8-B10. 月度油耗 / 节省 / 平均电耗油耗
+    put("month_fuel_energy", _num(_mtd.get("totalFuelEnergy")))
+    put("month_save_money", _num(_mtd.get("saveMoney")))
+    put("month_avg_elec_energy", _num(_mtd.get("avgElecEnergy")))
+    put("month_avg_fuel_energy", _num(_mtd.get("avgFuelEnergy")))
+
     return out

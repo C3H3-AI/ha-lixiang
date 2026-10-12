@@ -409,6 +409,72 @@ SIGNALS: dict[str, SignalSpec] = {
         platforms=frozenset({'binary_sensor'}),
         requires="version:upperLimitCharging",
     ),
+    # ★ 2026-10-12：M 系（理想ONE）专属 —— `DynamicInfoRes` 里此前被丢弃的字段
+    #
+    #   依据：App 的 DynamicInfoRes 共 26 个顶层字段（smali 实测），
+    #   m01_state.py 原先只消费 11 个。下面这批由 M 系的
+    #   /real-time-state 提供，L 系（VSS）没有对应路径 ——
+    #   所以用 requires="platform:1" 门控，L 系不会建这些实体。
+    #
+    #   path="" —— 值由 m01_state.map_realtime_state() 直接注入，
+    #   不走 VSS 路径解析。
+    "veh_alarm_count": SignalSpec(
+        key="veh_alarm_count", path="", name="实时告警数",
+        freq=Freq.LOW, icon="mdi:alert-circle-outline", category="诊断",
+        unit="个", state_class="measurement", requires="platform:1",
+    ),
+    "maint_expire_count": SignalSpec(
+        key="maint_expire_count", path="", name="保养到期项",
+        freq=Freq.LOW, icon="mdi:wrench-clock", category="保养",
+        unit="项", state_class="measurement", requires="platform:1",
+    ),
+    "power_mode": SignalSpec(
+        key="power_mode", path="", name="电源模式",
+        freq=Freq.HIGH, icon="mdi:power", category="状态",
+        requires="platform:1",
+    ),
+    "remote_start_status": SignalSpec(
+        key="remote_start_status", path="", name="远程启动状态",
+        freq=Freq.HIGH, icon="mdi:engine-outline", category="状态",
+        requires="platform:1",
+    ),
+    "today_mileage": SignalSpec(
+        key="today_mileage", path="", name="今日里程",
+        freq=Freq.LOW, device_class="DISTANCE", unit="km",
+        state_class="total_increasing", icon="mdi:map-marker-distance",
+        category="里程", requires="platform:1",
+    ),
+    "today_elec_energy": SignalSpec(
+        key="today_elec_energy", path="", name="今日电耗",
+        freq=Freq.LOW, device_class="ENERGY", unit="kWh",
+        state_class="total_increasing", icon="mdi:flash",
+        category="里程", requires="platform:1",
+    ),
+    "today_fuel_consumption": SignalSpec(
+        key="today_fuel_consumption", path="", name="今日油耗",
+        freq=Freq.LOW, unit="L", state_class="total_increasing",
+        icon="mdi:fuel", category="里程", requires="platform:1",
+    ),
+    "month_fuel_energy": SignalSpec(
+        key="month_fuel_energy", path="", name="本月油耗",
+        freq=Freq.LOW, unit="L", state_class="total", icon="mdi:fuel",
+        category="里程", requires="platform:1",
+    ),
+    "month_save_money": SignalSpec(
+        key="month_save_money", path="", name="本月节省",
+        freq=Freq.LOW, unit="元", state_class="total",
+        icon="mdi:currency-cny", category="里程", requires="platform:1",
+    ),
+    "month_avg_elec_energy": SignalSpec(
+        key="month_avg_elec_energy", path="", name="本月平均电耗",
+        freq=Freq.LOW, unit="kWh/100km", state_class="measurement",
+        icon="mdi:flash-outline", category="里程", requires="platform:1",
+    ),
+    "month_avg_fuel_energy": SignalSpec(
+        key="month_avg_fuel_energy", path="", name="本月平均油耗",
+        freq=Freq.LOW, unit="L/100km", state_class="measurement",
+        icon="mdi:fuel", category="里程", requires="platform:1",
+    ),
     "charge_order_mode": SignalSpec(
         key="charge_order_mode",
         path="Vehicle.Powertrain.ChargingPile.ScheduledCharging.OrderChargingMode",
