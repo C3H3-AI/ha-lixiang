@@ -27,7 +27,7 @@ if [[ -z "$REPO_DIR" ]]; then
   if [[ -f "$(dirname "$(readlink -f "$0")")/custom_components/lixiang_auto/manifest.json" ]]; then
     REPO_DIR="$(dirname "$(readlink -f "$0")")"      # 脚本在仓库内
   else
-    REPO_DIR="/media/duola/devdata/AI-workspace/ha-lixiang"   # 回退：原开发机布局
+    REPO_DIR="${LI_REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
   fi
 fi
 # 代理仅在本机可达时使用（外部贡献者通常不需要）

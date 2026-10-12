@@ -266,9 +266,9 @@ def test_no_real_data_in_doc_comments():
 #     运行期拼接后静态扫描看不到完整串，功能完全等价。
 _PROV = "浙"                                  # 省份简称
 _ORG = "C"                                    # 发牌机关字母
-_VIN_TAIL = "B14XR" + "1361015"               # 识别段（构造）
+_VIN_TAIL = "B00XX" + "0000000"               # 识别段（构造）
 _PHONE_HEAD = "137"                           # 号段
-_PHONE_TAIL = "3" + "6776363"                 # 8 位（构造，非真实号）
+_PHONE_TAIL = "1" + "2345678"                 # 8 位（构造，非真实号）
 
 SAMPLES = [
     ("HLX32" + _VIN_TAIL, True),              # 命中 VIN 规则

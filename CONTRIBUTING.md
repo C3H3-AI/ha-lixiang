@@ -11,7 +11,7 @@
      ./li-pr.sh start <类型> <简述>
      
 ② 改代码（在 HA 测试机）
-     /media/duola/devdata/AI-workspace/home-assistant-nas/ha-test/config/custom_components/lixiang_auto/
+     <HA配置目录>/custom_components/lixiang_auto/
      
 ③ ★ 验证（改完必跑，7 项检查）
      ./li-verify.sh
