@@ -400,7 +400,9 @@ class LiCarSeatFan(CoordinatorEntity, FanEntity):
                          int(OPTIMISTIC_TTL))
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("车控 %s 失败: %s", cmd_data, err)
-            raise
+            # ★ 2026-10-12：补上「是哪个部件」（见 li_api.label_command_error）
+            from .li_api import label_command_error as _label
+            raise _label(getattr(self, "_attr_name", None) or "车控", err) from err
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
         self.async_write_ha_state()

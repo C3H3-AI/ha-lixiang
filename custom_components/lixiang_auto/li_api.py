@@ -510,6 +510,44 @@ class LiCommandError(LiApiError):
         self.push_state = push_state
 
 
+def label_command_error(label: str, err: BaseException) -> BaseException:
+    """给车控错误补上「是哪个部件」（★ 2026-10-12）。
+
+    背景
+    ----
+    车主点「充电盖」开关失败，HA 只显示：
+        「命令执行失败 (cpCtrl): pushState=7 resultCode=-2 msg=执行失败（set signal err!）」
+    —— 用户看不出是哪个功能、为什么。
+
+    App 那边显示的是「充电口盖已开启，请前往手动关闭」。查清了它的来源：
+      · **部件名**来自 VSS 路径表 —— 实测
+        ``spec_X01-VSS-Path_148.json`` 里
+        ``Vehicle.Body.DoorSwitchStatus.ChrgPorLidStsV2.description``
+        = "充电口盖开启状态新信号"
+      · **提示模板**来自 RN bundle 的 Hermes 字符串表（UTF-16 存储，
+        所以按 UTF-8 搜不到）——"请前往手动关闭"
+      · 完整句子在 APK 里**不存在** → App 是**两段拼接**出来的
+
+    我们不需要为此引入那张 541 KB 的 VSS 表 —— 实体名本身就是中文。
+    这里只做「实体名 + 原始错误」的拼接，并**保留 result_code/push_state**
+    （自动化里常用它们做判断，不能因为换了个消息就丢掉）。
+    """
+    if not label:
+        return err
+    msg = f"{label}：{err}"
+    if isinstance(err, LiCommandError):
+        try:
+            return type(err)(msg, request_id=err.request_id,
+                             result_code=err.result_code,
+                             push_state=err.push_state)
+        except Exception:  # noqa: BLE001
+            # 子类构造签名不同 → 退化为基类，但仍保留关键字段
+            return LiCommandError(msg, request_id=err.request_id,
+                                  result_code=err.result_code,
+                                  push_state=err.push_state)
+    return err
+
+
 class LiChannelNotSupported(LiCommandError):
     """命令走【不支持的通道】—— 典型是充电控制。
 
