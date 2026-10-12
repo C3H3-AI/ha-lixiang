@@ -97,7 +97,7 @@ do_check() {
   # ★ 不再硬编码真实凭据（2026-09-27）。
   #   原因：脚本在仓库外，不在任何自动检查覆盖内，硬编码的凭据长期未被发现。
   #   改为从环境变量 SENSITIVE_PATTERNS（JSON，与 CI 一致）或 ~/.li-sensitive.json 读取。
-  #   格式：{"手机号":"137[0-9]{8}","VIN":"HLX32B14XR[0-9]{5}"}
+  #   格式：{"手机号":"137[0-9]{8}","VIN":"HLX32[A-Z0-9]{11}"}
   local src="${SENSITIVE_PATTERNS:-}"
   if [[ -z "$src" && -f "$HOME/.li-sensitive.json" ]]; then
     src=$(cat "$HOME/.li-sensitive.json")

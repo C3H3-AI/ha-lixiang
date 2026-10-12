@@ -46,7 +46,7 @@ echo "  [3/4] 敏感信息"
 # ★ 与 CI 统一：同一种 JSON 格式，两处都能用
 #   · 环境变量 SENSITIVE_PATTERNS
 #   · 或本机文件 ~/.li-sensitive.json（推荐：不必每次 export，且绝不入仓库）
-#   格式：{"手机号":"137[0-9]{8}","VIN":"HLX32B14XR[0-9]{5}"}
+#   格式：{"手机号":"137[0-9]{8}","VIN":"HLX32[A-Z0-9]{11}"}
 SFAIL=0
 _SRC="${SENSITIVE_PATTERNS:-}"
 if [[ -z "$_SRC" && -f "$HOME/.li-sensitive.json" ]]; then

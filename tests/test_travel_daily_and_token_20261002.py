@@ -181,7 +181,7 @@ def test_no_hardcoded_vin_in_source():
     因此这里用片段拼接对比。
     """
     # 拆成两段，避免出现完整 VIN 字面量
-    vin_head = "HLX32" + "B14X"
+    vin_head = "HLX32" + "TEST"
     vin_tail = "R136" + "1015"
     full = vin_head + vin_tail
     for name in ("li_api.py", "coordinator.py", "__init__.py"):

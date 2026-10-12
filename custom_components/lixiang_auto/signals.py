@@ -1,6 +1,6 @@
 """信号声明表（自动生成，需人工校对）
 
-来源: /media/duola/devdata/AI-workspace/home-assistant-nas/ha-test/config/custom_components/lixiang_auto
+来源: custom_components/lixiang_auto（本仓库；由 tools/gen_signals.py 生成）
 生成: tools/gen_signals.py
 
 ⚠️ 这是【机械合并】的结果，语义需人工校对：
