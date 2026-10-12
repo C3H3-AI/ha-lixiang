@@ -697,31 +697,51 @@ class LixiangAppHome extends HTMLElement {
     }
 
     const b3 = this.querySelector("#big3d"), mini = this.querySelector("#mini");
-    // 3D URL：自动加 minimal=1（隐藏 3D 页里重复的按钮/HUD）
-    let url3d = c.car_iframe || "";
-    if (url3d && url3d.indexOf("minimal=") < 0) {
-      url3d += (url3d.indexOf("?") < 0 ? "?" : "&") + "minimal=1";
-    }
-    const frame = (title, extra) =>
-      `<iframe src="${url3d}" title="${title}" loading="lazy" ${extra}
-         sandbox="allow-scripts allow-same-origin allow-pointer-lock"></iframe>`;
-    const still = `<img src="${c.car_image || __iconBase + '/icon_car_loc.webp'}" alt="车辆">`;
-    if (url3d) {
+    // ★★★ 2026-10-12：车模改为**官方静态图**（放弃自建 3D）。
+    //
+    // 为什么放弃 3D（实测结论，别再重走）：
+    //   1. 官方 AssetBundle 里**没有车门外覆件** —— 92 个网格里只有
+    //      Door_*（材质="车门内_金属/内饰底绒_侧面"，即内衬），
+    //      没有前/后保险杠、车门外壳。下载的官方包与本地包 md5 完全一致，
+    //      所以不是导出错误，是素材本身如此。
+    //   2. 成本高：转出来的 GLB 61 MB，手机每次清缓存都要重下。
+    //   3. 颜色拿不到：7 个 CarPaint_* 材质共用同一张贴图、_BaseColor 全 [1,1,1]，
+    //      车漆色不在模型里。
+    //
+    // 现在的方案（零人工配置）：
+    //   GET /lixiang_auto/car-image.json → {modelId, colorCode, static:"/lixiang_car/…"}
+    //   ★ colorCode 与车型配置里的 vertical[].key 是同一套（实测 colorCode=FA9）
+    //   ★ 图是 p.ampmake.com 明文直链，后端按需下载并缓存，卡片直接 <img> 引用。
+    //
+    // 保留项：car_3d / car_iframe 配置项仍识别（显式传 car_3d:true 时走旧 3D 路径），
+    //         但默认关闭 —— 以后若模型问题解决，改一个默认值即可恢复。
+    const FALLBACK = c.car_image || __iconBase + "/icon_car_loc.webp";
+    const still = `<img src="${FALLBACK}" alt="车辆">`;
+    const useLegacy3d = c.car_3d === true;      // 默认不再走 3D
+
+    if (useLegacy3d) {
+      // ---- 旧 3D 路径（保留，默认不启用）----
+      let DEFAULT_3D = "/lixiang_auto/lixiang-3d/index.html"
+                     + "?minimal=1&model=/local/lixiang-3d/carmodel.glb";
+      if (c.car_iframe) DEFAULT_3D = c.car_iframe;
+      const frame = (title, extra) =>
+        `<iframe src="${DEFAULT_3D}" title="${title}" loading="lazy" ${extra}
+           sandbox="allow-scripts allow-same-origin allow-pointer-lock"></iframe>`;
       const f3 = document.createElement("iframe");
-      f3.src = url3d; f3.title = "车辆 3D"; f3.loading = "lazy";
-      f3.setAttribute("sandbox","allow-scripts allow-same-origin allow-pointer-lock");
-      f3.addEventListener("load", () => { const ph=this.querySelector("#b3ph"); if(ph) ph.remove(); });
-      // 超时兜底：8 秒后若仍未加载完，显示提示可点刷新
-      setTimeout(() => {
-        const ph = this.querySelector("#b3ph");
-        if (ph) ph.innerHTML = '<div style="text-align:center;line-height:1.5">3D 模型加载较慢<br><span style="font-size:11px;opacity:.7">（首次约需 10–30 秒）</span></div>';
-      }, 8000);
+      f3.src = DEFAULT_3D; f3.title = "车辆 3D"; f3.loading = "lazy";
+      f3.setAttribute("sandbox", "allow-scripts allow-same-origin allow-pointer-lock");
       b3.appendChild(f3);
       mini.innerHTML = frame("车辆 3D 缩略图", 'scrolling="no"');
     } else {
+      // ---- 官方静态车模图（默认）----
       b3.innerHTML = still; mini.innerHTML = still;
+      this._loadCarImage(b3, mini, FALLBACK);
     }
 
+  /// 拉取官方车模图（★ 2026-10-12）。
+  ///
+  /// 后端返回 {model_id, color_code, vertical:{static, cached, key}}，
+  /// 车型与车漆色都由服务器给，**用户无需任何配置**。
     const toggle = () => {
       this._userToggled = true;    // 用户手动操作后，停止自动跟随
       const collapsed = !root.classList.contains("collapsed3d");
@@ -838,6 +858,30 @@ class LixiangAppHome extends HTMLElement {
     this._built = true;
   }
 
+
+
+  /// 失败时保留占位图（不显示破图）。
+  async _loadCarImage(b3, mini, fallback) {
+    let data = null;
+    try {
+      const resp = await fetch("/lixiang_auto/car-image.json", { cache: "no-store" });
+      if (resp.ok) data = await resp.json();
+    } catch (err) {
+      // 静默：占位图已在 DOM 里
+    }
+    if (!data || !data.ok || !data.vertical) return;
+    const src = data.vertical.static || "";
+    if (!src) return;                     // 还没缓存好 → 保持占位，下次刷新再来
+    const apply = (box) => {
+      if (!box) return;
+      const img = box.querySelector("img");
+      if (!img) return;
+      img.src = src;
+      img.alt = "车辆 " + (data.color_code || "");
+      img.style.objectFit = "contain";
+    };
+    apply(b3); apply(mini);
+  }
   _more(key) {
     const eid = (this._config.more || {})[key];
     if (eid) {

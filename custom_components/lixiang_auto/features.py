@@ -362,8 +362,9 @@ def resolve_requirement(spec, features: dict, ability) -> tuple[bool, str]:
 
     requires 语法（见 signals.SignalSpec 的文档）：
         "version:<tag>"   App version 标签 → is_supported(tag)
-        "ability:<tag>"   App temp.config  → ability_level(tag) >= 2
+        "ability:<tag>"   App temp.config  → ability.has(tag)
         "feature:<名称>"   我们的 VSS 探测功能 → features[名称]
+        "platform:<n>"    平台代号 → "1"=M 系 / "2"=X 系
         "combustion"      增程专属 → not is_bev
         "bev"             纯电专属 → is_bev
         universal=True    所有车型都有
@@ -381,6 +382,22 @@ def resolve_requirement(spec, features: dict, ability) -> tuple[bool, str]:
         return _ability_bev(ability), "bev"
 
     kind, _, arg = req.partition(":")
+
+    if kind == "platform":
+        # ★ 2026-10-12 新增：按平台门控。
+        #   用例：座椅加热/通风状态（seat_heat_vent_*）——**M 系**走
+        #   real-time-state 的 seatStatus.<座>SeatHeatVentState，
+        #   **L 系没有对应 VSS 路径**（signals 里 path=""），
+        #   于是 L 系会建出 4 个恒为 unknown 的死实体（真机实测）。
+        #   两边 temp.config 的能力标签完全一样（无区分度），
+        #   只能用 platform 区分（M=1 / X=2，见 vehicle_ability.platform）。
+        #   ability 拿不到时保守保留（宁多不误删）。
+        if ability is None or not getattr(ability, "available", False):
+            return True, req + "(无能力表,保守保留)"
+        try:
+            return str(getattr(ability, "platform", "")) == str(arg), req
+        except Exception:  # noqa: BLE001
+            return True, req + "(异常,保守保留)"
 
     if kind == "feature":
         # features 缺失该项时保留（宁多不误删）
