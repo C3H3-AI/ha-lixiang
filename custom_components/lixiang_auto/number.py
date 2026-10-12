@@ -100,6 +100,27 @@ async def async_setup_entry(
     if li_api is None:
         _LOGGER.warning("无密码登录凭据，跳过 number 实体")
         return
+
+    # ★ 2026-10-12：充电上限的写入口**按平台分派**。
+    #
+    #   官方有两张车控配置表（assets/2025/）：
+    #     LXMVehicleConfig2025.json  → M 系（理想ONE）：SetChargeLimit 的
+    #         sendUrl = /ssp-as-mobile-api/v1-0/vehicles/charge-threshold-update
+    #     LXXVehicleConfig2025.json  → X 系（L6/L7/L8/L9）：ChargingTarget
+    #         **cmdKey 为空、uri 为空**（交给 LiveNetControlRouter 路由）
+    #
+    #   实测（2026-10-12，L6 真车）：
+    #     L6 调 charge-threshold-update → 100035「服务暂时不可用」
+    #     L6 调 /ssp-as/v1-0/app/*      → 100012「没有接口访问权限」
+    #   即那批 REST 端点是给 M 系的，X 系用不了。
+    #
+    #   所以这里**只给 M 系**接 sync_setter；X 系保持原有 cmd/send 路径
+    #   （会被 li_api 静态判定为 JOB 通道并给出明确不支持文案，
+    #     比抛一个含义不明的 100035 好）。
+    _ability = _d.get("ability")
+    _is_m = str(getattr(_ability, "platform", "")) == "1"
+    _charge_sync = "set_charge_threshold" if _is_m else None
+
     async_add_entities([
         LiCarNumber(
             coordinator, li_api, device_info, vin,
@@ -127,7 +148,7 @@ async def async_setup_entry(
             minimum=CHARGE_MIN, maximum=CHARGE_MAX, step=CHARGE_STEP,
             unit=PERCENTAGE,
             device_class=None,
-            sync_setter="set_charge_threshold",
+            sync_setter=_charge_sync,
         ),
     ])
 
