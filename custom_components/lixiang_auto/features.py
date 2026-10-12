@@ -291,6 +291,11 @@ FEATURE_BY_KEY_PREFIX: dict[str, str] = {
     "seat_tr": "三排座椅",     # ★ 三排右
     # ★ 2026-10-02：本月耗油量 —— 增程专属（纯电车无燃油，不该显示）
     "month_fuel_l": "燃油",
+    # ★ 2026-10-12：M 系 real-time-state 行程字段（增程专属，纯电无油箱）
+    #   来源 monthTravelData / vehEnergy.todayEnergy（见 m01_state.py）
+    "month_fuel_energy": "燃油",     # 本月油耗 L
+    "month_avg_fuel": "燃油",        # month_avg_fuel_energy
+    "today_fuel": "燃油",            # today_fuel_consumption
     # ★ 2026-10-02：发动机里程 —— 增程专属（纯电车无发动机）
     "stat_engine_mileage": "燃油",
     "seat_tm": "三排座椅",     # ★ 三排中

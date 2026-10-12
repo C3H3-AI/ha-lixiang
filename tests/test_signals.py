@@ -52,7 +52,22 @@ class TestSignalTable:
                                "seat_heat_vent_rl", "seat_heat_vent_rr",
                                "ac_auto_mode", "ac_fan_speed_level",
                                "ac_set_temp_fl", "ac_set_temp_fr", "ring_light",
-                               "key_in_car_warning", "gear"), \
+                               "key_in_car_warning", "gear",
+                               # ★ 2026-10-12：未达充电上限继续充电（**仅 M 系**）
+                               #   官方车型定义里该能力只存在于 M01A/M01B；
+                               #   值来自 real-time-state 的 chargeSetting，
+                               #   不走 VSS（L 系压根没有这个能力）。
+                               "upperlimit_continue",
+                               # ★ 2026-10-12：M 系 DynamicInfoRes 剩余字段
+                               #   （App 侧共 26 个顶层字段，此前只用 11 个）
+                               #   值由 m01_state.map_realtime_state() 注入，
+                               #   均 requires="platform:1"，L 系不建。
+                               "veh_alarm_count", "maint_expire_count",
+                               "power_mode", "remote_start_status",
+                               "today_mileage", "today_elec_energy",
+                               "today_fuel_consumption", "month_fuel_energy",
+                               "month_save_money", "month_avg_elec_energy",
+                               "month_avg_fuel_energy"), \
                     f"{key}: 空路径但不是已知虚拟信号"
 
     def test_alias_signals_resolve(self):
@@ -410,6 +425,15 @@ class TestDescriptionEquivalence:
             #   来源：missing_vss_probe_result.json（实测）
             #         apk_latest/.../LxMeshVssConstant.smali:624 / :969
             "sunshade_front_pos", "sunshade_rear_pos",
+            # ★ 2026-10-12：M 系（理想ONE）DynamicInfoRes 补齐的 11 个信号
+            #   依据：App 侧 DynamicInfoRes 共 26 个顶层字段（smali 实测），
+            #        m01_state.py 原先只消费 11 个。
+            #   均为 requires="platform:1"（L 系由 VSS 提供，无这些字段）。
+            "veh_alarm_count", "maint_expire_count", "power_mode",
+            "remote_start_status", "today_mileage", "today_elec_energy",
+            "today_fuel_consumption", "month_fuel_energy",
+            "month_save_money", "month_avg_elec_energy",
+            "month_avg_fuel_energy",
             # ★ 2026-09-29（续航显示修正）：App 车控左上角显示的是【总续航】
             #   证据：
             #     ① spec_X01-VSS-Path_148.json
@@ -535,8 +559,22 @@ class TestBinaryEquivalence:
         ADDED_2026_09_28 = {
             "mirror_heat_left", "mirror_heat_right", "drv_seat_occupied",
         }
-        assert old - MOVED_TO_SWITCH == new - ADDED_2026_09_27 - ADDED_2026_09_28, (
-            f"多了: {new - old - ADDED_2026_09_27 - ADDED_2026_09_28}\n"
+        # ★ 2026-10-12：未达充电上限继续充电（**仅 M 系**，理想 ONE 专属能力）
+        #   官方车型定义 version 表里只有 M01A/M01B 有 upperLimitCharging，
+        #   L 系整条标签不存在 → 实体侧自动只给 M 系建。
+        #   只读（binary_sensor）：命令走 JOB 长连接，HTTP 不可达。
+        ADDED_2026_10_12 = {
+            "upperlimit_continue",
+            # ★ 2026-10-12：M 系 real-time-state 补齐的 11 个信号
+            "veh_alarm_count", "maint_expire_count", "power_mode",
+            "remote_start_status", "today_mileage", "today_elec_energy",
+            "today_fuel_consumption", "month_fuel_energy",
+            "month_save_money", "month_avg_elec_energy",
+            "month_avg_fuel_energy",
+        }
+        assert old - MOVED_TO_SWITCH == (
+            new - ADDED_2026_09_27 - ADDED_2026_09_28 - ADDED_2026_10_12), (
+            f"多了: {new - old - ADDED_2026_09_27 - ADDED_2026_09_28 - ADDED_2026_10_12}\n"
             f"少了: {old - new - MOVED_TO_SWITCH}")
 
     def test_names_match(self):

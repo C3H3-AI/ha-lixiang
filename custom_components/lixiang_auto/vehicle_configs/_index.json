@@ -406,5 +406,11 @@
     "unityModel": "W04",
     "platform": "2",
     "seats": 5
+  },
+  "952447875932008064": {
+    "desc": "M01A车型",
+    "unityModel": "M01A",
+    "platform": "1",
+    "seats": 6
   }
 }
