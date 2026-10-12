@@ -117,5 +117,7 @@ class LiCarDoorLock(CoordinatorEntity, LockEntity):
             _LOGGER.info("车控 %s %s 已执行: %s", CMD_LOCK, cmd_data, res)
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("车控 %s %s 失败: %s", CMD_LOCK, cmd_data, err)
-            raise
+            # ★ 2026-10-12：补上「是哪个部件」（见 li_api.label_command_error）
+            from .li_api import label_command_error as _label
+            raise _label(getattr(self, "_attr_name", None) or "车锁", err) from err
         await self.coordinator.async_request_refresh()

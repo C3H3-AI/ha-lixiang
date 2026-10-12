@@ -205,7 +205,9 @@ class LiCarTime(CoordinatorEntity, TimeEntity):
                          self._cmd_field, hhmm, cmd_data)
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("充电时间设置失败: %s", err)
-            raise
+            # ★ 2026-10-12：补上「是哪个部件」（见 li_api.label_command_error）
+            from .li_api import label_command_error as _label
+            raise _label(getattr(self, "_attr_name", None) or "充电时间", err) from err
 
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()

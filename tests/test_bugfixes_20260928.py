@@ -661,7 +661,10 @@ class TestRequirementExhaustiveness:
 
     def test_requires_dsl_is_wellformed(self):
         import re
-        pat = re.compile(r"^(version|ability|feature):\S+$")
+        # ★ 2026-10-12 新增 platform:<n>（"1"=M 系 / "2"=X 系）。
+        #   用例：seat_heat_vent_* —— M 系走 real-time-state 有数据，
+        #   L 系没有对应 VSS 路径（path=""）→ 会建出恒 unknown 的死实体（真机实测）。
+        pat = re.compile(r"^(version|ability|feature|platform):\S+$")
         bad = []
         for k, s in SIGNALS.items():
             if not s.requires:

@@ -242,7 +242,9 @@ class LiCarChargingModeSelect(CoordinatorEntity, SelectEntity):
             _LOGGER.info("充电模式设为 %s（%d）: %s", option, mode, res)
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("充电模式设置失败: %s", err)
-            raise
+            # ★ 2026-10-12：补上「是哪个部件」（见 li_api.label_command_error）
+            from .li_api import label_command_error as _label
+            raise _label(getattr(self, "_attr_name", None) or "充电模式", err) from err
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
 

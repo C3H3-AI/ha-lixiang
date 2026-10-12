@@ -28,8 +28,8 @@
 
 set -uo pipefail
 
-REPO_DIR="/media/duola/devdata/AI-workspace/ha-lixiang"
-TEST_DIR="/media/duola/devdata/AI-workspace/home-assistant-nas/ha-test/config/custom_components/lixiang_auto"
+REPO_DIR="${LI_REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
+TEST_DIR="${LI_TEST_DIR:-}"
 REPO_SUB="custom_components/lixiang_auto"
 # ★ 可移植：默认值可用环境变量覆盖
 CONTAINER="${LI_CONTAINER:-homeassistant-test}"
@@ -41,7 +41,7 @@ if [[ -z "${LI_HA_URL:-}" ]]; then
         "$CONTAINER" 2>/dev/null || true)
   [[ -n "$_ip" ]] && HA_URL="http://127.0.0.1:8125"
 fi
-VENV="/media/duola/devdata/AI-workspace/.li-venv/bin/python"
+VENV="${LI_VENV:-python3}"
 # 兼容：若持久 venv 不存在，回退到 /tmp
 [[ -x "$VENV" ]] || VENV="/tmp/li-venv/bin/python"
 

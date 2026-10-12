@@ -489,10 +489,11 @@ def ensure_job_channel_supported(command_key: str) -> None:
     )
 
 
-#: 服务端 resultCode → 人话（★ 2026-10-11 真车实测，msg 由服务端直接给出）
+#: 服务端 resultCode → 人话（★ 真车实测，msg 由服务端直接给出）
 #: 只收录**实测见过**的；未收录的回落到服务端 msg，不猜。
 RESULT_CODE_HINTS = {
     -1:  "车辆当前状态不支持该操作",
+    -2:  "车辆侧未执行（信号设置失败，请检查车辆状态后重试）",   # ★ 2026-10-12 实测 cpCtrl
     -3:  "操作被拒绝（可能车辆未熄火或状态不满足）",
     -4:  "车辆已启动，不支持远程控制",   # ★ 实测：READY / 通电 / 启动 均为此码
     -51: "闭锁失败，主驾有人，请稍后再试",  # ★ 实测
@@ -507,6 +508,44 @@ class LiCommandError(LiApiError):
         self.request_id = request_id
         self.result_code = result_code
         self.push_state = push_state
+
+
+def label_command_error(label: str, err: BaseException) -> BaseException:
+    """给车控错误补上「是哪个部件」（★ 2026-10-12）。
+
+    背景
+    ----
+    车主点「充电盖」开关失败，HA 只显示：
+        「命令执行失败 (cpCtrl): pushState=7 resultCode=-2 msg=执行失败（set signal err!）」
+    —— 用户看不出是哪个功能、为什么。
+
+    App 那边显示的是「充电口盖已开启，请前往手动关闭」。查清了它的来源：
+      · **部件名**来自 VSS 路径表 —— 实测
+        ``spec_X01-VSS-Path_148.json`` 里
+        ``Vehicle.Body.DoorSwitchStatus.ChrgPorLidStsV2.description``
+        = "充电口盖开启状态新信号"
+      · **提示模板**来自 RN bundle 的 Hermes 字符串表（UTF-16 存储，
+        所以按 UTF-8 搜不到）——"请前往手动关闭"
+      · 完整句子在 APK 里**不存在** → App 是**两段拼接**出来的
+
+    我们不需要为此引入那张 541 KB 的 VSS 表 —— 实体名本身就是中文。
+    这里只做「实体名 + 原始错误」的拼接，并**保留 result_code/push_state**
+    （自动化里常用它们做判断，不能因为换了个消息就丢掉）。
+    """
+    if not label:
+        return err
+    msg = f"{label}：{err}"
+    if isinstance(err, LiCommandError):
+        try:
+            return type(err)(msg, request_id=err.request_id,
+                             result_code=err.result_code,
+                             push_state=err.push_state)
+        except Exception:  # noqa: BLE001
+            # 子类构造签名不同 → 退化为基类，但仍保留关键字段
+            return LiCommandError(msg, request_id=err.request_id,
+                                  result_code=err.result_code,
+                                  push_state=err.push_state)
+    return err
 
 
 class LiChannelNotSupported(LiCommandError):
@@ -2054,12 +2093,23 @@ class LiApiClient:
                     f"（resultCode={rc_err}）",
                     request_id=request_id, result_code=rc_err, push_state=ps,
                 )
-            # ★ 2026-10-11 修复：服务端返回的是 **msg**，此前误取 resultMsg
-            #   → 恒为 None → 中文原因（"车辆已启动，不支持远程控制"）丢失，
-            #   用户只看到裸的 resultCode。
-            #   取值顺序：服务端 msg → 已知错误码的人话 → 原样（不猜）。
+            # ★★ 2026-10-12：把 **failReason** 也带上。
+            #   实测 cpCtrl 关闭充电口盖失败时服务端返回：
+            #       pushState=7 pushStateText="执行失败"
+            #       resultCode="-2" resultMsg="执行失败"
+            #       failReason="set signal err!"      ← 真正有信息量的是这个
+            #   此前只取 msg/resultMsg（都是"执行失败"这种无信息量的），
+            #   failReason 被整个丢弃 → 用户看不出到底为什么失败。
+            #   注：App 里那句"充电口盖已开启，请前往手动关闭"**不在**服务端响应里
+            #   （已实测 dump 全部字段），本地 APK 也没有该文案的对照表
+            #   （strings.xml / i18n 表 / RN bundle 全搜过）——那是 App 侧
+            #   基于车辆状态自行生成的提示，我们无法照搬，只能如实暴露服务端原因。
             _msg = (result.get("msg") or result.get("resultMsg")
                     or RESULT_CODE_HINTS.get(rc_err))
+            _fail = str(result.get("failReason")) if result.get("failReason") else ""
+            _fail = _fail.strip()
+            if _fail and _fail not in (str(_msg) if _msg else ""):
+                _msg = f"{_msg}（{_fail}）" if _msg else _fail
             _head = (f"命令执行失败 ({command_key}): pushState={ps} "
                      f"resultCode={rc_err}")
             raise LiCommandError(

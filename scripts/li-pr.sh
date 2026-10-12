@@ -30,10 +30,10 @@ if [[ -z "$REPO_DIR" ]]; then
   if [[ -f "$(dirname "$(readlink -f "$0")")/custom_components/lixiang_auto/manifest.json" ]]; then
     REPO_DIR="$(dirname "$(readlink -f "$0")")"
   else
-    REPO_DIR="/media/duola/devdata/AI-workspace/ha-lixiang"
+    REPO_DIR="${LI_REPO_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || echo .)}"
   fi
 fi
-TEST_DIR="${LI_TEST_DIR:-/media/duola/devdata/AI-workspace/home-assistant-nas/ha-test/config/custom_components/lixiang_auto}"
+TEST_DIR="${LI_TEST_DIR:-}"
 REPO_SUB="custom_components/lixiang_auto"
 GH_REPO="${LI_GH_REPO:-C3H3-AI/ha-lixiang}"
 # 代理可用 → 走代理；不可用 → 【显式】直连。
