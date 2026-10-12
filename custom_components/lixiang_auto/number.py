@@ -67,9 +67,9 @@ CMD_CHARGE = "remote_charge_control"
 #     minValue:80, maxValue:100, step:1, lowerLimit:U（= max(动态, 80)）
 #   依据：index.vehicle.js 的 ChargeSetting.ChargingLimit 滑块配置
 #   原先我写 50~100 步进 5 是【猜的】，与 App 不符。
-CHARGE_MIN = 80
-CHARGE_MAX = 100
-CHARGE_STEP = 1
+# ★ 2026-10-12：常量搬到 li_api（低层模块），此处引用 —— 避免两处各写一份。
+from .li_api import CHARGE_MAX, CHARGE_MIN, CHARGE_STEP  # noqa: E402,F401
+from .li_api import LiApiError  # noqa: E402,F401
 
 # ★ 2026-09-24 乐观更新有效期（秒）
 #   依据：HA 轮询间隔 DEFAULT_SCAN_INTERVAL_SECONDS = 60 秒
@@ -100,6 +100,27 @@ async def async_setup_entry(
     if li_api is None:
         _LOGGER.warning("无密码登录凭据，跳过 number 实体")
         return
+
+    # ★ 2026-10-12：充电上限的写入口**按平台分派**。
+    #
+    #   官方有两张车控配置表（assets/2025/）：
+    #     LXMVehicleConfig2025.json  → M 系（理想ONE）：SetChargeLimit 的
+    #         sendUrl = /ssp-as-mobile-api/v1-0/vehicles/charge-threshold-update
+    #     LXXVehicleConfig2025.json  → X 系（L6/L7/L8/L9）：ChargingTarget
+    #         **cmdKey 为空、uri 为空**（交给 LiveNetControlRouter 路由）
+    #
+    #   实测（2026-10-12，L6 真车）：
+    #     L6 调 charge-threshold-update → 100035「服务暂时不可用」
+    #     L6 调 /ssp-as/v1-0/app/*      → 100012「没有接口访问权限」
+    #   即那批 REST 端点是给 M 系的，X 系用不了。
+    #
+    #   所以这里**只给 M 系**接 sync_setter；X 系保持原有 cmd/send 路径
+    #   （会被 li_api 静态判定为 JOB 通道并给出明确不支持文案，
+    #     比抛一个含义不明的 100035 好）。
+    _ability = _d.get("ability")
+    _is_m = str(getattr(_ability, "platform", "")) == "1"
+    _charge_sync = "set_charge_threshold" if _is_m else None
+
     async_add_entities([
         LiCarNumber(
             coordinator, li_api, device_info, vin,
@@ -112,6 +133,13 @@ async def async_setup_entry(
         ),
         # ★ 2026-09-24 新增：充电上限
         #   App 命令：controlType='1', chargingLimit
+        # ★ 2026-10-12 改：写入改走 App 的**同步 REST API**。
+        #   原先走 cmd/send(remote_charge_control)，而该 cmdKey 属 JOB 通道、
+        #   HTTP 必然 2009 → 实体只能被迫做成只读。
+        #   第二轮逆向（LXMVehicleConfig2025.json）查到 App 真正用的是：
+        #     POST /ssp-as-mobile-api/v1-0/vehicles/charge-threshold-update
+        #     body {vin, threshold}    skipVerification=1（同步返回，无需轮询）
+        #   故把写入口切到 li_api.set_charge_threshold。
         LiCarNumber(
             coordinator, li_api, device_info, vin,
             suffix="charge_limit", name="充电上限",
@@ -120,6 +148,7 @@ async def async_setup_entry(
             minimum=CHARGE_MIN, maximum=CHARGE_MAX, step=CHARGE_STEP,
             unit=PERCENTAGE,
             device_class=None,
+            sync_setter=_charge_sync,
         ),
     ])
 
@@ -161,12 +190,16 @@ class LiCarNumber(CoordinatorEntity, NumberEntity):
                  suffix: str, name: str, icon: str, state_key: str,
                  cmd_key: str, data_builder,
                  minimum: float, maximum: float, step: float,
-                 unit: str | None, device_class) -> None:
+                 unit: str | None, device_class,
+                 sync_setter: str | None = None) -> None:
         super().__init__(coordinator)
         self._api = li_api
         self._state_key = state_key
         self._cmd_key = cmd_key
         self._data_builder = data_builder
+        # ★ 2026-10-12：若给出，则写入走 App 的同步 REST API（方法名），
+        #   而不是 cmd/send。用于充电上限（charge-threshold-update）。
+        self._sync_setter = sync_setter
         self._attr_name = name
         self._attr_icon = icon
         self._rid = route_id_of_vin(vin)
@@ -222,6 +255,33 @@ class LiCarNumber(CoordinatorEntity, NumberEntity):
 
     @require_control
     async def async_set_native_value(self, value: float) -> None:
+        # ★ 2026-10-12：优先走 App 的**同步 REST API**（若该实体声明了）。
+        #   背景：充电上限此前走 cmd/send，而该 cmdKey 属于 JOB 通道
+        #   （HTTP 实测 2009）→ 实体被迫做成只读。第二轮逆向发现
+        #   App 用的是 /vehicles/charge-threshold-update（同步，无需轮询），
+        #   所以这里改成调用它。sync_setter 是 LiApi 上的方法名。
+        setter = getattr(self, "_sync_setter", None)
+        if setter:
+            try:
+                res = await self.hass.async_add_executor_job(
+                    getattr(self._api, setter), value)
+                self._last_result = res
+                if not res.get("ok"):
+                    # 统一在 except 里标注（保证异常链完整 + 文案一致）
+                    raise LiApiError(str(res.get("msg") or res.get("resultCode") or "失败"))
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.error("车控 %s(%s) 失败: %s", setter, value, err)
+                self._optimistic_value = None
+                from .li_api import label_command_error as _label
+                raise _label(getattr(self, "_attr_name", None) or setter, err) from err
+            self._optimistic_value = float(value)
+            import time as _t2
+            self._optimistic_until = _t2.monotonic() + OPTIMISTIC_TTL
+            _LOGGER.info("车控 %s(%s) 已执行: %s", setter, value, res)
+            self.async_write_ha_state()
+            await self.coordinator.async_request_refresh()
+            return
+
         cmd_data = self._data_builder(value)
         try:
             res = await self.hass.async_add_executor_job(

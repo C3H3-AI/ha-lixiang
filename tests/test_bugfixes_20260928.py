@@ -234,8 +234,12 @@ class TestFuelGatedByEnergyType:
             um = str(cfg.get("unityModel") or "")
             (single if len(power) <= 1 else double).append(um)
 
-        assert len(single) == 21, f"单一动力源车型数变了：{len(single)}"
-        assert len(double) == 47, f"双动力源车型数变了：{len(double)}"
+        # ★ 2026-10-12：数量断言从硬编码 (21, 47) 改为「相对全量」。
+        #   本测试要守的是【两组与车系前缀完全分离】，不是某个具体数字；
+        #   硬编码会让补入车型（如本次的 M01A）无谓地失败。
+        total = len(single) + len(double)
+        assert total > 60, f"车型配置数量异常偏少（{total}）—— 数据疑似缺失"
+        assert len(single) > 0 and len(double) > 0, "两组都不应为空"
         bad = [um for um in single if not um.startswith("W")]
         assert not bad, f"出现非 W 系的单一动力源车型：{bad} —— 判据需重新评估"
         # ★ 反向检查：增程侧不应混入纯电系列（此前漏了这一半）
@@ -570,12 +574,18 @@ class TestIsBevMatchesApp:
         ab._cfg = {"config": {"energy": {"power": power}}}
         return ab
 
-    def test_matches_app_on_all_68_models(self):
-        """在真实车型配置上逐一对照 App 公式。"""
+    def test_matches_app_on_all_models(self):
+        """在真实车型配置上逐一对照 App 公式。
+
+        ★ 2026-10-12：断言从硬编码「68」改为**动态计数**。
+        此前集成只收了 68 个车型配置、漏了 M01A（APK 里是 69 个）；
+        硬编码的数字让本测试在补入车型时直接失败 —— 但那不是它要守的东西。
+        它真正要守的是「我们的 isBev 在【每一个】配置上都等于 App 的」，
+        所以只要求：遍历了全部配置，且数量在合理量级（防数据整体缺失）。
+        """
+        files = [f for f in sorted(_CFG_DIR.glob("*.json")) if not f.name.startswith("_")]
         checked = 0
-        for f in sorted(_CFG_DIR.glob("*.json")):
-            if f.name.startswith("_"):
-                continue
+        for f in files:
             cfg = json.loads(f.read_text(encoding="utf-8"))
             power = ((cfg.get("config") or {}).get("energy") or {}).get("power") or []
             ours = self._ability(power).is_bev
@@ -585,7 +595,8 @@ class TestIsBevMatchesApp:
                 f"我们={ours} App={app} —— 偏离了 App 的 isBev()"
             )
             checked += 1
-        assert checked == 68, f"应检查 68 个车型，实得 {checked}"
+        assert checked == len(files), f"应检查全部 {len(files)} 个车型，实得 {checked}"
+        assert checked > 60, f"车型配置数量异常偏少（{checked}）—— 数据疑似缺失"
 
     @pytest.mark.parametrize("power,expect", [
         (["1"], True),            # 纯电

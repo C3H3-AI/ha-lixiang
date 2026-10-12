@@ -61,13 +61,22 @@ class TestM01BIsConfigOutlier:
        （已据此放弃给 ac_fan_speed 加 speedHeat/speedCool 门控。）
     """
 
-    #: 实测只在 M01B 上为 false 的标签
-    M01B_ONLY_FALSE = (
+    #: 实测只在 M 系（M01A / M01B）上为 false 的标签
+    #:
+    #: ★ 2026-10-12 更新：此前集成只收了 68 个车型配置、**漏了 M01A**
+    #:   （APK 里是 69 个）。补入后异常体从「只有 M01B」变成
+    #:   「M01A + M01B」—— 两者是同代平台，version 块完全相同
+    #:   （34 标签 / 12 true / 22 false），所以本结论只是**范围扩大**，
+    #:   「配置残缺，不适合当门控依据」这个判断不变。
+    M_SERIES_ONLY_FALSE = (
         "sentry", "sentryVideo", "scene", "ogcType", "speedHeat", "speedCool",
         "maintainConfig", "remoteParkingOut", "multiSlotChargingReservation",
         "petModeQuitAndLock", "remoteInteriorVideo", "realtimevideoAudio",
         "vlaSummon", "remoteLockOnReady", "autoWakeUp",
     )
+
+    #: 这些标签为假的 unityModel 集合（M01Ring 的 unityModel 也是 M01B）
+    M_SERIES_SET = frozenset({"M01A", "M01B"})
 
     @staticmethod
     def _configs():
@@ -86,26 +95,27 @@ class TestM01BIsConfigOutlier:
                 bad.add(str(cfg.get("unityModel") or ""))
         return bad
 
-    @pytest.mark.parametrize("tag", M01B_ONLY_FALSE)
-    def test_tag_false_only_on_m01b(self, tag):
-        """这些标签为假的车型必须【只有】M01B —— 否则说明配置变了，需重评。"""
+    @pytest.mark.parametrize("tag", M_SERIES_ONLY_FALSE)
+    def test_tag_false_only_on_m_series(self, tag):
+        """这些标签为假的车型必须【只有】M 系（M01A/M01B）—— 否则需重评。"""
         bad = self._false_models(tag)
-        assert bad == {"M01B"}, (
-            f"标签 {tag} 为假的车型是 {sorted(bad)}，期望只有 M01B。\n"
-            "  若 M01B 不再是唯一异常体，说明厂商改了配置 —— "
+        assert bad == set(self.M_SERIES_SET), (
+            f"标签 {tag} 为假的车型是 {sorted(bad)}，期望只有 M 系 {sorted(self.M_SERIES_SET)}。\n"
+            "  若范围又变了，说明厂商改了配置 —— "
             "请重新评估「只在个别车型为假的标签是否适合当门控依据」。"
         )
 
-    def test_m01b_version_block_is_sparse(self):
-        """M01B 的 version 标签数应显著少于其他车型（配置不完整）。"""
+    def test_m_series_version_block_is_sparse(self):
+        """M 系的 version 标签数应显著少于 X 系车型（配置不完整）。"""
         counts = {}
         for _mid, cfg in self._configs():
             um = str(cfg.get("unityModel") or "")
             counts.setdefault(um, []).append(len(cfg.get("version") or {}))
-        m01b = max(counts.get("M01B", [0]))
-        others = [max(v) for k, v in counts.items() if k != "M01B"]
-        assert m01b < min(others), (
-            f"M01B 的标签数({m01b}) 不再少于其他所有车型的最少值({min(others)}) —— "
+        m = max([*counts.get("M01A", [0]), *counts.get("M01B", [0])])
+        others = [max(v) for k, v in counts.items()
+                  if k not in ("M01A", "M01B")]
+        assert m < min(others), (
+            f"M 系的标签数({m}) 不再少于其他所有车型的最少值({min(others)}) —— "
             "配置已变，本测试记录的前提需要更新"
         )
 
@@ -132,8 +142,8 @@ class TestM01BIsConfigOutlier:
         "scene",                           # 场景模式 ×1
     )
 
-    def test_no_ungated_use_of_m01b_only_tag(self):
-        """★ 除上面显式登记的 5 处，不得再用 M01B-only 标签做门控。
+    def test_no_ungated_use_of_m_series_only_tag(self):
+        """★ 除上面显式登记的 5 处，不得再用 M 系-only 标签做门控。
 
         这样任何【新增】的此类门控都会立刻暴露，而不是悄悄混进来。
         """
@@ -143,19 +153,19 @@ class TestM01BIsConfigOutlier:
             if (s.requires or "").startswith("version:")
         }
         unexpected = sorted(
-            (used & set(self.M01B_ONLY_FALSE)) - set(self.INTENTIONAL_M01B_GATES)
+            (used & set(self.M_SERIES_ONLY_FALSE)) - set(self.INTENTIONAL_M01B_GATES)
         )
         assert not unexpected, (
-            f"以下门控依据只在 M01B（一个配置异常体）上为假：{unexpected}\n"
+            f"以下门控依据只在 M 系（配置异常体）上为假：{unexpected}\n"
             "  这是【新增】的此类门控 —— 请先确认该标签在其他车型上也有区分度，\n"
             "  或把它加进 INTENTIONAL_M01B_GATES 并说明理由。"
         )
 
-    def test_intentional_gates_are_still_m01b_only(self):
-        """登记的 5 处必须仍是 M01B-only —— 若某标签有了更广区分度，
+    def test_intentional_gates_are_still_m_series_only(self):
+        """登记的 5 处必须仍是 M 系-only —— 若某标签有了更广区分度，
         它就变成合理门控，应从例外名单移除（避免名单腐化）。"""
         stale = [t for t in self.INTENTIONAL_M01B_GATES
-                 if self._false_models(t) != {"M01B"}]
+                 if self._false_models(t) != set(self.M_SERIES_SET)]
         assert not stale, (
-            f"这些标签已不再是 M01B-only，应从 INTENTIONAL_M01B_GATES 移除：{stale}"
+            f"这些标签已不再是 M 系-only，应从 INTENTIONAL_M01B_GATES 移除：{stale}"
         )

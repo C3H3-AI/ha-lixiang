@@ -149,6 +149,90 @@ EP_CMD_RESULT = "/ssp-vehicle-control-service/ssp-vehicle-control/cmd-result"
 EP_WAKEUP = "/iot-connect-manager-service/v2/wakeup"
 CTRL_DOMAIN = "xcu"
 
+# ══════════════════════════════════════════════════════════════════════════
+#  ★★★ 2026-10-12：App 的**权威车控配置表**（第二轮逆向的重大修正）
+# ══════════════════════════════════════════════════════════════════════════
+#
+#  来源：assets/2025/LXMVehicleConfig2025.json —— 70 条 LXVehicleControlType*，
+#  每条给出 sendUrl / verificationUrl / skipVerification / successfulCode 等。
+#
+#  ★ 为什么重要：此前本项目只认一条 HTTP 车控路径（cmd/send），并把
+#    「充电 / 哨兵 / 拍照」归为「走 JOB 长连接、HTTP 不可达」。
+#    **该结论是错的** —— App 对这些功能有另一套 HTTP 端点：
+#
+#    · send-command（70 条里 65 条走它，**含充电启停/哨兵/拍照**）
+#        POST /ssp-as-mobile-api/v3-0/remote-vehicle-control/send-command
+#        body: OperateReq{vin, commandKey, commandData, commandDataLi,
+#                         safetyToken?, taskId?}
+#        → operationId，再轮询 verificationUrl 取结果
+#        GET  /ssp-as-mobile-api/v1-0/remote-vehicle-control/{vin}/command/{opId}/result
+#
+#    · 3 条**同步** API（skipVerification=1，一次调用直接拿结果，无需轮询）：
+#        POST /ssp-as-mobile-api/v1-0/vehicles/charge-threshold-update {vin, threshold}
+#        POST /ssp-as-mobile-api/v1-0/vehicles/battery-warm-switch   {vin, switchState}
+#        POST /ssp-as-mobile-api/v1-0/vehicles/ac-appointment-update {...}
+#
+#  注意：cmd/send 仍然存在且仍走 JOB —— 只是它**不是**这些功能的唯一通道。
+EP_RVC_SEND = "/ssp-as-mobile-api/v3-0/remote-vehicle-control/send-command"
+EP_RVC_RESULT = (
+    "/ssp-as-mobile-api/v1-0/remote-vehicle-control/{vin}/command/{op_id}/result")
+EP_CHARGE_THRESHOLD = "/ssp-as-mobile-api/v1-0/vehicles/charge-threshold-update"
+EP_BATTERY_WARM = "/ssp-as-mobile-api/v1-0/vehicles/battery-warm-switch"
+EP_AC_APPOINTMENT = "/ssp-as-mobile-api/v1-0/vehicles/ac-appointment-update"
+EP_SVM_TAKE_PHOTO = "/ssp-as-mobile-api/v1-0/vehicles/svm/take-photo"
+EP_OTA_UPGRADE = "/ssp-as-mobile-api/v1-0/vehicles/ota/upgrade"
+EP_MAINT_PLAN = "/ssp-as-mobile-api/v1-0/vehicles/maint/plan/"
+EP_MAINT_RESET = "/ssp-as-mobile-api/v1-0/vehicles/maint/item/reset"
+EP_TIRE_ALARM = "/ssp-as-mobile-api/v1-0/vehicles/tire/alarm/"
+
+#: 权威配置表里的成功 / 失败码（70 条命令一致）
+RVC_SUCCESS_CODE = "5"
+RVC_FAILURE_CODE = "7"
+#: send-command 的结果轮询上限（配置表 expireAt=30s）
+RVC_POLL_TIMEOUT = 30.0
+RVC_POLL_INTERVAL = 1.0
+
+#: 充电上限的取值范围 —— App 的滑块是 80~100（步进 1）。
+#  ★ 2026-10-12：从 number.py 搬到这里，供 li_api.set_charge_threshold 复用；
+#    number.py 改为 import 本模块的常量（避免两处各写一份而漂移）。
+CHARGE_MIN = 80
+CHARGE_MAX = 100
+CHARGE_STEP = 1
+
+
+def _as_text(value) -> str:
+    """安全转字符串（只把 None 当空）。
+
+    ★ 不要用「取值或空串」的写法（把 `or ""` 跟在原值后面）——
+      项目里的 `_LazySecret` 是惰性凭据对象，那种写法会对它取到空值，
+      `tests/test_secrets.py` 有守卫专门抓这类模式。
+      这里只判 None；其余值（含 0 / False / 空串）都正常转成字符串。
+    """
+    return "" if value is None else str(value)
+
+
+def _first_of(payload, *names: str):
+    """从响应里按顺序取第一个存在的键值（容错不同后端字段命名）。
+
+    新通道的响应字段名未在真机确认，故对 operationId/taskId/opId/id 等
+    常见命名做一次探测；取不到返回 None，由调用方决定如何降级。
+    """
+    if not isinstance(payload, dict):
+        return None
+    for n in names:
+        v = payload.get(n)
+        if v not in (None, ""):
+            return v
+    # 有些实现把结果放在 data / result 里
+    for nest in ("data", "result", "body"):
+        inner = payload.get(nest)
+        if isinstance(inner, dict):
+            for n in names:
+                v = inner.get(n)
+                if v not in (None, ""):
+                    return v
+    return None
+
 # ---------- 任务大师（2026-10-07 真机抓包实证：全 HTTP，非 JOB 通道）----------
 # 白名单: subTokenData → type=httpLiMeshServiceV2:
 #   urls 含 /ssp-task-master-service, 同条目 scope 含 "task-master"
@@ -1934,6 +2018,146 @@ class LiApiClient:
             json.dumps({"source": "0x3B", "bizId": "0"}, separators=(",", ":")),
             self._get_mesh_token(),
         )
+
+    # ══════════════════════════════════════════════════════════════════
+    #  ★ 2026-10-12：App 权威车控通道（第二轮逆向修正）
+    #
+    #  此前本项目只认 cmd/send，并把「充电 / 哨兵 / 拍照」判为
+    #  「走 JOB 长连接、HTTP 不可达」。**该结论是错的**：
+    #  App 的 LXMVehicleConfig2025.json 给出 70 条 LXVehicleControlType*，
+    #  其中 65 条走 send-command，另有 3 条同步 API。参见文件头注释。
+    # ══════════════════════════════════════════════════════════════════
+
+    def send_vehicle_command(
+        self, command_key: str,
+        command_data: dict | None = None,
+        *, poll: bool = True, timeout: float = RVC_POLL_TIMEOUT,
+    ) -> dict:
+        """用 App 的权威通道下发车控命令。
+
+        与 `send_command_raw`（走 cmd/send）的区别：
+          · 该通道是 App 真正的入口，**没有 JOB 通道限制** —— 充电启停 /
+            哨兵 / 拍照 / 解锁 / 后备箱等 65 条命令都走它。
+          · 返回 `operationId`（任务号），结果需查 verificationUrl。
+
+        参数：
+          command_key  配置表里的 cmdKey，如 remote_central_lock_unlock /
+                       remote_plg_open / remote_charging_start。
+                       配置表里 cmdKey 为空的那几条，App 用类型名当键
+                       （见 vehicle_control_types 模块），调用方负责传对。
+          command_data 命令参数（如 {"ctrlType": 1}），可为空。
+          poll         True=轮询结果；False=只下发拿 operationId。
+          timeout      轮询上限（配置表 expireAt=30s）。
+
+        返回：
+          {"ok": bool, "operationId": str, "resultCode": str|int,
+           "msg": str, "raw": dict}
+
+        ★ 未在真机验证：本方法按配置表 + OperateReq 字段实现，
+          首次调用请先看返回的 raw，据实修正（项目规则：不猜）。
+        """
+        body = {
+            "vin": self._vin,
+            "commandKey": command_key,
+            "commandData": command_data or {},
+            "commandDataLi": command_data or {},
+        }
+        payload = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
+        resp = self._signed_call("POST", EP_RVC_SEND, payload, self._get_mesh_token())
+
+        op_id = _first_of(resp, "operationId", "taskId", "opId", "id", "txId")
+        out = {
+            "ok": False,
+            "operationId": str(op_id) if op_id is not None else "",
+            "resultCode": _first_of(resp, "resultCode", "code"),
+            "msg": _as_text(_first_of(resp, "msg", "message", "resultMsg")),
+            "raw": resp,
+        }
+        if op_id is None:
+            # 有些实现直接同步返回结果码
+            code = str(out["resultCode"]) if out["resultCode"] is not None else ""
+            out["ok"] = code in ("", RVC_SUCCESS_CODE, "0", "200")
+            return out
+        if not poll:
+            out["ok"] = True
+            return out
+
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            time.sleep(RVC_POLL_INTERVAL)
+            try:
+                r = self._signed_call(
+                    "GET",
+                    EP_RVC_RESULT.format(vin=self._vin, op_id=op_id),
+                    "", self._get_mesh_token())
+            except LiApiError as err:
+                out["msg"] = str(err)
+                continue
+            code = str(_first_of(r, "resultCode", "code") or "")
+            if code and code not in ("", "0", RVC_SUCCESS_CODE):
+                out.update(ok=False, resultCode=code,
+                           msg=_as_text(_first_of(r, "msg", "message")), raw=r)
+                return out
+            state = str(_first_of(r, "state", "status", "pushState") or "")
+            if code == RVC_SUCCESS_CODE or state in ("5", "success", "done"):
+                out.update(ok=True, resultCode=code or RVC_SUCCESS_CODE, raw=r)
+                return out
+        if not out["msg"]:
+            out["msg"] = f"轮询 {timeout:.0f}s 未拿到结果"
+        return out
+
+    def _sync_update(self, path: str, body: dict, what: str) -> dict:
+        """同步更新类 API（配置表 skipVerification=1，一次调用即结果）。
+
+        用于 charge-threshold-update / battery-warm-switch /
+        ac-appointment-update —— 它们**不需要轮询**。
+        """
+        payload = json.dumps(body, separators=(",", ":"), ensure_ascii=False)
+        resp = self._signed_call("POST", path, payload, self._get_mesh_token())
+        code = str(_first_of(resp, "resultCode", "code") or "")
+        ok = code in ("", "0", RVC_SUCCESS_CODE, "200")
+        return {
+            "ok": ok, "resultCode": code,
+            "msg": str(_first_of(resp, "msg", "message") or ""),
+            "raw": resp, "what": what,
+        }
+
+    def set_charge_threshold(self, threshold: int) -> dict:
+        """设置充电上限（+ 未达上限继续充电的行为由车端决定）。
+
+        端点：POST /ssp-as-mobile-api/v1-0/vehicles/charge-threshold-update
+        请求体（VehicleChargetThresholdReq）：{vin, threshold}
+
+        ★ 这条是**同步** API —— 不需要 JOB 长连接，也不需要轮询。
+          此前项目把「充电上限」做成只读，是因为只找到了 cmd/send 那条路。
+        """
+        threshold = max(CHARGE_MIN, min(CHARGE_MAX, int(threshold)))
+        return self._sync_update(
+            EP_CHARGE_THRESHOLD,
+            {"vin": self._vin, "threshold": str(threshold)},
+            f"充电上限 → {threshold}%")
+
+    def set_battery_warm(self, on: bool) -> dict:
+        """电池保温开关。
+
+        端点：POST /ssp-as-mobile-api/v1-0/vehicles/battery-warm-switch
+        请求体（BatteryInsulationReq）：{vin, switchState}  1=开 0=关
+        """
+        return self._sync_update(
+            EP_BATTERY_WARM,
+            {"vin": self._vin, "switchState": 1 if on else 0},
+            f"电池保温 → {'开' if on else '关'}")
+
+    def set_ac_appointment(self, body: dict) -> dict:
+        """预约空调。
+
+        端点：POST /ssp-as-mobile-api/v1-0/vehicles/ac-appointment-update
+        请求体（AcAppointmentUpdateReq）：
+          {vin, switchOn, temp, startTime, workingDay,
+           flLevel, frLevel, rlLevel, rrLevel, steerSet, battWarmUp}
+        """
+        return self._sync_update(
+            EP_AC_APPOINTMENT, {"vin": self._vin, **body}, "预约空调")
 
     def send_command_raw(self, command_key: str, command_data: dict | None = None) -> dict:
         """仅下发命令, 不轮询结果. 返回 cmd/send 的原始响应.
