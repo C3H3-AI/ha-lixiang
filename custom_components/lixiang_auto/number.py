@@ -234,6 +234,8 @@ class LiCarNumber(CoordinatorEntity, NumberEntity):
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("车控 %s %s 失败: %s", self._cmd_key, cmd_data, err)
             self._optimistic_value = None
-            raise
+            # ★ 2026-10-12：补上「是哪个部件」（见 li_api.label_command_error）
+            from .li_api import label_command_error as _label
+            raise _label(getattr(self, "_attr_name", None) or self._cmd_key, err) from err
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
