@@ -23,6 +23,7 @@
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -30,7 +31,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 CC = ROOT / "custom_components" / "lixiang_auto"
-RE = Path("/media/duola/devdata/AI-workspace/lixiang-reverse")
+RE = Path(os.environ.get("LI_REVERSE_DIR", Path(__file__).resolve().parents[2] / "lixiang-reverse"))
 MAPPING = (RE / "apk_latest/decompiled/smali_classes11/com/chehejia/lib/vehicle"
            / "limesh/x/helper/XVehicleJobHelper$Companion.smali")
 
