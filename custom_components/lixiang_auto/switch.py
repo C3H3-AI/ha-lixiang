@@ -682,7 +682,15 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("车控 %s %s 失败: %s", cmd_key, cmd_data, err)
             self._optimistic_on = None
-            raise
+            # ★ 2026-10-12：把「是哪个部件」也带上。
+            #   服务端只回 resultCode + failReason（如 -2 / "set signal err!"），
+            #   用户看到裸的"执行失败"不知道是哪个功能。
+            #   App 显示的是"充电口盖已开启，请前往手动关闭"——查清它的来源是
+            #   「VSS 表里的中文名」+「RN bundle 里的模板」拼接（见
+            #   li_api.label_command_error 的文档），我们用实体名即可。
+            from .li_api import label_command_error as _label
+
+            raise _label(getattr(self, "_attr_name", None) or self._control_type, err) from err
         await self.coordinator.async_request_refresh()
 
 

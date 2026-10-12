@@ -340,7 +340,9 @@ class LiCarTrunkCover(CoordinatorEntity, CoverEntity):
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("车控 %s %s 失败: %s", CMD_PLG, cmd_data, err)
             self._optimistic_closed = None
-            raise
+            # ★ 2026-10-12：补上「是哪个部件」（见 li_api.label_command_error）
+            from .li_api import label_command_error as _label
+            raise _label(getattr(self, "_attr_name", None) or "尾门", err) from err
         await self.coordinator.async_request_refresh()
 
 
@@ -490,7 +492,9 @@ class LiCarWindowCover(CoordinatorEntity, CoverEntity):
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("车控 %s %s 失败: %s", CMD_WDW, cmd_data, err)
             self._optimistic_pos = None
-            raise
+            # ★ 2026-10-12：补上「是哪个部件」（见 li_api.label_command_error）
+            from .li_api import label_command_error as _label
+            raise _label(getattr(self, "_attr_name", None) or "车窗", err) from err
         await self.coordinator.async_request_refresh()
 
 # ===========================================================================
@@ -581,7 +585,9 @@ class LiCarFrunkCover(CoordinatorEntity, CoverEntity):
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("车控 %s %s 失败: %s", CMD_FRUNK, cmd_data, err)
             self._optimistic_closed = None
-            raise
+            # ★ 2026-10-12：补上「是哪个部件」（见 li_api.label_command_error）
+            from .li_api import label_command_error as _label
+            raise _label(getattr(self, "_attr_name", None) or "前备箱", err) from err
         await self.coordinator.async_request_refresh()
 
 
@@ -662,5 +668,7 @@ class LiCarSlideDoorCover(CoordinatorEntity, CoverEntity):
         except Exception as err:  # noqa: BLE001
             _LOGGER.error("车控 %s %s 失败: %s", CMD_PLG, cmd_data, err)
             self._optimistic_closed = None
-            raise
+            # ★ 2026-10-12：补上「是哪个部件」（见 li_api.label_command_error）
+            from .li_api import label_command_error as _label
+            raise _label(getattr(self, "_attr_name", None) or "尾门", err) from err
         await self.coordinator.async_request_refresh()

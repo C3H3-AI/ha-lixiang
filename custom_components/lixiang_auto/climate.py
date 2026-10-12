@@ -304,7 +304,9 @@ class LiCarClimate(CoordinatorEntity, ClimateEntity):
             # 下发失败 → 回滚乐观状态, 避免 UI 显示假成功
             self._optimistic_on = None
             self._optimistic_mode = None
-            raise
+            # ★ 2026-10-12：补上「是哪个部件」（见 li_api.label_command_error）
+            from .li_api import label_command_error as _label
+            raise _label(getattr(self, "_attr_name", None) or "空调控制", err) from err
         self.async_write_ha_state()
         await self.coordinator.async_request_refresh()
 

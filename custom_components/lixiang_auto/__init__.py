@@ -232,6 +232,90 @@ class LiXiangTaskDictView(HomeAssistantView):
         }
         return web.json_response(payload)
 
+async def _car_identity(hass, coordinator=None, li_api=None) -> tuple[str, str]:
+    """取 (modelId, colorCode) —— 车模图匹配用。
+
+    ★ 2026-10-12：优先从车辆信息的**落盘缓存**读（7 天有效），
+      避免每次刷新卡片都联网 —— 联网会走 saos_vehicle token 回退，
+      **顶掉用户手机 App**（单设备登录），代价太大。
+    实测返回里这两个字段是平级的：
+        modelId=100167931652606785、colorCode=FA9
+    """
+    info = (getattr(coordinator, "data", None) or {}) if coordinator else {}
+    mid = info.get("car_model_id") or ""
+    col = info.get("car_color_code") or ""
+    if mid and col:
+        return str(mid), str(col)
+    # 回退：读车辆信息缓存（同步 IO → 丢executor）
+    try:
+        from .vehicle_role import current_vehicle as _cv
+
+        def _read() -> tuple[str, str]:
+            cd = getattr(getattr(hass, "config", None), "path", "")
+            cd = cd() if callable(cd) else (cd or "")
+            v = _cv(li_api, cd) or {}
+            vi = v.get("vehicleInfo") or {}
+            return str(v.get("modelId") or vi.get("modelId") or ""), \
+                   str(vi.get("colorCode") or "")
+
+        if li_api is not None:
+            m, c = await hass.async_add_executor_job(_read)
+            if m:
+                return m, c
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("读取车型/色码失败（首页将无车模图）: %s", err)
+    return str(mid or ""), str(col or "")
+
+
+class LiXiangCarImageView(HomeAssistantView):
+    """车模图信息（★ 2026-10-12）。
+
+    卡片只能访问 hass（拿不到 coordinator），所以车型/车漆信息必须经 REST 出去。
+    路径：/lixiang_auto/car-image.json
+      返回 {ok:true, model_id, color_code, vertical:{key,url,cached,path}, minicon:{…}}
+            {ok:false, error:"..."}
+
+    ★ 图片本身走静态目录 /lixiang_car/<modelId>/<file>，由卡片直接 <img> 引用。
+    ★ 未缓存时这里会顺带触发一次异步下载（首次可能有几百毫秒延迟）。
+    """
+
+    url = "/lixiang_auto/car-image.json"
+    name = "api:lixiang_auto:car_image"
+    requires_auth = False      # 与 asset-version 一致：不含敏感信息
+
+    def __init__(self, hass: HomeAssistant, coordinator=None, li_api=None) -> None:
+        self.hass = hass
+        self._coordinator = coordinator
+        self._li_api = li_api
+
+    async def get(self, request: web.Request) -> web.Response:
+        try:
+            from . import car_image as _ci
+        except Exception as err:  # noqa: BLE001
+            return web.json_response({"ok": False, "error": f"模块不可用：{err}"[:160]})
+        mgr: _ci.CarImageManager | None = self.hass.data.get("lixiang_auto__car_image")
+        if mgr is None:
+            return web.json_response({"ok": False, "error": "车模图管理器未就绪"})
+        model_id, color = await _car_identity(self.hass, self._coordinator, self._li_api)
+        if not model_id:
+            return web.json_response({"ok": False, "error": "未取到车型信息"})
+        out: dict[str, Any] = {"ok": True, "model_id": model_id, "color_code": color}
+        try:
+            for kind in (_ci.KIND_VERTICAL, _ci.KIND_MINICON):
+                got = await mgr.async_ensure(model_id, kind, color or None)
+                if got:
+                    got = dict(got)
+                    got.pop("url", None)          # 不外传CDN 地址（无必要）
+                    got["static"] = (
+                        f"/lixiang_car/{got['model_id']}/"
+                        f"{got['kind']}_{got['key']}.png"
+                    ) if got.get("cached") else ""
+                    out[kind] = got
+        except Exception as err:  # noqa: BLE001
+            return web.json_response({"ok": False, "error": str(err)[:160]})
+        return web.json_response(out)
+
+
 async def _async_enable_ui_required_entities(hass: HomeAssistant) -> int:
     """启用「前端页面需要、但被诊断类规则默认禁用」的实体（2026-10-12）。
 
@@ -295,6 +379,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 StaticPathConfig("/lixiang_auto", str(_cards_dir), False),
             ])
             _LOGGER.debug("已注册前端卡片静态路径: /lixiang_auto → %s", _cards_dir)
+
+            # ★ 2026-10-12：官方静态车模图缓存目录（按需下载，见 car_image.py）。
+            #   挂在 /lixiang_car 下，卡片直接 <img src="/lixiang_car/…"> 引用。
+            try:
+                from .car_image import CarImageManager as _CIM
+
+                _car_dir = _Path(hass.config.config_dir) / "lixiang-car"
+                _mgr = _CIM(hass, _car_dir)
+                hass.data["lixiang_auto__car_image"] = _mgr
+                if _car_dir.is_dir():
+                    await hass.http.async_register_static_paths([
+                        StaticPathConfig("/lixiang_car", str(_car_dir), False),
+                    ])
+                    _LOGGER.debug("已注册车模图静态路径: /lixiang_car → %s", _car_dir)
+            except Exception as _cerr:  # noqa: BLE001
+                _LOGGER.debug("注册车模图静态路径失败（首页将无车模图）: %s", _cerr)
             # ★ 资源版本号（cache-buster）：卡片据此给静态资源加 ?v=
             try:
                 hass.http.register_view(LiXiangAssetVersionView())
@@ -415,6 +515,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.http.register_view(LiXiangTaskDictView(hass, coordinator))
     except Exception as _tdverr:  # noqa: BLE001
         _LOGGER.debug("注册任务字典视图失败（新建任务将回退简表）: %s", _tdverr)
+    # ★ 2026-10-12：车模图视图（车型 + 车漆色码 + 图片直链）
+    try:
+        hass.http.register_view(LiXiangCarImageView(hass, coordinator, li_api))
+        _LOGGER.info("已注册车模图视图 /lixiang_auto/car-image.json")
+    except Exception as _civer:  # noqa: BLE001
+        _LOGGER.warning("注册车模图视图失败（首页将无车模图）: %s", _civer)
 
     # 车型功能探测（VSS 信号探测法; 失败则全部按不支持处理, 不影响只读实体）
     features: dict[str, bool] = {}

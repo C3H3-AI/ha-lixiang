@@ -96,14 +96,17 @@ class TestResultCodeHints:
 
     def test_known_codes(self):
         t = self._table()
-        # ★ 只收录实测见过的（2026-10-11 真车）
+        # ★ 只收录实测见过的
         assert t[-4] == "车辆已启动，不支持远程控制", "缺 -4 的实测文案"
         assert t[-51] == "闭锁失败，主驾有人，请稍后再试", "缺 -51 的实测文案"
+        # ★ 2026-10-12 实测：cpCtrl 关闭充电口盖时 pushState=7 resultCode=-2
+        #   failReason="set signal err!"（dump 全部字段确认服务端没给中文原因）
+        assert -2 in t, "缺 -2（2026-10-12 实测）"
 
     def test_no_guessy_codes(self):
         """未实测的错误码不应被臆测 —— 表里每条都要有实测来源。"""
         t = self._table()
-        allowed = {-1, -3, -4, -51}      # 实测集合
+        allowed = {-1, -3, -4, -51, -2}      # 实测集合（-2 于 2026-10-12 实测）
         extra = set(t) - allowed
         assert not extra, (
             f"错误码表含未实测的条目 {sorted(extra)} —— "
