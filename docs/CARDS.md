@@ -41,6 +41,7 @@ type: custom:lixiang-app
 
 | 资源 URL | 类型 |
 |---|---|
+| `/lixiang_auto/lixiang-cards/lixiang-overview-card.js` | module（★ 总览卡，2026-10-13 新增）|
 | `/lixiang_auto/lixiang-cards/lixiang-app-home.js` | module |
 | `/lixiang_auto/lixiang-cards/lixiang-energy-page.js` | module |
 | `/lixiang_auto/lixiang-cards/lixiang-charge-page.js` | module |
@@ -132,10 +133,11 @@ battery: sensor.li_auto_l6_dian_chi_dian_liang
 
 ---
 
-## 三、卡片清单（13 个）
+## 三、卡片清单（14 个）
 
 | 卡片 | 说明 | 依赖服务 |
 |---|---|---|
+| `lixiang-overview-card` | **车辆总览**（★ 2026-10-13 新增）—— 深色玻璃风格，电量/油量进度条 + 三续航 + 四轮胎压 + 车况，只读、零配置 | — |
 | `lixiang-app-home` | **车控首页** —— 8 圆按钮 + 双态 3D + 空调/位置/里程/电量/哨兵 + 9 个入口 | `get_travel` |
 | `lixiang-energy-page` | **里程能耗** —— 环形图（陪伴里程 + 电/油占比）+ 智驾占比 + 年/月/日折叠 | `get_travel` |
 | `lixiang-charge-page` | **充电** —— 实时状态 + 年月记录 + 单次明细（直流/交流）| `get_charge` |
@@ -149,6 +151,37 @@ battery: sensor.li_auto_l6_dian_chi_dian_liang
 | `lixiang-vehicle-info-page` | **车辆信息** —— 昵称/车牌/型号/车架号/配置等级 | — |
 | `lixiang-task-page` | **任务大师（HA 版）** —— 用 App 的交互创建 **HA 自动化** | — |
 | `lixiang-bindings-card` | **实体自动发现（诊断）** —— 查看绑定详情 | — |
+
+### 车辆总览卡（`lixiang-overview-card`）
+
+深色玻璃风格的**单张只读总览**，适合当仪表盘首屏。设计参考社区分享的
+「尊界 S800 车辆总览」卡（三栏 / 窄屏两栏 / 手机单栏），但**数据来源不同**：
+它的实体全靠手填，本卡走集成的**实体自动发现**，默认零配置。
+
+```yaml
+type: custom:lixiang-overview-card
+# 以下全部可选
+image: /local/my-car.png    # 自备车图（不填则用集成自动匹配的官方车图）
+vin: HLX32XXXXXXXXXXXX      # 多车时指定
+model_name: 理想 L6         # 覆盖车型名
+entities:                   # 个别字段手填（优先于自动发现，左侧键名固定）
+  battery: sensor.my_battery_soc
+```
+
+显示内容：
+
+| 区域 | 内容 |
+|---|---|
+| 身份 | 车型 · 在线状态 · 行驶状态（如「已驻车（P 档）」）· 哨兵开关 · 官方车图 |
+| 能量 | 总续航（大号）· 电池电量 % + 进度条 + 纯电续航 · 油量 % + 进度条 + 燃油续航 · 充电状态 + 充电功率 |
+| 车况 | 四轮胎压（含俯视示意，**低于 2.0 bar 标黄**）· 车内温度 · 空调状态 |
+| 页脚 | 数据更新时间（>5 分钟标「数据较旧」）· 总里程 |
+| 可展开 | WLTC 总续航 · 充电电压/电流 · 剩余充电时间 · 空调设定温度 · 电池包电压 · 本月里程 · 累计充电量 |
+
+交互：容器查询自适应（≥950 桌面三栏 / ≤750 两栏 / ≤480 手机单栏），
+每 60 秒自动刷新一次时间与数据。
+
+> **只读卡**：不发送任何车控指令；车控请用 `lixiang-app-home` 或各控制页。
 
 ### 首页导航图
 

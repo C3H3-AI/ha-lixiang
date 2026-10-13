@@ -46,6 +46,14 @@ const AUTO_BIND = {
     title:          { meta: true },                      // 由车型名生成
     range_elec:     ["纯电续航(CLTC)", "纯电续航(CLTC)", "纯电续航"],
     range_fuel:     ["燃油续航(CLTC)", "燃油续航"],
+    range_total:    ["总续航(CLTC)", "总续航"],
+    /* ★ 2026-10-13：总览卡新增 */
+    fuel:           ["油量"],
+    wltc_total:     ["总续航(WLTC)"],
+    wltc_elec:      ["纯电续航(WLTC)"],
+    wltc_fuel:      ["燃油续航(WLTC)"],
+    charge_voltage: ["交流充电电压", "OGC 充电电压"],
+    charge_current: ["交流充电电流", "OGC 充电电流"],
     battery:        ["电池电量"],
     status:         { any: ["行驶", "状态"] },            // 行驶状态
     online:         ["在线状态"],
