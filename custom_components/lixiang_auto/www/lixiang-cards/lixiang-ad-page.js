@@ -1,3 +1,14 @@
+
+// —— 图标回退（内置资源）——
+// /local/lixiang-icons 缺失时，img onerror 自动切到集成内置路径。
+const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallback = window.__lxIconFallback || function (img) {
+  if (img.dataset.lxFb) return;
+  img.dataset.lxFb = "1";
+  const s = img.getAttribute("src") || "";
+  const rel = s.replace(/^\/local\/lixiang-icons\//, "");
+  if (rel === s) return;
+  img.src = "/lixiang_auto/lixiang-icons/" + rel;
+})) || function (img) {};
 /**
  * lixiang-ad-page —— 智驾统计（二级页）
  *
@@ -11,15 +22,19 @@
  */
 
 const CARD_TAG = "lixiang-ad-page";
-const DEFAULT_ICON_BASE = "/local/lixiang-icons";
+const BUILTIN_ICON_BASE = "/lixiang_auto/lixiang-icons";
+const DEFAULT_ICON_BASE = "/local/lixiang-icons";   // 用户自定义优先
 let __iconBase = DEFAULT_ICON_BASE;   // setConfig 可覆盖
-const DEFAULT_FONT_BASE = "/local/lixiang-fonts";
+const __iconFallback = BUILTIN_ICON_BASE;
+const BUILTIN_FONT_BASE = "/lixiang_auto/lixiang-fonts";
+const DEFAULT_FONT_BASE = "/local/lixiang-fonts";   // 用户自定义优先
 let __fontBase = DEFAULT_FONT_BASE;   // setConfig 可覆盖
+const __fontFallback = BUILTIN_FONT_BASE;
 
 const STYLE = `
-  @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_regular.ttf"); font-weight:400; font-display:swap; }
-  @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_medium.ttf");  font-weight:500; font-display:swap; }
-  @font-face { font-family:"LxNum";  src:url("${__fontBase}/roboto_medium_numbers.ttf"); font-display:swap; }
+  @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
+  @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
+  @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
   :host { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-purple:#7B61FF;
@@ -189,10 +204,10 @@ class LixiangAdPage extends HTMLElement {
     root.innerHTML=`
       <div class="ptr" id="ptr"><div class="sp"></div><div class="tx">下拉刷新</div></div>
       <div class="topbar">
-        <img class="back" id="back" src="${__iconBase}/ic_home_return.webp" alt="返回">
+        <img class="back" id="back" src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="返回">
         <h1>智驾统计</h1>
         <div class="refresh" id="refresh" role="button" tabindex="0" aria-label="刷新">
-          <img src="${__iconBase}/ic_home_return.webp" alt="" style="transform:rotate(-90deg)">
+          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="" style="transform:rotate(-90deg)">
         </div>
       </div>
       <div class="hero">
@@ -218,11 +233,11 @@ class LixiangAdPage extends HTMLElement {
       </div>
       <div class="sect">
         <h2>使用情况</h2>
-        <div class="row"><img src="${__iconBase}/ic_home_navigation.webp" alt="">
+        <div class="row"><img src="${__iconBase}/ic_home_navigation.webp" onerror="__lxIconFallback(this)" alt="">
           <div class="tx"><div class="nm">累计使用天数</div>
             <div class="sd" id="d-sub">—</div></div>
           <div class="val"><span id="d-days">—</span> 天</div></div>
-        <div class="row"><img src="${__iconBase}/ic_home_mileage.webp" alt="">
+        <div class="row"><img src="${__iconBase}/ic_home_mileage.webp" onerror="__lxIconFallback(this)" alt="">
           <div class="tx"><div class="nm">占总里程比例</div>
             <div class="sd" id="t-sub">—</div></div>
           <div class="val"><span id="d-ratio">—</span>%</div></div>

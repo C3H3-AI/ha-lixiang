@@ -1,3 +1,14 @@
+
+// —— 图标回退（内置资源）——
+// /local/lixiang-icons 缺失时，img onerror 自动切到集成内置路径。
+const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallback = window.__lxIconFallback || function (img) {
+  if (img.dataset.lxFb) return;
+  img.dataset.lxFb = "1";
+  const s = img.getAttribute("src") || "";
+  const rel = s.replace(/^\/local\/lixiang-icons\//, "");
+  if (rel === s) return;
+  img.src = "/lixiang_auto/lixiang-icons/" + rel;
+})) || function (img) {};
 /**
  * lixiang-location-page —— 车辆位置（二级页，对齐 App）
  *
@@ -20,15 +31,18 @@
  */
 
 const CARD_TAG = "lixiang-location-page";
-const DEFAULT_ICON_BASE = "/local/lixiang-icons";
-const DEFAULT_FONT_BASE = "/local/lixiang-fonts";
+const BUILTIN_ICON_BASE = "/lixiang_auto/lixiang-icons";
+const DEFAULT_ICON_BASE = "/local/lixiang-icons";   // 用户自定义优先
+const BUILTIN_FONT_BASE = "/lixiang_auto/lixiang-fonts";
+const DEFAULT_FONT_BASE = "/local/lixiang-fonts";   // 用户自定义优先
 let __iconBase = DEFAULT_ICON_BASE;   // setConfig 可覆盖
+const __iconFallback = BUILTIN_ICON_BASE;
 let __fontBase = DEFAULT_FONT_BASE;
 
 const STYLE = `
-  @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_regular.ttf"); font-weight:400; font-display:swap; }
-  @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_medium.ttf");  font-weight:500; font-display:swap; }
-  @font-face { font-family:"LxNum";  src:url("${__fontBase}/roboto_medium_numbers.ttf"); font-display:swap; }
+  @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
+  @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
+  @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
   :host { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500;
@@ -203,18 +217,18 @@ class LixiangLocationPage extends HTMLElement {
       <div class="mapwrap" id="mapwrap">
         <div class="tiles" id="tiles"></div>
         <div class="puck" id="puck" style="display:none">
-          <img src="${__iconBase}/icon_car_loc.webp" alt="车辆位置"></div>
+          <img src="${__iconBase}/icon_car_loc.webp" onerror="__lxIconFallback(this)" alt="车辆位置"></div>
         <div class="mapctl">
           <span id="cz-in" role="button" tabindex="0" aria-label="放大">+</span>
           <span id="cz-out" role="button" tabindex="0" aria-label="缩小">−</span>
           <span id="cz-me" role="button" tabindex="0" aria-label="回到车辆">⌖</span>
         </div>
         <div class="ph" id="mapph" style="display:none">
-          <img class="car" src="${__iconBase}/icon_car_loc.webp" alt="">
+          <img class="car" src="${__iconBase}/icon_car_loc.webp" onerror="__lxIconFallback(this)" alt="">
           <div id="coords">定位获取中…</div>
         </div>
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-          <img src="${__iconBase}/ic_home_return.webp" alt=""></div>
+          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
         <div class="floats">
           <div class="fbtn" id="btn-flash" role="button" tabindex="0" aria-label="闪灯">
             <img src="${__iconBase}/ic_home_lightning.png" alt="" onerror="this.style.visibility='hidden'">闪灯</div>
@@ -229,7 +243,7 @@ class LixiangLocationPage extends HTMLElement {
           <div class="d" id="v-dist"></div>
         </div>
         <div class="nav" id="btn-nav" role="button" tabindex="0" aria-label="导航到车辆">
-          <img src="${__iconBase}/ic_home_navigation.webp" alt=""></div>
+          <img src="${__iconBase}/ic_home_navigation.webp" onerror="__lxIconFallback(this)" alt=""></div>
       </div>
 
       <div class="sec">
