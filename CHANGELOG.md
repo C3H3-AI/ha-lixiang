@@ -4,6 +4,40 @@
 
 ---
 
+## [1.5.10] — 2026-10-14
+
+> 修复：卡片的容器查询断点**从未生效过**。
+
+### 🐛 Fixed
+
+- **容器查询断点全部失效**（v1.5.7 起的遗留缺陷）
+  v1.5.7 的写法是 `:host { container-type: inline-size; }`，但集成卡片用的是
+  **light DOM**（`this.appendChild(style)`）—— `:host` 只在 shadow DOM 里成立，
+  因此 `container-type` 从未应用，**所有 `@container` 断点一次都没触发过**。
+  现把 `container-type` 挂到真实根元素 `.root` 上。
+
+  实测（400px 宽）：`app-home` 的 `.row2`/`.entries` 从 2 列→**1 列**、
+  `.quick` 从 4 列→**2 列**；充电页三栏指标 3 列→**2 列**。
+  桌面 1000px 布局**完全不变**；toast（`position:fixed`）位置不变 ——
+  容器 containment 未引入回归。
+
+- **app-home 补上从未有过的手机断点**
+  v1.5.7 的提交说明曾声称「13 个页面卡 + app-home 全部加 container-type」，
+  但实际 diff 只有 11 张页面卡，app-home 没有任何断点。本次补齐
+  （快捷键 4→2 列、双卡区 2→1 列、3D 区与缩略图尺寸）。
+
+- 断点内的网格统一为 `minmax(0,1fr)`，遵循仓库既有约定（避免长内容撑破容器）。
+
+### ✅ Tests
+
+- 新增 `tests/test_card_container_queries.py`（20 条）
+  · 有 `@container` 规则的卡片，`container-type` 不得只挂在 `:host` 上
+  · 容器必须挂在真实根元素 `.root`
+  · `STYLE` 模板字符串内不得出现裸反引号（本次修复时踩过：
+    注释里写反引号把模板提前闭合 → 运行期 SyntaxError，`node --check` 不报）
+  · 已验证有效性：把任意一张卡退回旧写法，测试立即失败
+
+
 ## [1.5.9] — 2026-10-14
 
 > 新增「车辆总览」卡 —— 深色玻璃风格、只读、**零配置**。
