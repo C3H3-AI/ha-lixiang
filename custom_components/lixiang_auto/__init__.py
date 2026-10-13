@@ -311,6 +311,15 @@ class LiXiangCarImageView(HomeAssistantView):
                         f"{got['kind']}_{got['key']}.png"
                     ) if got.get("cached") else ""
                     out[kind] = got
+                # ★ 横版（由竖图逆时针旋转 90° 派生，车头朝左）—— 卡片横容器优先用
+                if kind == _ci.KIND_VERTICAL and got and got.get("cached"):
+                    hpath = mgr.local_horizontal_path(model_id, got["key"])
+                    if hpath.is_file():
+                        out["horizontal"] = {
+                            "model_id": str(model_id), "key": got["key"],
+                            "kind": "horizontal", "cached": True, "path": str(hpath),
+                            "static": f"/lixiang_car/{model_id}/horizontal_{got['key']}.png",
+                        }
         except Exception as err:  # noqa: BLE001
             return web.json_response({"ok": False, "error": str(err)[:160]})
         return web.json_response(out)
