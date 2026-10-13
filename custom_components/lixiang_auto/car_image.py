@@ -158,6 +158,11 @@ class CarImageManager:
         if path.is_file() and path.stat().st_size > 0:
             info["cached"] = True
             info["path"] = str(path)
+            # ★ 横版：官方只发竖图（车头朝下）。左转 90°（逆时针）得到车头朝左的
+            #   横版 —— 像素原样旋转、零加工，颜色与官方素材完全一致（2026-10-13 车主确认方向）。
+            #   注意：已缓存路径也会走到这里（首次升级后生成一次）。
+            if kind == KIND_VERTICAL:
+                await self._async_make_horizontal(info["model_id"], info["key"], path)
             return info
         lock = self._locks.setdefault(f"{info['model_id']}_{info['kind']}_{info['key']}",
                                       asyncio.Lock())
@@ -171,7 +176,39 @@ class CarImageManager:
             info["cached"] = bool(ok)
             if ok:
                 info["path"] = str(path)
+        # ★ 横版：官方只发竖图（车头朝下）。左转 90°（逆时针）得到车头朝左的
+        #   横版 —— 像素原样旋转、零加工，颜色与官方素材完全一致（2026-10-13 车主确认方向）。
+        if kind == KIND_VERTICAL and info.get("cached"):
+            await self._async_make_horizontal(info["model_id"], info["key"], path)
         return info
+
+    def local_horizontal_path(self, model_id: str, key: str) -> Path:
+        safe = "".join(ch for ch in str(key) if ch.isalnum() or ch in "-_")
+        return self._dir(model_id) / f"horizontal_{safe or 'default'}.png"
+
+    async def _async_make_horizontal(self, model_id: str, key: str,
+                                     vertical_path: Path) -> None:
+        """由已缓存的竖图生成横版（逆时针旋转 90° + 裁掉透明边），失败静默。"""
+        hpath = self.local_horizontal_path(model_id, key)
+        if hpath.is_file() and hpath.stat().st_size > 0:
+            return
+        def _make(v=vertical_path, o=hpath):
+            from PIL import Image  # HA 核心依赖，必定存在
+            im = Image.open(v)
+            if im.mode not in ("RGBA", "LA"):
+                return False          # 无透明通道（非官方竖图）→ 不生成
+            rot = im.transpose(Image.ROTATE_90)   # 逆时针 90°：车头朝左
+            bbox = rot.getbbox()
+            if not bbox:
+                return False
+            rot.crop(bbox).save(o)
+            return True
+        try:
+            ok = await self.hass.async_add_executor_job(_make)
+            if ok:
+                _LOGGER.info("已生成横版车模图 %s", hpath.name)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("生成横版车模图失败: %s", err)
 
     async def _async_download(self, url: str, dest: Path) -> bool:
         if not _safe_host(url):

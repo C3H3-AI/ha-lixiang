@@ -885,7 +885,8 @@ class LixiangAppHome extends HTMLElement {
       // 静默：占位图已在 DOM 里
     }
     if (!data || !data.ok || !data.vertical) return;
-    const src = data.vertical.static || "";
+    // ★ 横版优先（官方竖图逆时针旋转 90° 派生，车头朝左）—— 横容器不再"车小如邮票"
+    const src = (data.horizontal && data.horizontal.static) || data.vertical.static || "";
     if (!src) return;                     // 还没缓存好 → 保持占位，下次刷新再来
     const apply = (box) => {
       if (!box) return;
