@@ -1,3 +1,14 @@
+
+// —— 图标回退（内置资源）——
+// /local/lixiang-icons 缺失时，img onerror 自动切到集成内置路径。
+const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallback = window.__lxIconFallback || function (img) {
+  if (img.dataset.lxFb) return;
+  img.dataset.lxFb = "1";
+  const s = img.getAttribute("src") || "";
+  const rel = s.replace(/^\/local\/lixiang-icons\//, "");
+  if (rel === s) return;
+  img.src = "/lixiang_auto/lixiang-icons/" + rel;
+})) || function (img) {};
 /**
  * lixiang-task-page —— 车控任务（对齐 App「任务大师」，但落地为 HA 自动化）
  *
@@ -52,9 +63,12 @@ const _DICT_ITEM_LABEL = {
 };
 
 const CARD_TAG = "lixiang-task-page";
-const DEFAULT_ICON_BASE = "/local/lixiang-icons";
-const DEFAULT_FONT_BASE = "/local/lixiang-fonts";
+const BUILTIN_ICON_BASE = "/lixiang_auto/lixiang-icons";
+const DEFAULT_ICON_BASE = "/local/lixiang-icons";   // 用户自定义优先
+const BUILTIN_FONT_BASE = "/lixiang_auto/lixiang-fonts";
+const DEFAULT_FONT_BASE = "/local/lixiang-fonts";   // 用户自定义优先
 let __iconBase = DEFAULT_ICON_BASE;   // setConfig 可覆盖
+const __iconFallback = BUILTIN_ICON_BASE;
 let __fontBase = DEFAULT_FONT_BASE;
 
 /* ── 车控常用模板（对应 App 社区的常见任务）──
@@ -107,8 +121,8 @@ const PRESET_DEFS = [
 ];
 
 const STYLE = `
-  @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_regular.ttf"); font-weight:400; font-display:swap; }
-  @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_medium.ttf");  font-weight:500; font-display:swap; }
+  @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
+  @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
   :host { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
@@ -258,7 +272,7 @@ class LixiangTaskPage extends HTMLElement {
     root.innerHTML = `
       <div class="topbar">
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-          <img src="${__iconBase}/ic_home_return.webp" alt=""></div>
+          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
         <h1>任务大师</h1>
         <div class="help" id="help" role="button" tabindex="0" aria-label="帮助">帮助</div>
       </div>
@@ -397,7 +411,7 @@ class LixiangTaskPage extends HTMLElement {
     return `<div class="list">${list.map(t => `
       <div class="item${t.on ? " on" : ""}" data-eid="${t.eid}">
         <div class="ic" style="background:${t.on ? "#0A58F622" : "#8E8E9322"}">
-          <img src="${__iconBase}/ic_home_control.webp" alt=""></div>
+          <img src="${__iconBase}/ic_home_control.webp" onerror="__lxIconFallback(this)" alt=""></div>
         <div class="tx">
           <div class="n">${t.alias}</div>
           <div class="a">${t.on ? "已启用" : "已停用"}${t.last ? " · 上次 " + String(t.last).slice(0, 16) : ""}</div>

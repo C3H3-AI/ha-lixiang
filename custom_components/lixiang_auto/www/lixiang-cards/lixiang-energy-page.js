@@ -1,3 +1,14 @@
+
+// —— 图标回退（内置资源）——
+// /local/lixiang-icons 缺失时，img onerror 自动切到集成内置路径。
+const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallback = window.__lxIconFallback || function (img) {
+  if (img.dataset.lxFb) return;
+  img.dataset.lxFb = "1";
+  const s = img.getAttribute("src") || "";
+  const rel = s.replace(/^\/local\/lixiang-icons\//, "");
+  if (rel === s) return;
+  img.src = "/lixiang_auto/lixiang-icons/" + rel;
+})) || function (img) {};
 /**
  * lixiang-energy-page —— 里程能耗（二级页，对齐 App 真实版）
  *
@@ -13,9 +24,12 @@
  */
 
 const CARD_TAG = "lixiang-energy-page";
-const DEFAULT_ICON_BASE = "/local/lixiang-icons";
-const DEFAULT_FONT_BASE = "/local/lixiang-fonts";
+const BUILTIN_ICON_BASE = "/lixiang_auto/lixiang-icons";
+const DEFAULT_ICON_BASE = "/local/lixiang-icons";   // 用户自定义优先
+const BUILTIN_FONT_BASE = "/lixiang_auto/lixiang-fonts";
+const DEFAULT_FONT_BASE = "/local/lixiang-fonts";   // 用户自定义优先
 let __iconBase = DEFAULT_ICON_BASE;   // setConfig 可覆盖
+const __iconFallback = BUILTIN_ICON_BASE;
 let __fontBase = DEFAULT_FONT_BASE;
 
 const I18N = {
@@ -31,9 +45,9 @@ const I18N = {
 };
 
 const STYLE = `
-  @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_regular.ttf"); font-weight:400; font-display:swap; }
-  @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_medium.ttf");  font-weight:500; font-display:swap; }
-  @font-face { font-family:"LxNum";  src:url("${__fontBase}/roboto_medium_numbers.ttf"); font-display:swap; }
+  @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
+  @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
+  @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
   :host { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
@@ -214,10 +228,10 @@ class LixiangEnergyPage extends HTMLElement {
     root.className = "root"; root.dataset.theme = (this._config && this._config.theme) || "light";
     root.innerHTML = `
       <div class="topbar">
-        <img class="back" id="back" src="${__iconBase}/ic_home_return.webp" alt="返回">
+        <img class="back" id="back" src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="返回">
         <h1>${I18N.title}</h1>
         <div class="refresh" id="refresh" role="button" tabindex="0" aria-label="刷新">
-          <img src="${__iconBase}/ic_home_return.webp" alt=""></div>
+          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
       </div>
 
       <div class="hello" id="hello">—</div>
@@ -233,11 +247,11 @@ class LixiangEnergyPage extends HTMLElement {
         </div>
         <div class="legend">
           <div class="lg">
-            <div class="v"><span id="lg-elec-p">—</span><img src="${__iconBase}/ic_home_electricity.webp" alt=""></div>
+            <div class="v"><span id="lg-elec-p">—</span><img src="${__iconBase}/ic_home_electricity.webp" onerror="__lxIconFallback(this)" alt=""></div>
             <div class="l">${I18N.elec}</div>
           </div>
           <div class="lg">
-            <div class="v"><img src="${__iconBase}/ic_home_oil.webp" alt=""><span id="lg-fuel-p">—</span></div>
+            <div class="v"><img src="${__iconBase}/ic_home_oil.webp" onerror="__lxIconFallback(this)" alt=""><span id="lg-fuel-p">—</span></div>
             <div class="l">${I18N.fuel}</div>
           </div>
         </div>

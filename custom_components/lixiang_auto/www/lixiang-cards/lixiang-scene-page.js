@@ -1,3 +1,14 @@
+
+// —— 图标回退（内置资源）——
+// /local/lixiang-icons 缺失时，img onerror 自动切到集成内置路径。
+const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallback = window.__lxIconFallback || function (img) {
+  if (img.dataset.lxFb) return;
+  img.dataset.lxFb = "1";
+  const s = img.getAttribute("src") || "";
+  const rel = s.replace(/^\/local\/lixiang-icons\//, "");
+  if (rel === s) return;
+  img.src = "/lixiang_auto/lixiang-icons/" + rel;
+})) || function (img) {};
 /**
  * lixiang-scene-page —— 情景模式（二级页，对齐 App 真实版）
  *
@@ -15,9 +26,12 @@
  */
 
 const CARD_TAG = "lixiang-scene-page";
-const DEFAULT_ICON_BASE = "/local/lixiang-icons";
-const DEFAULT_FONT_BASE = "/local/lixiang-fonts";
+const BUILTIN_ICON_BASE = "/lixiang_auto/lixiang-icons";
+const DEFAULT_ICON_BASE = "/local/lixiang-icons";   // 用户自定义优先
+const BUILTIN_FONT_BASE = "/lixiang_auto/lixiang-fonts";
+const DEFAULT_FONT_BASE = "/local/lixiang-fonts";   // 用户自定义优先
 let __iconBase = DEFAULT_ICON_BASE;   // setConfig 可覆盖
+const __iconFallback = BUILTIN_ICON_BASE;
 let __fontBase = DEFAULT_FONT_BASE;
 
 const MODES = [
@@ -37,8 +51,8 @@ const MODES = [
 ];
 
 const STYLE = `
-  @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_regular.ttf"); font-weight:400; font-display:swap; }
-  @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_medium.ttf");  font-weight:500; font-display:swap; }
+  @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
+  @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
   :host { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
@@ -197,10 +211,10 @@ class LixiangScenePage extends HTMLElement {
       </div>
       <div class="topbar">
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-          <img src="${__iconBase}/ic_home_return.webp" alt=""></div>
+          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
         <h1>情景模式</h1>
         <div class="refresh" id="refresh" role="button" tabindex="0" aria-label="刷新">
-          <img src="${__iconBase}/ic_home_return.webp" alt=""></div>
+          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
       </div>
       ${big}
       <div class="duo">${small}</div>
