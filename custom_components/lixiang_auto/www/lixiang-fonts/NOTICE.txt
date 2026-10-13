@@ -1,0 +1,8 @@
+roboto_medium_numbers.ttf —— Roboto Medium 的数字子集（0-9）。
+Roboto © Google，以 Apache License 2.0 授权，可自由分发。
+
+界面正文字体不随集成打包：卡片按「系统字体栈」渲染
+（-apple-system / PingFang SC / Microsoft YaHei / sans-serif），
+在各设备上使用其自带字体，观感接近 App 且无版权负担。
+如需完全还原 App 排版，可将理想官方字体（Licium）自行放置于
+/config/www/lixiang-fonts/（同名文件 licium_*.ttf），卡片会自动优先加载。

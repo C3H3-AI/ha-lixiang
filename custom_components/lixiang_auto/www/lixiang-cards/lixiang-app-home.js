@@ -1,3 +1,14 @@
+
+// —— 图标回退（内置资源）——
+// /local/lixiang-icons 缺失时，img onerror 自动切到集成内置路径。
+const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallback = window.__lxIconFallback || function (img) {
+  if (img.dataset.lxFb) return;
+  img.dataset.lxFb = "1";
+  const s = img.getAttribute("src") || "";
+  const rel = s.replace(/^\/local\/lixiang-icons\//, "");
+  if (rel === s) return;
+  img.src = "/lixiang_auto/lixiang-icons/" + rel;
+})) || function (img) {};
 /**
  * lixiang-app-home v3 —— 车控首页（严格对齐 App 截图 1260×2844 @3x = 420×948pt）
  *
@@ -15,16 +26,20 @@
  */
 
 const CARD_TAG = "lixiang-app-home";
-const DEFAULT_ICON_BASE = "/local/lixiang-icons";
+const BUILTIN_ICON_BASE = "/lixiang_auto/lixiang-icons";
+const DEFAULT_ICON_BASE = "/local/lixiang-icons";   // 用户自定义优先
 let __iconBase = DEFAULT_ICON_BASE;   // setConfig 可覆盖
-const DEFAULT_FONT_BASE = "/local/lixiang-fonts";
+const __iconFallback = BUILTIN_ICON_BASE;
+const BUILTIN_FONT_BASE = "/lixiang_auto/lixiang-fonts";
+const DEFAULT_FONT_BASE = "/local/lixiang-fonts";   // 用户自定义优先
 let __fontBase = DEFAULT_FONT_BASE;   // setConfig 可覆盖
+const __fontFallback = BUILTIN_FONT_BASE;
 
 const STYLE = `
-  @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_regular.ttf"); font-weight:400; font-display:swap; }
-  @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_medium.ttf");  font-weight:500; font-display:swap; }
-  @font-face { font-family:"Licium"; src:url("${__fontBase}/licium_bold.ttf");    font-weight:600; font-display:swap; }
-  @font-face { font-family:"LxNum";  src:url("${__fontBase}/roboto_medium_numbers.ttf"); font-display:swap; }
+  @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
+  @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
+  @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_bold.ttf");    font-weight:600; font-display:swap; }
+  @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
 
   :host { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
@@ -551,10 +566,10 @@ class LixiangAppHome extends HTMLElement {
           <div class="hleft">
             <div class="title" id="t">理想汽车</div>
             <div class="ranges">
-              <span class="rg"><img src="${__iconBase}/ic_home_electricity.webp" alt="">
+              <span class="rg"><img src="${__iconBase}/ic_home_electricity.webp" onerror="__lxIconFallback(this)" alt="">
                 <span class="v" id="v-range">—</span><span class="u">km</span>
                 <span class="v" id="v-soc" style="margin-left:6px">—</span><span class="u">%</span></span>
-              <span class="rg" id="rg-fuel"><img src="${__iconBase}/ic_home_oil.webp" alt="">
+              <span class="rg" id="rg-fuel"><img src="${__iconBase}/ic_home_oil.webp" onerror="__lxIconFallback(this)" alt="">
                 <span class="v" id="v-fuel">—</span><span class="u">km</span></span>
             </div>
             <div class="parked" id="v-status">—</div>
@@ -570,7 +585,7 @@ class LixiangAppHome extends HTMLElement {
         </div>
       </div>
       <div class="lowbat" id="lowbat" style="display:none" role="alert" aria-live="polite">
-        <img src="${__iconBase}/ic_home_battery.webp" alt="">
+        <img src="${__iconBase}/ic_home_battery.webp" onerror="__lxIconFallback(this)" alt="">
         <span id="lowbat-t"></span>
       </div>
       <div class="big3d" id="big3d">
@@ -578,7 +593,7 @@ class LixiangAppHome extends HTMLElement {
       </div>
       <div class="quick" id="quick" role="group" aria-label="快捷操作"></div>
       <div class="chev" id="chev" role="button" tabindex="0" aria-label="收起车辆视图">
-        <img src="${__iconBase}/ic_home_pulldown.png" alt="">
+        <img src="${__iconBase}/ic_home_pulldown.png" onerror="__lxIconFallback(this)" alt="">
       </div>
       <div class="wrap">
         <div class="row2">
@@ -587,16 +602,16 @@ class LixiangAppHome extends HTMLElement {
             <div class="target">目标温度 <span id="v-target">—</span>°C</div>
             <div class="acrow" id="acrow">
               <span class="chip" id="ch-seat"><img src="${__iconBase}/ic_home_seat_heating3.webp" alt="" onerror="this.style.visibility='hidden'"><b>座椅</b></span>
-              <span class="chip" id="ch-fan"><img src="${__iconBase}/ic_home_fan_on.webp" alt=""><b>吹风</b></span>
-              <span class="chip" id="ch-defrost"><img src="${__iconBase}/ic_home_ice_cool.webp" alt=""><b>除霜</b></span>
+              <span class="chip" id="ch-fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""><b>吹风</b></span>
+              <span class="chip" id="ch-defrost"><img src="${__iconBase}/ic_home_ice_cool.webp" onerror="__lxIconFallback(this)" alt=""><b>除霜</b></span>
             </div>
-            <div class="fan" id="fan"><img src="${__iconBase}/ic_home_fan_on.webp" alt=""></div>
+            <div class="fan" id="fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""></div>
           </div>
           <div class="card loc" id="c-loc" role="button" tabindex="0">
             <div class="map" id="map">
               <div class="tiles" id="hm-tiles"></div>
               <div class="puck" id="hm-puck" style="display:none">
-                <img src="${__iconBase}/icon_car_loc.webp" alt="车辆位置"></div>
+                <img src="${__iconBase}/icon_car_loc.webp" onerror="__lxIconFallback(this)" alt="车辆位置"></div>
             </div>
             <div class="addr"><img src="${__iconBase}/icon_vehicle_my_location.webp" alt="" onerror="this.style.display='none'">
               <span id="v-addr">定位获取中…</span></div>
@@ -618,7 +633,7 @@ class LixiangAppHome extends HTMLElement {
           </div>
           <div style="display:grid; gap:12px; grid-template-rows:1fr auto;">
             <div class="card batt" id="c-batt" role="button" tabindex="0">
-              <div class="row"><img src="${__iconBase}/ic_home_battery.webp" alt="">
+              <div class="row"><img src="${__iconBase}/ic_home_battery.webp" onerror="__lxIconFallback(this)" alt="">
                 <div><div class="big"><span id="v-batt">—</span><small>%</small></div>
                 <div class="lbl" style="margin-top:2px">剩余电量</div></div></div>
               <!-- ★ 2026-10-11：充电中显示剩余时间（对齐 App「剩余2小时25分钟」）。
@@ -635,13 +650,13 @@ class LixiangAppHome extends HTMLElement {
         </div>
         <div class="entries">
           <div class="entry" id="e-health" role="button" tabindex="0">
-            <img class="ic" src="${__iconBase}/ic_home_health.webp" alt="">
+            <img class="ic" src="${__iconBase}/ic_home_health.webp" onerror="__lxIconFallback(this)" alt="">
             <div class="tx"><div class="nm">车辆健康</div></div></div>
           <div class="entry" id="e-task" role="button" tabindex="0">
             <img class="ic" src="${__iconBase}/ic_home_control_off_lisa.png" alt="" onerror="this.src='${__iconBase}/ic_home_control.webp'">
             <div class="tx"><div class="nm">任务大师</div></div></div>
           <div class="entry" id="e-key" role="button" tabindex="0">
-            <img class="ic" src="${__iconBase}/ic_home_bluetooth.webp" alt="">
+            <img class="ic" src="${__iconBase}/ic_home_bluetooth.webp" onerror="__lxIconFallback(this)" alt="">
             <!-- ★ 2026-10-12：原为「钥匙管理 / 未连接」——
                  ① 名称与页面内容（车辆信息）不符，车主据此误判「显示的设置的内容」；
                  ② 「未连接」来自 _eid("key_connected")，但该绑定键根本不存在，
@@ -651,7 +666,7 @@ class LixiangAppHome extends HTMLElement {
             <img class="ic" src="${__iconBase}/ic_home_scene_mode_lisa.png" alt="" onerror="this.src='${__iconBase}/ic_home_control.webp'">
             <div class="tx"><div class="nm">情景模式</div></div></div>
           <div class="entry" id="e-setting" role="button" tabindex="0">
-            <img class="ic" src="${__iconBase}/ic_home_control.webp" alt="">
+            <img class="ic" src="${__iconBase}/ic_home_control.webp" onerror="__lxIconFallback(this)" alt="">
             <div class="tx"><div class="nm">车辆设置</div></div></div>
         </div>
       </div>

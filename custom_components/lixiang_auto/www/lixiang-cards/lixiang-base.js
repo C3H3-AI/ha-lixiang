@@ -1,3 +1,14 @@
+
+// —— 图标回退（内置资源）——
+// /local/lixiang-icons 缺失时，img onerror 自动切到集成内置路径。
+const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallback = window.__lxIconFallback || function (img) {
+  if (img.dataset.lxFb) return;
+  img.dataset.lxFb = "1";
+  const s = img.getAttribute("src") || "";
+  const rel = s.replace(/^\/local\/lixiang-icons\//, "");
+  if (rel === s) return;
+  img.src = "/lixiang_auto/lixiang-icons/" + rel;
+})) || function (img) {};
 /*!
  * lixiang-base.js —— 卡片共享基座（样式 / 字体 / 图标 / 工具）
  *
@@ -23,7 +34,7 @@ export function fontFaceCss(fontBase) {
   @font-face { font-family:"Licium"; src:url("${f}/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("${f}/licium_medium.ttf");  font-weight:500; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("${f}/licium_bold.ttf");    font-weight:600; font-display:swap; }
-  @font-face { font-family:"LxNum";  src:url("${f}/roboto_medium_numbers.ttf"); font-display:swap; }`;
+  @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }`;
 }
 
 /** 页面级通用样式（主题变量 + 卡片 + 行） */

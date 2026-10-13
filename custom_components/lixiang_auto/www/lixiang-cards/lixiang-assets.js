@@ -1,3 +1,14 @@
+
+// —— 图标回退（内置资源）——
+// /local/lixiang-icons 缺失时，img onerror 自动切到集成内置路径。
+const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallback = window.__lxIconFallback || function (img) {
+  if (img.dataset.lxFb) return;
+  img.dataset.lxFb = "1";
+  const s = img.getAttribute("src") || "";
+  const rel = s.replace(/^\/local\/lixiang-icons\//, "");
+  if (rel === s) return;
+  img.src = "/lixiang_auto/lixiang-icons/" + rel;
+})) || function (img) {};
 /*!
  * lixiang-assets.js —— 车型资源解析（适用所有车型的资源层）
  *
