@@ -45,7 +45,8 @@ const STYLE = `
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
   :host { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
-    --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
+    --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; 
+      container-type: inline-size;}
   @media (prefers-color-scheme: dark) {
     :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
@@ -91,6 +92,11 @@ const STYLE = `
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration:.01ms !important;
       transition-duration:.01ms !important; } }
+
+    /* ── 手机断点（≤480px）── */
+    @container (max-width: 480px) {
+      .grid, .row3 { grid-template-columns: 1fr; }
+    }
 `;
 
 class LixiangVehicleInfoPage extends HTMLElement {
