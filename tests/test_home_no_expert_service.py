@@ -193,10 +193,19 @@ class TestNoHorizontalOverflow:
                 offenders.append(val.strip())
         assert not offenders, f"这些 grid 仍用裸 1fr（长内容会撑破容器）：{offenders}"
 
-    def test_root_hidden_overflow(self):
-        """兜底：根节点不得横向溢出。"""
+    def test_root_clips_overflow_without_scroll_container(self):
+        """兜底：根节点不得横向溢出，但**不能用 hidden**。
+
+        2026-10-13 实测：`overflow-x:hidden` 会让 `overflow-y` 计算成 `auto`，
+        使 :host/.root 变成滚动容器 —— 里面的 `.head{position:sticky}` 被困住，
+        「抬头固定」直接失效（滚动后抬头消失）。必须用 `clip`：
+        同样裁剪，但不创建滚动容器。
+        """
         s = _strip_comments(_src())
-        assert "overflow-x:hidden" in s, "缺横向溢出兜底"
+        assert "overflow-x:clip" in s, "缺横向溢出兜底（overflow-x:clip）"
+        assert "overflow-x:hidden" not in s, (
+            "不得使用 overflow-x:hidden —— 会创建滚动容器，破坏「抬头固定」sticky；"
+            "请改为 overflow-x:clip")
 
     def test_children_can_shrink(self):
         """grid/flex 子项要允许收缩（min-width:0）。"""

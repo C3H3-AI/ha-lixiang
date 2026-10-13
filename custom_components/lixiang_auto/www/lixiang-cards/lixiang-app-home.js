@@ -50,10 +50,14 @@ const STYLE = `
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
   /* 2026-10-12：兜底 —— 长内容不得撑破视口（车主："手机上右边溢出"）。
-     真正修复是把 grid 列改成 minmax(0,1fr)；这里再加一道保险。 */
-  :host { display:block; max-width:100%; overflow-x:hidden; }
+     真正修复是把 grid 列改成 minmax(0,1fr)；这里再加一道保险。
+     ★★ 必须 clip，不能 hidden（2026-10-13 实测）：overflow-x:hidden 会把
+        overflow-y 计算成 auto → :host/.root 成为滚动容器 → 里面的
+        .head{position:sticky} 被困住，「抬头固定」直接失效（滚动后抬头消失）。
+        clip 同样裁剪但【不创建滚动容器】。别再改回 hidden。 */
+  :host { display:block; max-width:100%; overflow-x:clip; }
   .wrap > *, .row2 > *, .entries > *, .quick > * { min-width:0; }
-  .root { background:var(--lx-bg); color:var(--lx-t1); padding-bottom:14px; overflow-x:hidden;
+  .root { background:var(--lx-bg); color:var(--lx-t1); padding-bottom:14px; overflow-x:clip;
     font-family:"Licium",-apple-system,"PingFang SC",sans-serif;
     -webkit-tap-highlight-color:transparent; }
   .root[data-theme="light"] { --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
@@ -75,7 +79,10 @@ const STYLE = `
           transition:top .18s ease, box-shadow .2s, padding .2s, background .2s; }
   .root.stuck .head { padding-bottom:8px; border-bottom:1px solid var(--lx-line);
           box-shadow:0 6px 16px rgba(0,0,0,.06); }
-  .root.stuck .head .hrow { align-items:baseline; }
+  .root.stuck .head .hrow { align-items:center; }
+    /* ★ 2026-10-13：这里原为 baseline —— 与右侧 96px 高的小车图同排时，
+       基线对齐会把标题压到小车图底边（左上留一大块空白，看着像被遮挡）。
+       标题/续航之间的基线对齐由 .hleft 自己负责，这一层用 center。 */
   .root.stuck .head .hleft { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; }
   .root.stuck .head .title { font-size:18px; line-height:1.25; }
   .root.stuck .head .ranges { margin-top:0; gap:10px; }
@@ -114,11 +121,11 @@ const STYLE = `
            background:linear-gradient(175deg,#FBFBFD 0%,#F1F1F5 100%);
            height:0; opacity:0; transition:height .3s cubic-bezier(.25,.8,.25,1), opacity .2s; }
   /* 展开态：由 .root 上的 .expanded3d 类控制（不用 :not() 避免优先级陷阱）*/
-  .root.expanded3d .big3d { height:210px; opacity:1; }
-  .root.expanded3d { --lx-3d-h: 200px; }
+  .root.expanded3d .big3d { height:270px; opacity:1; }
+  .root.expanded3d { --lx-3d-h: 260px; }
   .big3d iframe { width:100%; height:100%; border:0; display:block; }
   .big3d, .big3d iframe { touch-action:none; }
-  .big3d img { width:100%; height:100%; object-fit:contain; }
+  .big3d img { width:100%; height:100%; object-fit:contain; object-position:50% 62%; }
 
   /* minmax(0,1fr)：裸 1fr 的默认 min-width:auto 会让长内容撑破容器 → 手机右侧溢出 */
   .quick { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px;

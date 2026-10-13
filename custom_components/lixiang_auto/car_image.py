@@ -188,7 +188,12 @@ class CarImageManager:
 
     async def _async_make_horizontal(self, model_id: str, key: str,
                                      vertical_path: Path) -> None:
-        """由已缓存的竖图生成横版（逆时针旋转 90° + 裁掉透明边），失败静默。"""
+        """由已缓存的竖图生成横版（逆时针旋转 90° + 裁透明边 + 补留白），失败静默。
+
+        为什么必须补留白（2026-10-13 实测）：官方竖图的车身是**紧贴**透明边的，
+        若只按 alpha bbox 裁剪，横图里车身同样齐边；放进卡片容器后车头/车尾
+        顶到容器左右边缘，看起来像被「切掉/遮挡」。补一圈透明留白即可。
+        """
         hpath = self.local_horizontal_path(model_id, key)
         if hpath.is_file() and hpath.stat().st_size > 0:
             return
@@ -201,7 +206,14 @@ class CarImageManager:
             bbox = rot.getbbox()
             if not bbox:
                 return False
-            rot.crop(bbox).save(o)
+            car = rot.crop(bbox).convert("RGBA")
+            cw, ch = car.size
+            # 左右各留 8%、上下各留 9% 透明边（比例经渲染实测调整）
+            pad_x = max(8, round(cw * 0.08))
+            pad_y = max(8, round(ch * 0.09))
+            canvas = Image.new("RGBA", (cw + pad_x * 2, ch + pad_y * 2), (0, 0, 0, 0))
+            canvas.paste(car, (pad_x, pad_y), car)
+            canvas.save(o)
             return True
         try:
             ok = await self.hass.async_add_executor_job(_make)
