@@ -57,7 +57,7 @@ const STYLE = `
         clip 同样裁剪但【不创建滚动容器】。别再改回 hidden。 */
   :host { display:block; max-width:100%; overflow-x:clip; }
   .wrap > *, .row2 > *, .entries > *, .quick > * { min-width:0; }
-  .root { background:var(--lx-bg); color:var(--lx-t1); padding-bottom:14px; overflow-x:clip;
+  .root { container-type:inline-size; background:var(--lx-bg); color:var(--lx-t1); padding-bottom:14px; overflow-x:clip;
     font-family:"Licium",-apple-system,"PingFang SC",sans-serif;
     -webkit-tap-highlight-color:transparent; }
   .root[data-theme="light"] { --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
@@ -304,6 +304,21 @@ const STYLE = `
   .big3d .ph .spin2 { width:22px; height:22px; border-radius:50%;
                border:2.5px solid rgba(10,88,246,.18); border-top-color:var(--lx-blue);
                animation:spin .8s linear infinite; }
+
+    /* ── 手机断点（≤480px，容器查询）──────────────────────────────
+       ★ 2026-10-14：v1.5.7 的提交说明声称加过这段，但 diff 里只改了 11 张
+         页面卡，app-home **从未真正加上** —— 断点一直不存在。
+         同时 container-type 必须挂在 .root（真实元素）上：
+         light DOM 里写在 :host 上的 container-type 不生效，容器查询不会触发。 */
+    @container (max-width: 480px) {
+      .quick { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .row2 { grid-template-columns: minmax(0,1fr); }
+      .entries { grid-template-columns: minmax(0,1fr); }
+      .head { padding-left:14px; padding-right:14px; }
+      .wrap { padding-left:14px; padding-right:14px; }
+      .big3d, .root.expanded3d .big3d { height: 210px; }
+      .mini { width:118px; height:78px; }
+    }
 `;
 
 // ★ 2026-10-11 车型适配：QUICK 是数据表，但**不再无条件全部渲染** ——

@@ -41,8 +41,7 @@ const STYLE = `
   :host { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
-    --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; --lx-seat:#F2F2F5; 
-      container-type: inline-size;}
+    --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; --lx-seat:#F2F2F5; }
   @media (prefers-color-scheme: dark) {
     :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E;
@@ -52,7 +51,7 @@ const STYLE = `
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
     .root[data-theme="light"] { --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
             --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; --lx-blue:#0A58F6; }
-  .root { background:var(--lx-bg); color:var(--lx-t1); padding-bottom:20px;
+  .root { container-type:inline-size; background:var(--lx-bg); color:var(--lx-t1); padding-bottom:20px;
     font-family:"Licium",-apple-system,"PingFang SC",sans-serif; }
 
   .top { background:var(--lx-card); padding:8px 16px 12px; }
@@ -155,7 +154,7 @@ const STYLE = `
 
     /* ── 手机断点（≤480px）── */
     @container (max-width: 480px) {
-      .grid, .row3 { grid-template-columns: 1fr; }
+      .grid, .row3 { grid-template-columns: minmax(0,1fr); }
     }
 `;
 
