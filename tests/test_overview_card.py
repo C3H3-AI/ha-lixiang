@@ -462,6 +462,53 @@ class TestQuickActiveState:
         seg = s[i:i + 400]
         assert "驻车" in seg and "startedName" in seg, "已启动判定未接状态实体"
 
+    def test_no_duplicate_ids_in_template(self):
+        """★ 模板里不得有重复 id。
+
+        本轮真实踩到：新加的哨兵徽标用了 `id="v-sentry"`，与卡片里已有元素同名 →
+        `querySelector` 命中旧元素，徽标永远显示成别的元素（实测宽 356px、文字"已激活"）。
+        同类坑还有 **class 撞车**：徽标用了 `class="sentry"`，被哨兵卡的 `.sentry{display:flex}`
+        规则命中 → 变成一个撑满整行的 flex 块。
+        """
+        import re as _re, collections as _c
+        s = self._src()
+        ids = _re.findall(r'id="([\w-]+)"', s)
+        dup = {k: v for k, v in _c.Counter(ids).items() if v > 1}
+        assert not dup, f"模板里有重复 id：{dup}"
+
+    def test_map_photo_button(self):
+        """官方的地图卡有拍照按钮（HomeControlMapPhoto）。"""
+        s = self._src()
+        assert 'id="hm-shot"' in s, "地图卡缺拍照按钮"
+        assert "ic_home_photo.png" in s, "拍照按钮应使用官方相机图标"
+        i = s.find("const shotEl = this.querySelector(\"#hm-shot\")")
+        assert i > 0, "拍照按钮未接线"
+        seg = s[i:i + 500]
+        assert 'callService("button", "press"' in seg, "拍照按钮应调用 button.press"
+        assert 'this._eid("btn_photo")' in seg, "拍照按钮应绑 btn_photo 实体"
+
+    def test_ac_card_seat_art(self):
+        """官方空调卡右下角有座椅插图。"""
+        s = self._src()
+        assert 'class="seatart"' in s, "空调卡缺座椅插图"
+        assert ".ac .seatart" in s, "座椅插图缺样式"
+        assert "position:absolute" in s[s.find(".ac .seatart"):s.find(".ac .seatart") + 200], (
+            "座椅插图应绝对定位在卡片右下角")
+
+    def test_header_badges(self):
+        """官方顶部徽标（HomeControlHeaderWarning / HeaderSentry）。"""
+        s = self._src()
+        assert 'id="v-badge-warn"' in s and 'id="v-badge-sentry"' in s, "缺告警/哨兵徽标"
+        assert "src_assets_images_vehicle_header_ic_home_warning.png" in s, "告警徽标应用官方 header 图标"
+        assert "src_assets_images_vehicle_header_ic_home_sentry.png" in s, "哨兵徽标应用官方 header 图标"
+        # 类名不得与既有 .sentry 撞车
+        assert 'class="badge badge-sentry"' in s, "哨兵徽标类名必须唯一（badge-sentry）"
+        # 数据来源
+        i = s.find('const wEl = this.querySelector("#v-badge-warn")')
+        assert i > 0, "告警徽标未接数据"
+        seg = s[i:i + 600]
+        assert "warn_lf" in seg and "warn_rr" in seg, "告警徽标应汇总胎压告警实体"
+
     def test_active_button_is_filled_circle(self):
         """★ 车主两次澄清后定案：状态用**圆圈**表达。
 

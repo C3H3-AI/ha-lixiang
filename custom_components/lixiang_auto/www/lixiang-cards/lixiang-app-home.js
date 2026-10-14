@@ -139,6 +139,21 @@ const STYLE = `
   .root.stuck .head .ranges { margin-top:0; gap:10px; }
   .root.stuck .head .parked { margin-top:0; font-size:12px; }
   /* 插枪徽标（插电时显示） */
+  /* ★ 头部徽标：告警（琥珀）/ 哨兵（蓝） */
+  .badge { display:inline-flex; align-items:center; gap:3px; margin-left:6px;
+           vertical-align:middle; font-size:11px; padding:2px 7px; border-radius:8px; }
+  .badge img { width:12px; height:12px; }
+  .badge.warn { color:#8A5300; background:rgba(232,163,60,.16); }
+  .badge-sentry { color:#0A58F6; background:rgba(10,88,246,.10); }
+  /* ★ 地图卡拍照按钮（官方 HomeControlMapPhoto） */
+  .loc .map .shot { position:absolute; right:8px; top:50%; transform:translateY(-50%);
+                    width:34px; height:34px; border-radius:50%; background:#fff; border:0;
+                    display:flex; align-items:center; justify-content:center; cursor:pointer;
+                    box-shadow:0 2px 8px rgba(16,20,28,.2); padding:0; }
+  .loc .map .shot img { width:18px; height:18px; }
+  /* ★ 空调卡座椅插图（官方布局：右下角、不抢文字） */
+  .ac .seatart { position:absolute; right:-6px; bottom:-10px; width:104px; height:110px;
+                      opacity:.9; pointer-events:none; }
   .plug { display:inline-flex; align-items:center; gap:3px; margin-left:8px;
           vertical-align:middle; font-size:11px; padding:2px 7px; border-radius:8px;
           color:#0A7B3E; background:rgba(10,123,62,.10); }
@@ -233,7 +248,8 @@ const STYLE = `
      此前写死 150px → 卡片偏扁（比 App 矮约 20%）。改用 clamp 随视口缩放，
      窄屏不过高、宽屏不过矮。 */
   .ac { min-height:clamp(168px, 46vw, 200px); display:flex; flex-direction:column;
-        justify-content:space-between; }
+        justify-content:space-between; 
+             position:relative; overflow:hidden; }
   .ac .temp { font-family:"LxNum"; font-size:30px; font-weight:600; line-height:1.1; }
   .ac .temp sup { font-size:15px; font-weight:500; }
   .ac .target { font-size:11.5px; color:var(--lx-t3); margin-top:3px; }
@@ -754,6 +770,15 @@ class LixiangAppHome extends HTMLElement {
               <img src="${__iconBase}/icon_charge_lighting.webp" alt="" onerror="this.style.display='none'">
               <b id="v-plug-t">已插枪</b>
             </span>
+            <!-- ★ 2026-10-14 对齐官方顶部徽标（HomeControlHeaderWarning / HeaderSentry） -->
+            <span class="badge warn" id="v-badge-warn" style="display:none" role="status">
+              <img src="${__iconBase}/src_assets_images_vehicle_header_ic_home_warning.png" alt="" onerror="this.style.display='none'">
+              <b id="v-badge-warn-t">告警</b>
+            </span>
+            <span class="badge badge-sentry" id="v-badge-sentry" style="display:none" role="status">
+              <img src="${__iconBase}/src_assets_images_vehicle_header_ic_home_sentry.png" alt="" onerror="this.style.display='none'">
+              <b>哨兵</b>
+            </span>
           </div>
           <div class="mini" id="mini" role="button" tabindex="0" aria-label="展开车辆 3D"></div>
         </div>
@@ -776,6 +801,17 @@ class LixiangAppHome extends HTMLElement {
       <div class="wrap">
         <div class="row2">
           <div class="card ac" id="c-ac" role="button" tabindex="0">
+            <!-- ★ 2026-10-14 对齐官方：空调卡右下角的座椅插图（官方包内无可复用位图，自绘 SVG） -->
+            <svg class="seatart" viewBox="0 0 120 128" aria-hidden="true">
+              <defs><linearGradient id="lxseat" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e9edf3"/></linearGradient></defs>
+              <path d="M34 12h30c7 0 12 6 12 13l-3 44H37l-3-44c0-7 5-13 12-13z" fill="url(#lxseat)" stroke="#d7dde6" stroke-width="1"/>
+              <rect x="30" y="72" width="58" height="14" rx="7" fill="url(#lxseat)" stroke="#d7dde6" stroke-width="1"/>
+              <path d="M28 92h62c4 0 7 3 7 7v14c0 4-3 7-7 7H28c-4 0-7-3-7-7v-14c0-4 3-7 7-7z" fill="url(#lxseat)" stroke="#d7dde6" stroke-width="1"/>
+              <rect x="40" y="20" width="18" height="4" rx="2" fill="#dde3ea"/>
+              <rect x="40" y="30" width="18" height="4" rx="2" fill="#dde3ea"/>
+              <rect x="40" y="40" width="18" height="4" rx="2" fill="#dde3ea"/>
+            </svg>
             <div class="temp"><span id="v-room">—</span><sup>°C</sup></div>
             <div class="target">目标温度 <span id="v-target">—</span>°C</div>
             <div class="acrow" id="acrow">
@@ -790,6 +826,10 @@ class LixiangAppHome extends HTMLElement {
               <div class="tiles" id="hm-tiles"></div>
               <div class="puck" id="hm-puck" style="display:none">
                 <img src="${__iconBase}/icon_car_loc.webp" onerror="__lxIconFallback(this)" alt="车辆位置"></div>
+              <!-- ★ 2026-10-14 对齐官方 HomeControlMapPhoto：地图卡上的拍照按钮 -->
+              <button type="button" class="shot" id="hm-shot" aria-label="远程拍照" style="display:none">
+                <img src="${__iconBase}/ic_home_photo.png" onerror="__lxIconFallback(this)" alt="">
+              </button>
             </div>
             <div class="addr"><img src="${__iconBase}/icon_vehicle_my_location.webp" alt="" onerror="this.style.display='none'">
               <span id="v-addr">定位获取中…</span></div>
@@ -1059,6 +1099,22 @@ class LixiangAppHome extends HTMLElement {
     // → 点击完全没反应。与其他入口一致，补上默认路径。
     wire("#e-health", nav.health || "/lixiang/health");
     wire("#e-setting", nav.setting || "/lixiang/setting");
+    // ★ 地图卡拍照按钮（官方 HomeControlMapPhoto）
+    const shotEl = this.querySelector("#hm-shot");
+    if (shotEl) {
+      const shoot = async () => {
+        const pe = this._eid("btn_photo");
+        if (!pe) { this._toast("远程拍照未接入", "err"); return; }
+        if (!this._online()) { this._toast("车辆离线，操作不可用", "err"); return; }
+        try {
+          await this._hass.callService("button", "press", { entity_id: pe });
+          this._toast("已发送拍照", "ok");
+        } catch (e) { this._toast("拍照失败：" + ((e && e.message) || "未知"), "err"); }
+      };
+      this._a11y(shotEl, "远程拍照", shoot);
+      shotEl.addEventListener("click", shoot);
+    }
+
     // 哨兵卡：点击直接切换（可控制），键盘同样支持
     const senEl = this.querySelector("#c-sentry");
     if (senEl) {
@@ -1489,6 +1545,23 @@ class LixiangAppHome extends HTMLElement {
     if (!this.querySelector("#quick .q")) this._renderQuick(false);
     this._applyQuick(); this._spark();
     this._applyTires();
+    // ★ 2026-10-14 对齐官方顶部徽标：告警（胎压告警任一）/ 哨兵（开启时）
+    const wEl = this.querySelector("#v-badge-warn");
+    if (wEl) {
+      const wids = ["warn_lf", "warn_rf", "warn_lr", "warn_rr"]
+        .map((k) => this._eid(k)).filter(Boolean);
+      const won = wids.filter((id) => this._on(id)).length;
+      wEl.style.display = won ? "" : "none";
+      const wt = this.querySelector("#v-badge-warn-t");
+      if (wt) wt.textContent = won > 1 ? `告警 ${won}` : "胎压告警";
+    }
+    const sBEl = this.querySelector("#v-badge-sentry");
+    if (sBEl) {
+      const se = this._eid("sentry");
+      sBEl.style.display = (se && this._on(se)) ? "" : "none";
+    }
+    const shotBEl = this.querySelector("#hm-shot");
+    if (shotBEl) shotBEl.style.display = this._eid("btn_photo") ? "" : "none";
     if (!this._tireResize) {
       this._tireResize = () => this._layoutTires();
       window.addEventListener("resize", this._tireResize);
