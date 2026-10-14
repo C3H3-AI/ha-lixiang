@@ -88,7 +88,8 @@ const I18N = {
   notCharging: "等待充电",   // ★ 官方文案（不是"未充电"）
   charging: "充电中",
   done: "充电完成",        // ★ 官方文案（不是"已充满"）
-  power: "充电效率",   // ★ 2026-10-14 官方文案（不是"充电功率"）
+  power: "充电效率",
+  powerKw: "充电功率",  // ★ 官方 4 项指标之二（引擎键名 av = A×V）   // ★ 2026-10-14 官方文案（不是"充电功率"）
   remain: "剩余时间",
   limit: "充电上限",
   mode: "充电模式",
@@ -468,6 +469,8 @@ class LixiangChargePage extends HTMLElement {
         <div class="metrics">
           <div class="m"><div class="v"><span id="m-power">—</span><small id="u-power">km/h</small></div>
             <div class="l">${I18N.power}</div></div>
+        <div class="m"><div class="v"><span id="m-pw">—</span><small>kW</small></div>
+          <div class="l">${I18N.powerKw}</div></div>
           <div class="m"><div class="v"><span id="m-remain">—</span><small>min</small></div>
             <div class="l">${I18N.remain}</div></div>
           <div class="m"><div class="v"><span id="m-mode">—</span></div>
@@ -941,6 +944,7 @@ class LixiangChargePage extends HTMLElement {
       const pU = (pSt && pSt.attributes && pSt.attributes.unit_of_measurement) || "km/h";
       const uEl = q("#u-power"); if (uEl) uEl.textContent = pU;
     q("#m-remain").textContent = rm == null ? "—" : rm;
+      q("#m-pw").textContent = this._num(this._eid("charge_power")) == null ? "—" : this._num(this._eid("charge_power"));
     q("#m-mode").textContent = md || "—";
     q("#m-mode").className = "v" + ((md && isNaN(parseFloat(md))) ? " txt" : "");
 

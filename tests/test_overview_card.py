@@ -540,7 +540,10 @@ class TestQuickActiveState:
         # 单位跟随实体，不再写死 kW
         assert 'id="u-power"' in s, "缺单位元素"
         assert 'unit_of_measurement' in s and '"km/h"' in s, "单位应跟随实体（默认 km/h）"
-        assert '<small>kW</small>' not in s, "仍有写死的 kW"
+        # 「充电效率」那一项的单位不能写死（跟随实体）；「充电功率」用 kW 是对的
+        i_eff = s.find('id="m-power"')
+        seg_eff = s[i_eff:i_eff + 160]
+        assert "kW" not in seg_eff, "充电效率的单位不能写死 kW（应跟随实体）"
 
     def test_charge_efficiency_signal_renamed(self):
         """信号/实体的名称与单位同步改为官方的「充电效率(km/h)」。"""

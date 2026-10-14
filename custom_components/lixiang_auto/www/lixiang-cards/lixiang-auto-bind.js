@@ -79,7 +79,10 @@ const AUTO_BIND = {
     charge_complete:["充电完成状态"],
     charge_limit:   ["充电上限"],
     charge_mode:    ["充电模式"],
-    charge_power:   ["充电效率(CLTC)", "充电效率(WLTC)"],
+    // ★ 2026-10-14：总览卡的「充电功率」用它（派生实体，kW，V×A）
+    charge_power:   { name: "充电功率", domain: "sensor" },
+    // 充电效率（CLTC/WLTC，km/h）—— 充电页顶部指标用 power 字段
+    charge_eff:     ["充电效率(CLTC)", "充电效率(WLTC)"],
     charge_remain:  ["剩余充电时间"],
     ac_gun:         ["交流充电枪"],
     dc_gun:         ["直流充电枪"],

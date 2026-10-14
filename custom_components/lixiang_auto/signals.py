@@ -42,6 +42,45 @@ def _sum_range(vss: dict, std: str) -> float | None:
         return None
     return (elec or 0.0) + (fuel or 0.0)
 
+def _charge_power(vss: dict) -> float | None:
+    """充电功率（kW）= 输入电压 × 输入电流 / 1000。
+
+    ★ 2026-10-14 车主："充电功率实体没有"。
+
+    依据（官方 App 逆向）：
+      · 官方充电页 4 项指标 = 充电效率 / 充电功率 / 输入电流 / 输入电压；
+        其 i18n 键名就是 `power`（充电效率）与 **`av`**（充电功率）——
+        **av = A × V**，即"充电功率 = 电流 × 电压"，App 自己算的。
+      · 车辆侧**没有**独立的充电功率信号（只有 CLTC/WLTC 充电效率 km/h
+        和 AC/OGC 两套电压电流），所以我们也按电学定义算。
+
+    取哪一对：
+      · 交流慢充 → ACChargeVoltage × ACChargeCurrent
+      · 直流/桩侧 → OGCChargeVoltage × OGCChargeCurrent（OGC 充电桩）
+      任一对有效值 > 0 即采用；都没有 → None（实体 unknown）。
+    """
+    def _num(path: str):
+        try:
+            return float(vss.get(path))
+        except (TypeError, ValueError):
+            return None
+
+    pairs = (
+        ("Vehicle.Powertrain.Battery.ACChargeVoltage",
+         "Vehicle.Powertrain.Battery.ACChargeCurrent"),
+        ("Vehicle.Powertrain.Battery.OGCChargeVoltage",
+         "Vehicle.Powertrain.Battery.OGCChargeCurrent"),
+    )
+    for vp, ap in pairs:
+        v, a = _num(vp), _num(ap)
+        # 只要这一对里有任一项有数（哪怕 0）就算 —— 停车未充电时显示 0 kW 更符合直觉；
+        # 两项全无数据才返回 None（实体显示 unknown）。
+        if v is None and a is None:
+            continue
+        return round(((v or 0.0) * (a or 0.0)) / 1000.0, 2)
+    return None
+
+
 
 class Freq(StrEnum):
     """轮询频率档位。"""
@@ -525,6 +564,20 @@ SIGNALS: dict[str, SignalSpec] = {
         icon="mdi:lightning-bolt",
         category="充电",
         universal=True,
+    ),
+    # ★ 2026-10-14 新增：充电功率（官方充电页 4 项之一，键名 av = A×V）
+    "charge_power": SignalSpec(
+        key="charge_power",
+        path="",           # 不请求 VSS —— compute 算
+        name="充电功率",
+        device_class="POWER",
+        unit="kW",
+        state_class="MEASUREMENT",
+        freq=Freq.HIGH,
+        icon="mdi:flash",
+        category="充电",
+        universal=True,
+        compute="lambda vss: _charge_power(vss)",
     ),
     "charge_remain_time": SignalSpec(
         key="charge_remain_time",
