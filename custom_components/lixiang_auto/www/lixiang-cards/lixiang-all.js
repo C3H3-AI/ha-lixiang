@@ -906,7 +906,7 @@ const STYLE = `
      位置由 JS 按"车图实际渲染区域"计算（见 _layoutTires），不用百分比硬套盒子，
      因为车图是 object-fit:contain + object-position:50% 62%，并不铺满盒子。 */
   .big3d .tires { position:absolute; inset:0; pointer-events:none; }
-  .big3d .tp { position:absolute; transform:translate(-50%,-50%); padding:1px 5px;
+  .big3d .tp { position:absolute; transform:translate(0,-50%); padding:1px 5px;
                border-radius:8px; background:#0d1828cc; border:1px solid #ffffff1f;
                font-size:11px; font-weight:600; color:#eaf1fb; white-space:nowrap; }
   .big3d .tp small { font-size:9px; font-weight:400; opacity:.75; margin-left:1px; }
@@ -933,7 +933,7 @@ const STYLE = `
        原来写在 ≤480px 里 —— 容器查询修好后（v1.5.10）它在 460~490px 的
        desktop 栏里也命中，车主反馈"一行只有 2 个"。App 本体在 420pt 仍是 4 列，
        所以阈值下调到 400px（约等于手机竖屏可用宽度以下）。 */
-    @container (max-width: 400px) {
+    @container (max-width: 330px) {
       .quick { grid-template-columns: repeat(2, minmax(0,1fr)); }
     }
 `;
@@ -1608,16 +1608,19 @@ class LixiangAppHome extends HTMLElement {
       rowTop = oy + cH * 0.29;
       rowBot = oy + cH * 0.71;
     }
-    // 车图已缩到 84% 宽 → 两侧 8% 是留白。左留白靠车头（前轮），右留白靠车尾（后轮）。
     // 旋转后：车的右侧在上（rowTop）、左侧在下（rowBot）。
-    const POS = {
-      rf: [0.055, rowTop], lf: [0.055, rowBot],
-      rr: [0.945, rowTop], lr: [0.945, rowBot],
-    };
-    for (const [k, [px, py]] of Object.entries(POS)) {
+    // ★ 用"贴边 + 8px 内边距"而不是盒宽百分比 —— 百分比会让标签紧贴甚至被卡片圆角裁掉
+    //   （车主截图实测：标签右缘距卡片边缘只有 2px）。
+    const SIDE = { rf: "l", lf: "l", rr: "r", lr: "r" };
+    const PAD = 8;
+    for (const [k, side] of Object.entries(SIDE)) {
       const el = layer.querySelector(`.tp[data-k="${k}"]`);
-      if (el) { el.style.left = (px * bw) + "px"; el.style.top = py + "px"; }
+      if (!el) continue;
+      el.style.top = (k === "rf" || k === "rr" ? rowTop : rowBot) + "px";
+      if (side === "l") { el.style.left = PAD + "px"; el.style.right = "auto"; }
+      else { el.style.right = PAD + "px"; el.style.left = "auto"; }
     }
+    void bw;
   }
 
   /// 失败时保留占位图（不显示破图）。

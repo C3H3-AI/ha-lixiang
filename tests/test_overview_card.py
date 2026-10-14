@@ -315,11 +315,16 @@ class TestAppHomeLayoutRegressions:
         blk = s[i:s.find("@container", i + 10)]
         assert ".quick { grid-template-columns: repeat(2" not in blk, (
             "≤480px 里又出现快捷按钮 2 列 —— 460~490px 的桌面栏会被误伤")
-        # 400px 段里必须有
-        j = s.find("@container (max-width: 400px)")
-        assert j > 0, "缺 ≤400px 的窄屏段（快捷按钮 2 列应在这里）"
-        blk2 = s[j:j + 200]
-        assert ".quick { grid-template-columns: repeat(2" in blk2, "≤400px 段里没有快捷按钮 2 列规则"
+        # ★ 2026-10-14 二次修正：手机实测容器约 350~380px，400px 阈值仍会命中
+        #   （车主截图证实：他手机上还是一行 2 个）→ 阈值再降到 330px。
+        for thr in (400,):
+            seg = s.find("@container (max-width: %dpx)" % thr)
+            if seg > 0:
+                assert ".quick { grid-template-columns: repeat(2" not in s[seg:seg + 200], (
+                    "≤%dpx 段里仍有快捷按钮 2 列 —— 手机宽度会被误伤" % thr)
+        j = s.find("@container (max-width: 330px)")
+        assert j > 0, "缺 ≤330px 的窄屏段（快捷按钮 2 列应在这里）"
+        assert ".quick { grid-template-columns: repeat(2" in s[j:j + 200], "≤330px 段里没有 2 列规则"
 
     def test_car_image_leaves_side_margins(self):
         """车图要缩窄并居中，两侧留白给胎压标签（车主：胎压还在车子上）。"""
@@ -337,5 +342,20 @@ class TestAppHomeLayoutRegressions:
         i = s.find("_layoutTires() {")
         assert i > 0
         body = s[i:i + 1600]
-        assert "0.055" in body and "0.945" in body, "胎压标签未放到车图两侧留白"
+        # ★ 2026-10-14：用"贴边 + 内边距"而不是盒宽百分比 ——
+        #   百分比版本会让标签紧贴卡片边缘（车主截图实测右缘只剩 2px）
+        assert 'el.style.left = PAD + "px"' in body, "左侧标签未用贴边内边距"
+        assert 'el.style.right = PAD + "px"' in body, "右侧标签未用贴边内边距"
         assert "cH * 0.29" in body and "cH * 0.71" in body, "标签行高未对齐实测轮心（29%/71%）"
+
+    def test_tire_chip_transform_is_vertical_only(self):
+        """水平定位交给 left/right，transform 只做垂直居中。
+
+        否则 `translate(-50%,-50%)` 会把贴边 8px 的标签再往左推半个身位（实测 -14px）。
+        """
+        s = self._src()
+        i = s.find(".big3d .tp {")
+        assert i > 0
+        rule = s[i:s.find("}", i)]
+        assert "translate(0,-50%)" in rule, "tp 的 transform 应为 translate(0,-50%)"
+        assert "translate(-50%,-50%)" not in rule, "仍是 translate(-50%,-50%)：贴边定位会被推翻"
