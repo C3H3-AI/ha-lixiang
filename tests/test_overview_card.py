@@ -496,22 +496,32 @@ class TestQuickActiveState:
         for f in ("head_unit_ver", "ota_version", "ota_status", "ota_progress"):
             assert f in s, f"自动发现表缺字段 {f}"
 
-    def test_two_columns_kept_on_phone(self):
-        """★ 车主："为什么下面是一列了？"
+    def test_phone_keeps_official_grid_columns(self):
+        """★ 车主两次纠正："为什么下面是一列了？" / 官方全页截图对照。
 
-        官方 App 在手机宽度**也是两张并排**（空调 + 地图）。此前的 ≤480px 段把
-        `.row2` 收成一列，是我定错了 —— 只在极窄（≤330px）才应收。
+        官方 App 在手机宽度（容器 ≈358px）：
+          · 快捷按钮  一行 **4 个**
+          · 下方两卡  一行 **2 个**（空调 + 地图）
+          · 入口瓦片  一行 **2 个**（车辆健康|任务大师 / 钥匙管理|情景模式 / 车辆设置）
+        我先后把 .row2 与 .entries 写在 `≤480px` 里收成一列 —— 都命中了手机宽度，全错。
+        现在：≤480 一律不收；只在极窄 ≤330px 才收。
         """
         s = self._src()
         i = s.find("@container (max-width: 480px)")
         assert i > 0
         blk = s[i:s.find("@container", i + 10)]
-        assert ".row2 { grid-template-columns: minmax(0,1fr)" not in blk, (
-            "≤480px 段又把下方两卡收成一列了（手机宽度应与官方一样两列）")
+        for sel in (".row2", ".entries"):
+            assert f"{sel} {{ grid-template-columns: minmax(0,1fr)" not in blk, (
+                f"≤480px 段又把 {sel} 收成一列了（手机宽度应与官方一样多列）")
+        assert ".quick { grid-template-columns: repeat(2" not in blk, (
+            "≤480px 段又把快捷按钮收成 2 列了（官方手机宽度是 4 列）")
+        # 极窄兜底必须齐
         j = s.find("@container (max-width: 330px)")
         assert j > 0
-        assert ".row2 { grid-template-columns: minmax(0,1fr)" in s[j:j + 300], (
-            "极窄（≤330px）才应收成一列")
+        tail = s[j:j + 400]
+        for frag in (".quick { grid-template-columns: repeat(2", ".row2 { grid-template-columns: minmax(0,1fr)",
+                     ".entries { grid-template-columns: minmax(0,1fr)"):
+            assert frag in tail, f"≤330px 段缺兜底：{frag}"
 
     def test_no_duplicate_ids_in_template(self):
         """★ 模板里不得有重复 id。
