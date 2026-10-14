@@ -896,6 +896,14 @@ const STYLE = `
                align-items:center; justify-content:center; gap:8px;
                font-size:12px; color:var(--lx-t3); }
   .big3d { position:relative; }
+  /* ★ 2026-10-14：胎压叠在车图四个轮子旁（车主要求）。
+     位置由 JS 按"车图实际渲染区域"计算（见 _layoutTires），不用百分比硬套盒子，
+     因为车图是 object-fit:contain + object-position:50% 62%，并不铺满盒子。 */
+  .big3d .tires { position:absolute; inset:0; pointer-events:none; }
+  .big3d .tp { position:absolute; transform:translate(-50%,-50%); padding:1px 5px;
+               border-radius:8px; background:#0d1828cc; border:1px solid #ffffff1f;
+               font-size:11px; font-weight:600; color:#eaf1fb; white-space:nowrap; }
+  .big3d .tp.low { background:#4a3410cc; border-color:#e8b96b55; color:#f2c98a; }
   .big3d .ph .spin2 { width:22px; height:22px; border-radius:50%;
                border:2.5px solid rgba(10,88,246,.18); border-top-color:var(--lx-blue);
                animation:spin .8s linear infinite; }
@@ -1207,6 +1215,10 @@ class LixiangAppHome extends HTMLElement {
       </div>
       <div class="big3d" id="big3d">
         <div class="ph" id="b3ph"><div class="spin2"></div><div>车辆 3D 加载中…</div></div>
+        <div class="tires" id="tires" style="display:none">
+          <div class="tp" data-k="lf"></div><div class="tp" data-k="rf"></div>
+          <div class="tp" data-k="lr"></div><div class="tp" data-k="rr"></div>
+        </div>
       </div>
       <div class="quick" id="quick" role="group" aria-label="快捷操作"></div>
       <div class="chev" id="chev" role="button" tabindex="0" aria-label="收起车辆视图">
@@ -1516,6 +1528,74 @@ class LixiangAppHome extends HTMLElement {
     }
   }
 
+  /** 胎压 → {v, unit}：实体单位是 kPa 时换算成 bar（与「车辆健康」页同一规则） */
+  _tireVal(field) {
+    const v = this._num(this._eid(field));
+    const st = this._st(this._eid(field));
+    const u = String(((st && st.attributes) || {}).unit_of_measurement || "").toLowerCase();
+    if (v === null) return null;
+    if (u.includes("kpa")) return { v: v / 100, unit: "bar" };
+    if (u.includes("psi")) return { v: v / 14.5038, unit: "bar" };
+    if (u.includes("bar")) return { v, unit: "bar" };
+    return { v, unit: u || "" };
+  }
+
+  /** 把四个胎压值写到车图上（车头朝左的俯视图：车头在左端，车左侧在下方） */
+  _applyTires() {
+    const box = this.querySelector("#big3d");
+    if (!box) return;
+    // ★ 车图加载时会重写 #big3d 的 innerHTML，静态模板里的浮层会被冲掉
+    //   → 这里按需创建（幂等），保证浮层始终在。
+    let layer = box.querySelector(".tires");
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.className = "tires";
+      layer.id = "tires";
+      layer.style.display = "none";
+      layer.innerHTML = '<div class="tp" data-k="lf"></div><div class="tp" data-k="rf"></div>'
+        + '<div class="tp" data-k="lr"></div><div class="tp" data-k="rr"></div>';
+      box.appendChild(layer);
+    }
+    const MAP = { lf: "tire_lf", rf: "tire_rf", lr: "tire_lr", rr: "tire_rr" };
+    let any = false;
+    for (const [k, field] of Object.entries(MAP)) {
+      const el = layer.querySelector(`.tp[data-k="${k}"]`);
+      if (!el) continue;
+      const p = this._tireVal(field);
+      if (p === null) { el.style.display = "none"; continue; }
+      const bad = p.v > 0 && (p.v < 2.0 || p.v > 2.9);
+      el.style.display = "";
+      el.textContent = bad && p.v < 2.0 ? p.v.toFixed(2) : p.v.toFixed(1);
+      el.classList.toggle("low", !!bad);
+      el.title = `${({lf:"左前",rf:"右前",lr:"左后",rr:"右后"})[k]} ${el.textContent} ${p.unit}`;
+      any = true;
+    }
+    layer.style.display = any ? "" : "none";
+    if (any) this._layoutTires();
+  }
+
+  /** 按车图**实际渲染区域**摆放（车图 contain + object-position:50% 62%，不铺满盒子） */
+  _layoutTires() {
+    const box = this.querySelector("#big3d");
+    const layer = box && box.querySelector(".tires");
+    if (!box || !layer) return;
+    const img = box.querySelector("img");
+    let w = box.clientWidth, h = box.clientHeight, ox = 0, oy = 0;
+    if (img && img.naturalWidth && box.clientWidth) {
+      const ar = img.naturalHeight / img.naturalWidth;
+      h = Math.min(box.clientHeight, box.clientWidth * ar);
+      w = h / ar;
+      ox = (box.clientWidth - w) / 2;          // object-position: 50%
+      oy = (box.clientHeight - h) * 0.62;      // object-position: 62%
+    }
+    // 俯视图旋转 90°（车头朝左）后：车头=左端；车左侧在下方、右侧在上方
+    const POS = { lf: [0.27, 0.75], rf: [0.27, 0.25], lr: [0.73, 0.75], rr: [0.73, 0.25] };
+    for (const [k, [px, py]] of Object.entries(POS)) {
+      const el = layer.querySelector(`.tp[data-k="${k}"]`);
+      if (el) { el.style.left = (ox + px * w) + "px"; el.style.top = (oy + py * h) + "px"; }
+    }
+  }
+
   /// 失败时保留占位图（不显示破图）。
   async _loadCarImage(b3, mini, fallback) {
     let data = null;
@@ -1538,6 +1618,12 @@ class LixiangAppHome extends HTMLElement {
       img.style.objectFit = "contain";
     };
     apply(b3); apply(mini);
+    // 车图尺寸/位置确定后才能把胎压摆到轮子上
+    if (b3) {
+      const _im = b3.querySelector("img");
+      if (_im) _im.addEventListener("load", () => this._layoutTires(), { once: true });
+      this._layoutTires();
+    }
   }
   _more(key) {
     const eid = (this._config.more || {})[key];
@@ -1815,6 +1901,11 @@ class LixiangAppHome extends HTMLElement {
     // ★ 2026-10-14：首帧实体未就绪时网格是空的 —— 实体到位后重建
     if (!this.querySelector("#quick .q")) this._renderQuick(false);
     this._applyQuick(); this._spark();
+    this._applyTires();
+    if (!this._tireResize) {
+      this._tireResize = () => this._layoutTires();
+      window.addEventListener("resize", this._tireResize);
+    }
     this._fetchDaily();
   }
 
