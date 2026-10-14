@@ -507,8 +507,9 @@ SIGNALS: dict[str, SignalSpec] = {
     "charge_power_cltc": SignalSpec(
         key="charge_power_cltc",
         path="Vehicle.Powertrain.Battery.CLTCChargePower",
-        name="充电功率(CLTC)",
-        unit="kW",
+        # ★ 2026-10-14 按官方语义：官方充电页把该项显示为「充电效率」，单位是速率 km/h（每小时充入续航），不是 kW
+          name="充电效率(CLTC)",
+        unit="km/h",
         freq=Freq.HIGH,
         icon="mdi:lightning-bolt",
         category="充电",
@@ -517,8 +518,9 @@ SIGNALS: dict[str, SignalSpec] = {
     "charge_power_wltc": SignalSpec(
         key="charge_power_wltc",
         path="Vehicle.Powertrain.Battery.WLTCChargePower",
-        name="充电功率(WLTC)",
-        unit="kW",
+        # ★ 2026-10-14 按官方语义：官方充电页把该项显示为「充电效率」，单位是速率 km/h（每小时充入续航），不是 kW
+          name="充电效率(WLTC)",
+        unit="km/h",
         freq=Freq.HIGH,
         icon="mdi:lightning-bolt",
         category="充电",

@@ -79,7 +79,7 @@ const AUTO_BIND = {
     charge_complete:["充电完成状态"],
     charge_limit:   ["充电上限"],
     charge_mode:    ["充电模式"],
-    charge_power:   ["充电功率(CLTC)", "充电功率(WLTC)"],
+    charge_power:   ["充电效率(CLTC)", "充电效率(WLTC)"],
     charge_remain:  ["剩余充电时间"],
     ac_gun:         ["交流充电枪"],
     dc_gun:         ["直流充电枪"],
@@ -143,7 +143,7 @@ const AUTO_BIND = {
     complete:       ["充电完成状态"],
     limit:          ["充电上限"],
     mode:           ["充电模式", "预约充电模式"],
-    power:          ["充电功率(CLTC)", "充电功率(WLTC)"],
+    power:          ["充电效率(CLTC)", "充电效率(WLTC)"],
     remain:         ["剩余充电时间"],
     soc:            ["电池电量"],
     // ★ 2026-10-11：App 首页充电卡显示「剩余2小时25分钟」——

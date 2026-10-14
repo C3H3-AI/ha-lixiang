@@ -523,6 +523,38 @@ class TestQuickActiveState:
                      ".entries { grid-template-columns: minmax(0,1fr)"):
             assert frag in tail, f"≤330px 段缺兜底：{frag}"
 
+    def test_charge_page_wording_matches_official(self):
+        """★ 车主："文案还有问题，充电效率，不是充电功率，单位也有问题。"
+
+        官方充电页（i18n 对象，中英双语，从 index.vehicle.bundle 提取）：
+          powernew='充电效率' / avnew='充电功率' / anew='输入电流' / vnew='输入电压'
+          （英文：Efficiency / Power / Input current / Input voltage）
+        另外官方状态词是「等待充电 / 充电中 / 充电完成」（不是"未充电/已充满"）。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-charge-page.js")
+        s = p.read_text(encoding="utf-8")
+        assert 'power: "充电效率"' in s, "功率指标文案应为官方的「充电效率」"
+        assert 'notCharging: "等待充电"' in s, "未充电状态应为官方的「等待充电」"
+        assert 'done: "充电完成"' in s, "充满状态应为官方的「充电完成」"
+        # 单位跟随实体，不再写死 kW
+        assert 'id="u-power"' in s, "缺单位元素"
+        assert 'unit_of_measurement' in s and '"km/h"' in s, "单位应跟随实体（默认 km/h）"
+        assert '<small>kW</small>' not in s, "仍有写死的 kW"
+
+    def test_charge_efficiency_signal_renamed(self):
+        """信号/实体的名称与单位同步改为官方的「充电效率(km/h)」。"""
+        base = Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+        sig = (base / "signals.py").read_text(encoding="utf-8")
+        sen = (base / "sensor.py").read_text(encoding="utf-8")
+        bind = (base / "www" / "lixiang-cards" / "lixiang-auto-bind.js").read_text(encoding="utf-8")
+        for src in (sig, sen):
+            assert "充电效率(CLTC)" in src and "充电效率(WLTC)" in src, "信号/实体名未改"
+            assert "充电功率(CLTC)" not in src, "旧名残留（会与单位矛盾）"
+        assert 'unit="km/h"' in sig, "信号单位未改为 km/h"
+        # 自动发现的匹配名必须同步，否则绑不上新实体
+        assert "充电效率(CLTC)" in bind, "自动发现表未同步新实体名"
+
     def test_ac_chip_labels_match_official(self):
         """★ 官方空调页文案（从 index.vehicle.bundle 反汇编提取，23 项）：
         deicing='除雪除霜' · rapidCool='极速制冷' · rapidHeat='极速制热' · steeringWheelHeat='方向盘加热'。

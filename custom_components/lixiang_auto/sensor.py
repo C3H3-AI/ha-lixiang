@@ -223,8 +223,9 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     # ---- 电池 ----
     _mk("battery_level", ('电池电量', 'BATTERY', 'PERCENTAGE', 'MEASUREMENT', 'mdi:battery-high', '电池')),
     _mk("charge_status", ('充电状态', None, None, None, 'mdi:ev-station', '电池')),
-    _mk("charge_power_cltc", ('充电功率(CLTC)', 'POWER', 'kW', 'MEASUREMENT', 'mdi:flash', '电池')),
-    _mk("charge_power_wltc", ('充电功率(WLTC)', 'POWER', 'kW', 'MEASUREMENT', 'mdi:flash', '电池')),
+    # ★ 2026-10-14：按官方语义改名/改单位（充电效率，km/h）
+    _mk("charge_power_cltc", ('充电效率(CLTC)', None, 'km/h', 'MEASUREMENT', 'mdi:flash', '电池')),
+    _mk("charge_power_wltc", ('充电效率(WLTC)', None, 'km/h', 'MEASUREMENT', 'mdi:flash', '电池')),
     _mk("charge_voltage_ac", ('充电电压(AC)', 'VOLTAGE', 'V', 'MEASUREMENT', 'mdi:sine-wave', '电池')),
     _mk("charge_current_ac", ('充电电流(AC)', 'CURRENT', 'A', 'MEASUREMENT', 'mdi:current-ac', '电池')),
     _mk("battery_pack_voltage", ('电池包电压', 'VOLTAGE', 'V', 'MEASUREMENT', 'mdi:car-battery', '电池')),

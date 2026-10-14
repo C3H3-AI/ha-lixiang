@@ -85,10 +85,10 @@ const __fontFallback = BUILTIN_FONT_BASE;
 const I18N = {
   title: "充电",
   status: "充电状态",
-  notCharging: "未充电",
+  notCharging: "等待充电",   // ★ 官方文案（不是"未充电"）
   charging: "充电中",
-  done: "已充满",
-  power: "充电功率",
+  done: "充电完成",        // ★ 官方文案（不是"已充满"）
+  power: "充电效率",   // ★ 2026-10-14 官方文案（不是"充电功率"）
   remain: "剩余时间",
   limit: "充电上限",
   mode: "充电模式",
@@ -466,7 +466,7 @@ class LixiangChargePage extends HTMLElement {
           <span class="p" id="limitp">—</span>
         </div>
         <div class="metrics">
-          <div class="m"><div class="v"><span id="m-power">—</span><small>kW</small></div>
+          <div class="m"><div class="v"><span id="m-power">—</span><small id="u-power">km/h</small></div>
             <div class="l">${I18N.power}</div></div>
           <div class="m"><div class="v"><span id="m-remain">—</span><small>min</small></div>
             <div class="l">${I18N.remain}</div></div>
@@ -936,6 +936,10 @@ class LixiangChargePage extends HTMLElement {
     // 三项
     const p = this._num(this._eid("power")), rm = this._num(this._eid("remain")), md = this._txt(this._eid("mode"));
     q("#m-power").textContent = p == null ? "—" : p;
+      // ★ 2026-10-14 单位跟随实体（官方是 km/h；原来写死 kW 是错的）
+      const pSt = this._hass && this._hass.states[this._eid("power")];
+      const pU = (pSt && pSt.attributes && pSt.attributes.unit_of_measurement) || "km/h";
+      const uEl = q("#u-power"); if (uEl) uEl.textContent = pU;
     q("#m-remain").textContent = rm == null ? "—" : rm;
     q("#m-mode").textContent = md || "—";
     q("#m-mode").className = "v" + ((md && isNaN(parseFloat(md))) ? " txt" : "");
