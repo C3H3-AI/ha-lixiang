@@ -417,7 +417,10 @@ if(!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangAdPage)
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "智驾统计（二级页）",
   description: "NOA/LCC/ACC 里程与占比、使用天数、日均里程",
