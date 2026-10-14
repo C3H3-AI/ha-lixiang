@@ -359,3 +359,48 @@ class TestAppHomeLayoutRegressions:
         rule = s[i:s.find("}", i)]
         assert "translate(0,-50%)" in rule, "tp 的 transform 应为 translate(0,-50%)"
         assert "translate(-50%,-50%)" not in rule, "仍是 translate(-50%,-50%)：贴边定位会被推翻"
+
+
+class TestQuickActiveState:
+    """快捷按钮"开着"判定（2026-10-14 车主："授权驾驶为什么一直显示开着"）。
+
+    根因：`_on()` 用 `[…,"1"].some(x => v.includes(x))` ——
+    button 实体的状态是**时间戳**（2026-10-14T07:14:35+00:00），里面含 "1"，
+    于是「授权驾驶」永远被判为开着。叠加 `stateField` 解析不到时回退到动作实体，
+    正好踩中这个坑。
+    """
+
+    HOME = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+            / "www" / "lixiang-cards" / "lixiang-app-home.js")
+
+    def _src(self) -> str:
+        return self.HOME.read_text(encoding="utf-8")
+
+    def _on_body(self) -> str:
+        s = self._src()
+        i = s.find("_on(id) {")
+        assert i > 0, "找不到 _on()"
+        return s[i:i + 1400]
+
+    def test_button_entity_never_on(self):
+        b = self._on_body()
+        assert 'split(".")[0] === "button"' in b, "button 实体（动作型）必须直接判为非开"
+
+    def test_timestamp_state_rejected(self):
+        b = self._on_body()
+        assert "t/.test" in b or "T/.test" in b, "时间戳状态必须被判为非开"
+
+    def test_no_loose_contains_one(self):
+        """`includes("1")` 这种宽松判断必须消失。"""
+        b = self._on_body()
+        assert '.includes(x)' in b or '.includes((x))' in b, "缺少值包含判断"
+        # 精确的 1 只允许全等
+        assert 'v === "1"' in b, "数字 1 必须用全等判断（否则时间戳/小数都会命中）"
+
+    def test_statefield_does_not_fall_back_to_action_entity(self):
+        s = self._src()
+        i = s.find("const stateEid =")
+        assert i > 0
+        line = s[i:s.find("\n", i)]
+        assert "it.stateField ?" in line, (
+            "配了 stateField 但解析不到时必须为 null，不能回退到动作实体（button 时间戳会被当开着）")

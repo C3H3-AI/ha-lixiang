@@ -179,7 +179,7 @@ const STYLE = `
   /* ★ 2026-10-14：车图缩到 84% 宽、居中 → 两侧各有约 8% 留白，
      胎压标签放进留白里（车主："胎压还在车子上"）。 */
   /* 必须 display:block —— 否则 img 是行内元素，margin:auto 不居中（实测左侧 0 留白） */
-  .big3d img { display:block; width:78%; margin:0 auto; height:100%; object-fit:contain; object-position:50% 62%; }
+  .big3d img { display:block; width:84%; margin:0 auto; height:100%; object-fit:contain; object-position:50% 62%; }
 
   /* minmax(0,1fr)：裸 1fr 的默认 min-width:auto 会让长内容撑破容器 → 手机右侧溢出 */
   .quick { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px;
@@ -378,7 +378,7 @@ const STYLE = `
       .entries { grid-template-columns: minmax(0,1fr); }
       .head { padding-left:14px; padding-right:14px; }
       .wrap { padding-left:14px; padding-right:14px; }
-      .big3d, .root.expanded3d .big3d { height: 210px; }
+      .big3d, .root.expanded3d .big3d { height: 188px; }
       .mini { width:118px; height:78px; }
     }
 
@@ -629,9 +629,27 @@ class LixiangAppHome extends HTMLElement {
     const n = parseFloat(s.state); return isNaN(n) ? null : n;
   }
   _txt(id) { const s = this._st(id); return (s && !["unknown","unavailable"].includes(s.state)) ? s.state : null; }
+  /**
+   * 实体是否处于"开"状态。
+   * ★ 2026-10-14 修复（车主："授权驾驶为什么一直显示开着"）：
+   *   原实现 `["…","1"].some(x => v.includes(x))` 会把**任何含 1 的状态**判成开 ——
+   *   button 实体的状态是时间戳（如 2026-10-14T07:14:35+00:00，含 "1"），
+   *   于是「授权驾驶」永远显示为开着。
+   *   现在：先排掉明确的"关"、动作型实体（button）与时间戳状态，再做包含判断。
+   */
   _on(id) {
-    const v = this._txt(id); if (v == null) return false;
-    return ["on","open","opening","locked","已锁定","开启","已连接","true","1"].some(x => String(v).includes(x));
+    const s = this._st(id);
+    if (!s) return false;
+    const v = String(s.state == null ? "" : s.state).trim().toLowerCase();
+    if (!v) return false;
+    // 明确的"关/无效"值
+    if (["off","closed","0","false","no","none","unknown","unavailable","idle","standby"].includes(v)) return false;
+    // 动作型实体没有开/关语义（状态是"最后一次动作时间"）
+    if (String(id).split(".")[0] === "button") return false;
+    if (/^\d{4}-\d{2}-\d{2}t/.test(v)) return false;              // 时间戳状态
+    if (v === "1") return true;                                      // 精确的 1 才算开
+    return ["on","open","opening","unlocked","locked","home","playing","true","yes","detected",
+            "开启","已开启","已锁定","已连接","已解锁","在线"].some((x) => v.includes(x));
   }
   _online() {
     const s = this._st(this._config.online); if (!s) return true;
@@ -1183,8 +1201,10 @@ class LixiangAppHome extends HTMLElement {
       const el = this.querySelector(`.q[data-key="${it.key}"]`);
       if (!el) return;
       const eid = this._eidIn("quick", it.key);
-      // stateField：动作类按钮（如授权驾驶 = button）用另一个实体显示状态
-      const stateEid = (it.stateField && this._eid(it.stateField)) || eid;
+      // stateField：动作类按钮（如授权驾驶 = button）用另一个实体显示状态。
+      // ★ 配了 stateField 但解析不到（该车没有这个实体）时必须返回 null ——
+      //   回退到动作实体本身会让 button 的时间戳状态被当成"开着"（真实踩过的坑）。
+      const stateEid = it.stateField ? (this._eid(it.stateField) || null) : eid;
       let active = false; const missing = !eid || !this._st(eid);
       if (stateEid && this._st(stateEid)) {
         if (it.key in this._optim) active = this._optim[it.key];
