@@ -1391,9 +1391,9 @@ class LixiangAppHome extends HTMLElement {
             <div class="temp"><span id="v-room">—</span><sup>°C</sup></div>
             <div class="target">目标温度 <span id="v-target">—</span>°C</div>
             <div class="acrow" id="acrow">
-              <span class="chip" id="ch-seat"><img src="${__iconBase}/ic_home_seat_heating3.webp" alt="" onerror="this.style.visibility='hidden'"><b>座椅</b></span>
-              <span class="chip" id="ch-fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""><b>吹风</b></span>
-              <span class="chip" id="ch-defrost"><img src="${__iconBase}/ic_home_ice_cool.webp" onerror="__lxIconFallback(this)" alt=""><b>除霜</b></span>
+              <span class="chip" id="ch-seat"><img src="${__iconBase}/ic_home_seat_heating3.webp" alt="" onerror="this.style.visibility='hidden'"><b id="ch-seat-t">座椅</b></span>
+              <span class="chip" id="ch-fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""><b id="ch-fan-t">吹风</b></span>
+              <span class="chip" id="ch-defrost"><img src="${__iconBase}/ic_home_ice_cool.webp" onerror="__lxIconFallback(this)" alt=""><b id="ch-defrost-t">除霜</b></span>
             </div>
             <div class="fan" id="fan"><img src="${__iconBase}/ic_home_fan_off.webp" onerror="__lxIconFallback(this)" alt=""></div>
           </div>
@@ -2059,9 +2059,17 @@ class LixiangAppHome extends HTMLElement {
       el.style.display = "";
       el.className = "chip" + (this._on(eid) ? " on" : "");
     };
-    _chip("#ch-seat", this._eid("steer_heat") || this._eid("ac_fast_hot"));
+    // ★ 2026-10-14 对齐官方空调页文案（从 index.vehicle.bundle 反汇编提取，共 23 项）：
+    //   deicing:'除雪除霜' · rapidCool:'极速制冷' · rapidHeat:'极速制热' · steeringWheelHeat:'方向盘加热'
+    //   我们原来写的是 座椅 / 吹风 / 除霜 —— 与官方措辞不一致。
+    const seatEid = this._eid("steer_heat");
+    _chip("#ch-seat", seatEid || this._eid("ac_fast_hot"));
+    const seatT = q("#ch-seat-t");
+    if (seatT) seatT.textContent = seatEid ? "方向盘加热" : "极速制热";
     _chip("#ch-fan", this._eid("ac_fast_cold"));
+    const fanT = q("#ch-fan-t"); if (fanT) fanT.textContent = "极速制冷";
     _chip("#ch-defrost", this._eid("ac_defrost"));
+    const defT = q("#ch-defrost-t"); if (defT) defT.textContent = "除雪除霜";
 
     // 地址：device_tracker 的 attributes 里可能有 address / 也支持坐标回退
     let addr = null;

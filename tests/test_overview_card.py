@@ -523,6 +523,16 @@ class TestQuickActiveState:
                      ".entries { grid-template-columns: minmax(0,1fr)"):
             assert frag in tail, f"≤330px 段缺兜底：{frag}"
 
+    def test_ac_chip_labels_match_official(self):
+        """★ 官方空调页文案（从 index.vehicle.bundle 反汇编提取，23 项）：
+        deicing='除雪除霜' · rapidCool='极速制冷' · rapidHeat='极速制热' · steeringWheelHeat='方向盘加热'。
+        我们原来写的 座椅/吹风/除霜 与官方不一致。
+        """
+        s = self._src()
+        assert '"除雪除霜"' in s, "除霜 chip 文案应为官方的「除雪除霜」"
+        assert '"极速制冷"' in s, "吹风 chip 文案应为官方的「极速制冷」"
+        assert '"方向盘加热"' in s and '"极速制热"' in s, "座椅 chip 应随绑定显示「方向盘加热」/「极速制热」"
+
     def test_ac_fan_blue_spin_when_on(self):
         """★ 车主："风扇能动吗？开起来的时候风扇蓝色转动。"
 
