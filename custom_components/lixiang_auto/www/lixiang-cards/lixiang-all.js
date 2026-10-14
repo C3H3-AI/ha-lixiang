@@ -911,6 +911,18 @@ const STYLE = `
   .big3d .tp { position:absolute; transform:translate(-50%,-50%); padding:1px 5px;
                border-radius:8px; background:#0d1828cc; border:1px solid #ffffff1f;
                font-size:11px; font-weight:600; color:#eaf1fb; white-space:nowrap; }
+  /* ★ 官方同款二次确认弹框 */
+  .cfm { position:fixed; inset:0; z-index:99; background:rgba(16,20,28,.45);
+         display:flex; align-items:center; justify-content:center; padding:24px; }
+  .cfm-box { width:100%; max-width:340px; background:#fff; border-radius:20px;
+             padding:24px 20px 16px; box-shadow:0 18px 50px rgba(10,14,22,.28); }
+  .cfm-text { font-size:16px; line-height:1.55; color:#111418; text-align:center; font-weight:500; }
+  .cfm-row { display:flex; gap:12px; margin-top:22px; }
+  .cfm-row button { flex:1; height:46px; border-radius:23px; font-size:16px; font-weight:600;
+                    border:1px solid #e3e6ea; background:#fff; color:#111418; cursor:pointer; }
+  .cfm-row .cfm-yes { background:#1b1f27; border-color:#1b1f27; color:#fff; }
+  .cfm-rem { display:flex; align-items:center; justify-content:center; gap:6px;
+             margin-top:14px; font-size:13px; color:#6b7480; }
   .big3d .tp small { font-size:9px; font-weight:400; opacity:.75; margin-left:1px; }
   .big3d .tp.low { background:#4a3410cc; border-color:#e8b96b55; color:#f2c98a; }
   .big3d .ph .spin2 { width:22px; height:22px; border-radius:50%;
@@ -960,7 +972,11 @@ const QUICK = [
   //   官方在这里的按钮是 8 个（4×2），第 4 个在**已授权**时标签变成「已授权」+ 实心黑圆。
   //   也就是说：状态**要**显示，但**标签必须跟着变** —— 只高亮而不改标签，
   //   用户看到的就是"授权驾驶一直开着"（车主的疑问）。
-  { key:"auth",   name:"授权驾驶", onName:"已授权", stateField:"auth_state",
+  // 官方 I18N（VehicleHomeControl）：authorization=授权驾驶 / alreadyAuthorization=已授权 /
+  // alreadyStart=已启动 / dismiss=不再提醒 → 授权按钮有**两态**且动作前要**二次确认**。
+  { key:"auth",   name:"授权驾驶", onName:"已授权", startedName:"已启动",
+    confirm:"请在 2 分钟内上车并踩下刹车踏板，下车后请远程上锁。",
+    remember:true, stateField:"auth_state",
     off:"ic_home_authorization_off_lisa.png",  on:"ic_home_authorization_on_lisa.png" },
   { key:"summon", name:"直线召唤", unsupported:true, note:"命令走 JOB 通道，HTTP 不可达",
     off:"ic_home_parkingout_off_lisa.png",     on:"ic_home_parkingout_on_lisa.png" },
@@ -1214,6 +1230,42 @@ class LixiangAppHome extends HTMLElement {
     const s = this._st(this._config.online); if (!s) return true;
     return !["离线","off","unavailable","unknown"].some(v => String(s.state).includes(v));
   }
+  /** 二次确认弹框（官方样式：白卡 + 取消/确定 + 不再提醒）。resolve {ok, remember} */
+  _confirm(opts) {
+    return new Promise((resolve) => {
+      const old = this.querySelector(".cfm"); if (old) old.remove();
+      const d = document.createElement("div");
+      d.className = "cfm";
+      d.innerHTML = `<div class="cfm-box" role="dialog" aria-modal="true">
+          <div class="cfm-text">${opts.text}</div>
+          <div class="cfm-row">
+            <button type="button" class="cfm-no">取消</button>
+            <button type="button" class="cfm-yes">确定</button>
+          </div>
+          ${opts.remember ? '<label class="cfm-rem"><input type="checkbox">不再提醒</label>' : ""}
+        </div>`;
+      this.appendChild(d);
+      const box = d.querySelector(".cfm-rem input");
+      const done = (ok) => {
+        const remember = !!(box && box.checked);
+        d.remove();
+        resolve({ ok, remember });
+      };
+      d.querySelector(".cfm-no").addEventListener("click", () => done(false));
+      d.querySelector(".cfm-yes").addEventListener("click", () => done(true));
+      d.addEventListener("click", (e) => { if (e.target === d) done(false); });
+      const y = d.querySelector(".cfm-yes"); if (y && y.focus) y.focus();
+    });
+  }
+
+  /** 「不再提醒」是否已勾选并记住 */
+  _noAsk(key) {
+    try { return localStorage.getItem("lx_noask_" + key) === "1"; } catch (e) { return false; }
+  }
+  _setNoAsk(key, on) {
+    try { on ? localStorage.setItem("lx_noask_" + key, "1") : localStorage.removeItem("lx_noask_" + key); } catch (e) { /* 隐私模式禁用存储 */ }
+  }
+
   _toast(msg, kind) {
     const t = this.querySelector(".toast"); if (!t) return;
     t.textContent = msg; t.className = "toast show" + (kind ? " " + kind : "");
@@ -1705,6 +1757,12 @@ class LixiangAppHome extends HTMLElement {
       return;
     }
     if (!this._online()) { this._toast("车辆离线，操作不可用", "err"); return; }
+    // ★ 官方同款：这类动作执行前要二次确认（可勾选"不再提醒"）
+    if (def.confirm && !this._noAsk(key)) {
+      const r = await this._confirm({ text: def.confirm, remember: def.remember });
+      if (!r.ok) return;
+      if (r.remember) this._setNoAsk(key, true);
+    }
     const s = this._hass.states[eid];
     if (!s) { this._toast("实体不存在", "err"); return; }
 
@@ -1778,10 +1836,17 @@ class LixiangAppHome extends HTMLElement {
       }
       el.className = "q" + (active ? " on" : "") + ((missing || offline) ? " dim" : "")
                    + (this._busy[it.key] ? " busy" : "");
-      // ★ 2026-10-14：带 onName 的按钮，标签随状态切换（官方「授权驾驶 ↔ 已授权」）
+      // ★ 2026-10-14 官方逻辑：授权按钮有**两态** ——
+      //   车辆已启动（非驻车）→ 已启动；已授权 → 已授权；否则 授权驾驶。
+      //   （官方 I18N：alreadyAuthorization='已授权' / alreadyStart='已启动'）
       const nameEl = el.querySelector(".n");
       if (nameEl && it.onName) {
-        const want = active ? it.onName : it.name;
+        let want = active ? it.onName : it.name;
+        if (it.startedName) {
+          const stTxt = String(this._txt(this._eid("status")) || "");
+          const started = !!stTxt && !/驻车|P\s*档|park/i.test(stTxt);
+          if (started) { want = it.startedName; active = true; }
+        }
         if (nameEl.textContent !== want) nameEl.textContent = want;
       }
       el.setAttribute("aria-pressed", active ? "true" : "false");

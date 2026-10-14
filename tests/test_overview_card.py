@@ -422,6 +422,46 @@ class TestQuickActiveState:
         assert 'stateField:"auth_state"' in entry, "auth 应保留状态实体（用于显示已授权）"
         assert 'onName:"已授权"' in entry, "缺 onName：授权后标签不会变成「已授权」"
 
+    def test_auth_has_official_confirm_flow(self):
+        """★ 官方逻辑（逆向证据）：授权驾驶是**动作**且有二次确认。
+
+        来源 `docs/PAGE_GENERATION.md` / `docs/功能名称来源_20260926.md` 的
+        `VehicleHomeControl` I18N：authorization=授权驾驶 / alreadyAuthorization=已授权
+        / alreadyStart=已启动 / dismiss=不再提醒；
+        车主截图也证实按下后弹「请在2分钟内上车并踩下刹车踏板，下车后请远程上锁。」
+        """
+        s = self._src()
+        i = s.find('{ key:"auth"')
+        ent = s[i:s.find("}", i) + 1]
+        assert 'confirm:"请在 2 分钟内上车并踩下刹车踏板，下车后请远程上锁。"' in ent, "缺官方确认文案"
+        assert "remember:true" in ent, "确认框应带「不再提醒」"
+        assert 'startedName:"已启动"' in ent, "缺「已启动」态（车辆已启动时显示）"
+
+    def test_confirm_dialog_component(self):
+        s = self._src()
+        assert "_confirm(opts)" in s, "缺二次确认组件"
+        body = s[s.find("_confirm(opts)"):s.find("_confirm(opts)") + 1400]
+        assert "取消" in body and "确定" in body, "确认框缺取消/确定"
+        assert "不再提醒" in body, "确认框缺「不再提醒」"
+        assert "resolve({ ok, remember })" in body, "确认框应回传 {ok, remember}"
+
+    def test_action_gated_by_confirm(self):
+        """动作必须先确认再执行（确认前不得调服务）。"""
+        s = self._src()
+        i = s.find("if (def.confirm && !this._noAsk(key))")
+        assert i > 0, "动作未被确认门控"
+        seg = s[i:i + 300]
+        assert "await this._confirm(" in seg and "if (!r.ok) return;" in seg, "确认流程不完整"
+        assert "this._setNoAsk(key, true)" in seg, "勾了「不再提醒」未持久化"
+
+    def test_started_state_overrides_label(self):
+        """车辆已启动（非驻车）→ 授权按钮显示「已启动」。"""
+        s = self._src()
+        i = s.find("if (it.startedName)")
+        assert i > 0, "缺已启动态处理"
+        seg = s[i:i + 400]
+        assert "驻车" in seg and "startedName" in seg, "已启动判定未接状态实体"
+
     def test_active_button_is_filled_circle(self):
         """★ 车主两次澄清后定案：状态用**圆圈**表达。
 
