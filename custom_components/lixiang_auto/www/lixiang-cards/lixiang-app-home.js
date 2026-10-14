@@ -359,6 +359,7 @@ const STYLE = `
   .big3d .tp { position:absolute; transform:translate(-50%,-50%); padding:1px 5px;
                border-radius:8px; background:#0d1828cc; border:1px solid #ffffff1f;
                font-size:11px; font-weight:600; color:#eaf1fb; white-space:nowrap; }
+  .big3d .tp small { font-size:9px; font-weight:400; opacity:.75; margin-left:1px; }
   .big3d .tp.low { background:#4a3410cc; border-color:#e8b96b55; color:#f2c98a; }
   .big3d .ph .spin2 { width:22px; height:22px; border-radius:50%;
                border:2.5px solid rgba(10,88,246,.18); border-top-color:var(--lx-blue);
@@ -1021,9 +1022,11 @@ class LixiangAppHome extends HTMLElement {
       if (p === null) { el.style.display = "none"; continue; }
       const bad = p.v > 0 && (p.v < 2.0 || p.v > 2.9);
       el.style.display = "";
-      el.textContent = bad && p.v < 2.0 ? p.v.toFixed(2) : p.v.toFixed(1);
+      const num = bad && p.v < 2.0 ? p.v.toFixed(2) : p.v.toFixed(1);
+      // ★ 带上单位（车主："另外确实单位"）
+      el.innerHTML = `<b>${num}</b><small> ${p.unit}</small>`;
       el.classList.toggle("low", !!bad);
-      el.title = `${({lf:"左前",rf:"右前",lr:"左后",rr:"右后"})[k]} ${el.textContent} ${p.unit}`;
+      el.title = `${({lf:"左前",rf:"右前",lr:"左后",rr:"右后"})[k]} ${num} ${p.unit}`;
       any = true;
     }
     layer.style.display = any ? "" : "none";
@@ -1044,8 +1047,12 @@ class LixiangAppHome extends HTMLElement {
       ox = (box.clientWidth - w) / 2;          // object-position: 50%
       oy = (box.clientHeight - h) * 0.62;      // object-position: 62%
     }
-    // 俯视图旋转 90°（车头朝左）后：车头=左端；车左侧在下方、右侧在上方
-    const POS = { lf: [0.27, 0.75], rf: [0.27, 0.25], lr: [0.73, 0.75], rr: [0.73, 0.25] };
+    // 实测轮心（占整幅车图）：x≈28.4%/71.4%，y≈29%/71%。
+    // ★ 2026-10-14 车主反馈"显示在车上" → 往**两端 + 外侧**挪：
+    //   标签放到车身轮廓之外、轮子斜外侧，既贴着轮子又不压住车身。
+    // 轮心 x≈28.4%/71.4% y≈29%/71%；外移到 20%/80% 与 78%/22% ——
+    //   既离开车身主体（车主："显示在车上"），又不至于脱离开轮子看不出对应关系。
+    const POS = { lf: [0.20, 0.78], rf: [0.20, 0.22], lr: [0.80, 0.78], rr: [0.80, 0.22] };
     for (const [k, [px, py]] of Object.entries(POS)) {
       const el = layer.querySelector(`.tp[data-k="${k}"]`);
       if (el) { el.style.left = (ox + px * w) + "px"; el.style.top = (oy + py * h) + "px"; }
