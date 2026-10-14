@@ -746,8 +746,10 @@ const STYLE = `
   .q:active .c { transform:scale(.9); }
   .q .c img { width:28px; height:28px; pointer-events:none; }
   .q .n { font-size:12px; color:var(--lx-t2); line-height:1.1; }
-  .q.on .c { border-color:var(--lx-blue); background:rgba(10,88,246,.06); }
-  .q.on .n { color:var(--lx-blue); font-weight:500; }
+  /* ★ 2026-10-14 官方同款：激活 = 实心深色圆（配官方白色 *_on_* 图标）；
+     未激活 = 空心圆（配深色线稿图标）。原来是"蓝圈+浅蓝底"，与官方不一致。 */
+  .q.on .c { border-color:#1b1f27; background:#1b1f27; box-shadow:0 2px 10px rgba(16,20,28,.22); }
+  .q.on .n { color:#111418; font-weight:600; }
   .q.busy .c { border-color:var(--lx-blue); }
   .q .sp { position:absolute; top:16px; width:26px; height:26px; border-radius:50%;
            border:2.5px solid rgba(10,88,246,.2); border-top-color:var(--lx-blue);
@@ -943,9 +945,15 @@ const STYLE = `
 //   理由：之前不支持的车也会出现入口，点了只提示"该功能尚未接入"（体验差，
 //   而且用户会以为集成坏了）。实体存在性由**服务端能力门控**决定，不是前端猜车型。
 const QUICK = [
-  { key:"lock",   name:"车锁",       off:"ic_home_lock_off_lisa.png",           on:"ic_home_lock_open_lisa.png" },
-  { key:"window", name:"车窗",       off:"ic_home_window_off_lisa.png",         on:"ic_home_window_on_lisa.png" },
-  { key:"trunk",  name:"尾门",       off:"ic_home_tail_w_off_2025.png",         on:"ic_home_tail_w_on_2025.png" },
+  // ★ 2026-10-14 车主（两次澄清）：
+  //   1) "所有的按键变化都是这样的" → 2) "我说的是空心圆和实心圆的变化"。
+  //   即状态用**圆圈**表达：未激活 = 空心圆 + 深色线稿图标；
+  //   激活 = **实心深色圆** + 白色图标（官方图资本来就是配套的：
+  //   *_off_* 是深色线稿、*_on_* 是纯白，正好配实心圆）。
+  //   标签默认保持动作名；仅官方截图已证实的「授权驾驶 → 已授权」带 onName。
+  { key:"lock",   name:"车锁",   off:"ic_home_lock_off_lisa.png",      on:"ic_home_lock_open_lisa.png" },
+  { key:"window", name:"车窗",   off:"ic_home_window_off_lisa.png",    on:"ic_home_window_on_lisa.png" },
+  { key:"trunk",  name:"尾门",   off:"ic_home_tail_w_off_2025.png",    on:"ic_home_tail_w_on_2025.png" },
   // ★ 2026-10-09：授权驾驶是【动作】（button，cmdKey=remoteVehAuth），
   //   可执行实体与状态显示实体分开：auth=动作，stateField=授权状态。
   // ★ 2026-10-14 对照官方 App「车控」页截图修正：

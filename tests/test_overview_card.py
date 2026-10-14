@@ -422,6 +422,39 @@ class TestQuickActiveState:
         assert 'stateField:"auth_state"' in entry, "auth 应保留状态实体（用于显示已授权）"
         assert 'onName:"已授权"' in entry, "缺 onName：授权后标签不会变成「已授权」"
 
+    def test_active_button_is_filled_circle(self):
+        """★ 车主两次澄清后定案：状态用**圆圈**表达。
+
+        官方 App 车控页：未激活 = **空心圆** + 深色线稿图标；
+        激活 = **实心深色圆** + 白色图标（官方图资本来就是配套的：
+        *_off_* 是深色线稿、*_on_* 是纯白）。
+        原来是"蓝圈 + 浅蓝底"，与官方不一致。
+        """
+        s = self._src()
+        i = s.find(".q.on .c {")
+        assert i > 0, "缺 .q.on .c 规则"
+        rule = s[i:s.find("}", i)]
+        assert "background:#1b1f27" in rule, "激活态不是实心深色圆"
+        assert "border-color:#1b1f27" in rule, "激活态边框色应与填充一致（实心效果）"
+        assert "rgba(10,88,246" not in rule, "仍是旧的浅蓝底，不是实心圆"
+
+    def test_on_icons_are_white(self):
+        """实心圆上必须配白色图标 —— 官方 *_on_* 资源就是纯白。"""
+        from PIL import Image
+        import numpy as _np
+        base = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+                / "www" / "lixiang-icons")
+        for name in ("ic_home_lock_open_lisa.png", "ic_home_rearmirroheat_on_lisa.png"):
+            p = base / name
+            if not p.is_file():
+                continue
+            a = _np.array(Image.open(p).convert("RGBA"))
+            vis = a[..., 3] > 40
+            if not vis.any():
+                continue
+            lum = a[..., :3][vis].mean()
+            assert lum > 200, f"{name} 不是白色图标（亮度 {lum:.0f}），配实心深色圆会看不见"
+
     def test_quick_label_switches_on_state(self):
         """_applyQuick 必须真的把标签切过去（不是只定义了 onName）。"""
         s = self._src()
