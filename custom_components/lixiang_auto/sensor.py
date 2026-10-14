@@ -256,7 +256,11 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     _mk("range_fuel_cltc", ('燃油续航(CLTC)', 'DISTANCE', 'km', 'MEASUREMENT', 'mdi:gas-station', '续航')),
     _mk("range_elec_wltc", ('纯电续航(WLTC)', 'DISTANCE', 'km', 'MEASUREMENT', 'mdi:map-marker-distance', '续航')),
     _mk("range_fuel_wltc", ('燃油续航(WLTC)', 'DISTANCE', 'km', 'MEASUREMENT', 'mdi:gas-station', '续航')),
-    _mk("fuel_level", ('油量', None, 'L', 'MEASUREMENT', 'mdi:fuel', '续航')),
+    # ★ 2026-10-14 修正：该字段是**百分比**不是升。
+    #   证据：① 同源的 residueBattery=98 明显是百分比；
+    #        ② 实测 residueFuel=78 而 L6 油箱 65 L（78 L 不可能）；
+    #        ③ 满油续航反推 893/0.78 ≈ 1145 km ≈ 官方满油 CLTC 1183 km。
+    _mk("fuel_level", ('油量', None, '%', 'MEASUREMENT', 'mdi:fuel', '续航')),
     # ---- 车门 ----
     # ---- 车窗 ----
     _mk("window_main", ('主驾车窗', None, '%', None, 'mdi:car-door', '车窗')),

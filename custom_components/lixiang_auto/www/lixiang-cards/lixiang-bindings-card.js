@@ -304,7 +304,9 @@ class LixiangBindingsCard extends HTMLElement {
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangBindingsCard);
 window.customCards = window.customCards || [];
-window.customCards.push({
+window.customCards = window.customCards || [];
+// 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
+if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "实体自动发现（诊断）",
   description: "查看卡片自动绑定了哪些实体；未匹配项一目了然；可复制详情反馈",

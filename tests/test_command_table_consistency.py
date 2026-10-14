@@ -88,6 +88,12 @@ OFFICIAL_CMD_KEYS = {
 
 #: 集成**有意**与官方表不同的地方（每条必须写理由）
 _ACCEPTED_DIFFERENCES: dict[tuple[str, str], str] = {
+    ("fTkC", "lockSw"): (
+        "★ 2026-10-14 车主**实车**实测：官方配置表快照把『开前备箱』记为 lockSw=1，"
+        "但实车方向相反 —— 集成的『打开』必须发 lockSw=0（发 1 反而关闭）。"
+        "命令方向以实车为准；快照保留官方原始记录作为 provenance，不改写。"
+        "回归测试见 tests/test_frunk_polarity.py。"
+    ),
     ("remoteVehACSmartControl", "acCtrlType"): (
         "官方『打开空调』用 frtACAUTOSw（自动模式）；集成默认用 frtACSw"
         "（普通开关，**真机实测可用**），并另留 AC_TYPE_AUTO=frtACAUTOSw。"

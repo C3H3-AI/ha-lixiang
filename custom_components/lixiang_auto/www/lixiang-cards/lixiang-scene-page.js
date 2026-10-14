@@ -35,6 +35,24 @@ const DEFAULT_FONT_BASE = "/local/lixiang-fonts";   // 用户自定义优先
 let __iconBase = DEFAULT_ICON_BASE;   // setConfig 可覆盖
 const __iconFallback = BUILTIN_ICON_BASE;
 
+// ★ 2026-10-14 统一导航助手：**先问外壳**（lx-navigate 事件），被接管就不改 URL。
+//   背景：外壳（lixiang-app）只能靠猴补丁拦 history.pushState；一旦 HA 路由
+//   抢在它前面处理，子卡片内的"返回/入口"会真的切 HA 视图 → 车主反馈
+//   「点击都回到首页」。改为显式事件：外壳在则内部切换，不在则回退 HA 路由。
+function lxNavigate(card, path) {
+  if (!path || !card) return;
+  let handled = false;
+  try {
+    const ev = new CustomEvent("lx-navigate", {
+      detail: { path }, bubbles: true, composed: true, cancelable: true,
+    });
+    handled = !card.dispatchEvent(ev);          // 被 preventDefault → 父级已接管
+  } catch (e) { handled = false; }
+  if (handled) return;
+  history.pushState(null, "", path);
+  card.dispatchEvent(new CustomEvent("location-changed", { bubbles: true, composed: true }));
+}
+
 // —— 图标基址自动降级（★ 2026-10-14）——
 // 为什么需要：快捷按钮等图标是 **JS 赋值**的（img.src = ...），没有 HTML 属性
 // 可挂 onerror 回退 → 用户机器上没有 /local/lixiang-icons 时**永久破图**
@@ -268,8 +286,7 @@ class LixiangScenePage extends HTMLElement {
 
     const back = () => {
       const p = (this._config.nav || {}).back || "/lixiang/app";
-      history.pushState(null, "", p);
-      this.dispatchEvent(new CustomEvent("location-changed", { bubbles:true, composed:true }));
+      lxNavigate(this, p);
     };
     this._a11y(this.querySelector("#back"), "返回", back);
     this.querySelector("#back").addEventListener("click", back);
@@ -326,7 +343,9 @@ class LixiangScenePage extends HTMLElement {
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangScenePage);
 window.customCards = window.customCards || [];
-window.customCards.push({
+window.customCards = window.customCards || [];
+// 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
+if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "情景模式（二级页）",
   description: "宠物 / 露营 / 擦车 / 离车不下电（4 模式，对齐 App 布局）",

@@ -75,8 +75,11 @@ function _loadCards() {
   if (__loading) return __loading;
   // ★ 用 import.meta.url 解析同级目录 —— 兼容 /lixiang_auto/… 与 /local/… 两种部署
   const base = new URL(".", import.meta.url).href;
+  // ★ 2026-10-14：单文件版（lixiang-all.js）可能已经定义了这些元素 ——
+  //   已定义的不再逐个 import（省 13 个请求，也避免重复定义）。
+  const pending = CARD_FILES.filter((name) => !customElements.get(name));
   __loading = Promise.all(
-    CARD_FILES.map((name) =>
+    pending.map((name) =>
       import(/* @vite-ignore */ `${base}${name}.js`).catch((e) => {
         // 单个卡片加载失败不应拖垮整体：其余页面照常可用
         console.warn(`[lixiang-app] 子卡片加载失败: ${name}`, e);
@@ -267,7 +270,9 @@ class LixiangApp extends HTMLElement {
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangApp);
 
 window.customCards = window.customCards || [];
-window.customCards.push({
+window.customCards = window.customCards || [];
+// 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
+if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "理想汽车 · 全部页面",
   description: "一张卡片承载理想 App 风格的全部页面（首页/充电/能耗/空调/座椅/位置/设置/情景/任务等）",

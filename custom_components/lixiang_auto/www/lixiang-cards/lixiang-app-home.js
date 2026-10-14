@@ -33,6 +33,24 @@ const DEFAULT_ICON_BASE = "/local/lixiang-icons";   // 用户自定义优先
 let __iconBase = DEFAULT_ICON_BASE;   // setConfig 可覆盖
 const __iconFallback = BUILTIN_ICON_BASE;
 
+// ★ 2026-10-14 统一导航助手：**先问外壳**（lx-navigate 事件），被接管就不改 URL。
+//   背景：外壳（lixiang-app）只能靠猴补丁拦 history.pushState；一旦 HA 路由
+//   抢在它前面处理，子卡片内的"返回/入口"会真的切 HA 视图 → 车主反馈
+//   「点击都回到首页」。改为显式事件：外壳在则内部切换，不在则回退 HA 路由。
+function lxNavigate(card, path) {
+  if (!path || !card) return;
+  let handled = false;
+  try {
+    const ev = new CustomEvent("lx-navigate", {
+      detail: { path }, bubbles: true, composed: true, cancelable: true,
+    });
+    handled = !card.dispatchEvent(ev);          // 被 preventDefault → 父级已接管
+  } catch (e) { handled = false; }
+  if (handled) return;
+  history.pushState(null, "", path);
+  card.dispatchEvent(new CustomEvent("location-changed", { bubbles: true, composed: true }));
+}
+
 // —— 图标基址自动降级（★ 2026-10-14）——
 // 为什么需要：快捷按钮等图标是 **JS 赋值**的（img.src = ...），没有 HTML 属性
 // 可挂 onerror 回退 → 用户机器上没有 /local/lixiang-icons 时**永久破图**
@@ -862,8 +880,32 @@ class LixiangAppHome extends HTMLElement {
     const q = this.querySelector("#quick");
     // ★ 车型适配：只渲染这台车**真实支持**的功能
     const warmup = !this._hass || !Object.keys(this._hass.states || {}).length;
+    // ★ 2026-10-14：网格渲染抽成独立方法（可重复调用）。
+    //   原来这段直接写在 _build() 里，且**一旦 avail 为空就 return** ——
+    //   首帧实体未就绪时会把后面「入口卡片接线」整段跳过，且 _build 只跑一次，
+    //   导致**入口永远点不动**（车主反馈"下面的都无法操作"）。
+    this._renderQuick(warmup);
+
+    this._wireNav();
+
+    // ★ 2026-10-12：车主指示移除「服务专家」与「理想AD学习平台」两个入口
+
+    this._built = true;
+  }
+
+
+
+
+  /** 渲染快捷键网格（可重复调用：首帧实体未就绪时先占位，实体到位后自动重建） */
+  _renderQuick(warmup) {
+    const q = this.querySelector("#quick");
+    if (!q) return;
     const avail = QUICK.filter(it => this._supports(it, warmup));
+    // 已渲染过同样数量的按钮 → 无需重建（避免丢掉点击态/焦点）
+    if (q.querySelector(".q") && q.dataset.shown === String(avail.length)
+        && avail.every(it => q.querySelector(`.q[data-key="${it.key}"]`))) return;
     q.dataset.shown = String(avail.length);
+    q.replaceChildren();
     if (!avail.length) {
       q.innerHTML = '<div class="qempty">该车型暂无可用快捷功能</div>';
       return;
@@ -871,7 +913,7 @@ class LixiangAppHome extends HTMLElement {
     avail.forEach(it => {
       const d = document.createElement("div");
       d.className = "q"; d.dataset.key = it.key;
-      d.setAttribute("role","button"); d.setAttribute("tabindex","0");
+      d.setAttribute("role", "button"); d.setAttribute("tabindex", "0");
       d.setAttribute("aria-label", it.name);
       d.innerHTML = `<div class="c"><img src="${this._img(it.off)}" alt="" onerror="__lxIconFallback(this)"></div>
                      <div class="n">${it.name}</div><div class="sp"></div><div class="sub"></div>`;
@@ -881,10 +923,15 @@ class LixiangAppHome extends HTMLElement {
       });
       q.appendChild(d);
     });
+  }
 
+  /** 入口卡片接线（幂等：只接一次，元素在 _build 后不再替换） */
+  _wireNav() {
+    if (this._navWired) return;
+    this._navWired = true;
+    const c = this._config;
     const nav = c.nav || {};
-    const go = p => { if (!p) return; history.pushState(null,"",p);
-      this.dispatchEvent(new CustomEvent("location-changed",{bubbles:true,composed:true})); };
+    const go = p => { if (!p) return; lxNavigate(this, p); };
     const wire = (sel, path, moreKey) => {
       const el = this.querySelector(sel); if (!el) return;
       const act = () => path ? go(path) : this._more(moreKey);
@@ -923,12 +970,7 @@ class LixiangAppHome extends HTMLElement {
       this._a11y(senEl, "切换哨兵模式", act);
       senEl.addEventListener("click", act);
     }
-    // ★ 2026-10-12：车主指示移除「服务专家」与「理想AD学习平台」两个入口
-
-    this._built = true;
   }
-
-
 
   /// 失败时保留占位图（不显示破图）。
   async _loadCarImage(b3, mini, fallback) {
@@ -1226,6 +1268,8 @@ class LixiangAppHome extends HTMLElement {
       vk.textContent = cfg ? String(cfg).slice(0, 10) : "";
     }
 
+    // ★ 2026-10-14：首帧实体未就绪时网格是空的 —— 实体到位后重建
+    if (!this.querySelector("#quick .q")) this._renderQuick(false);
     this._applyQuick(); this._spark();
     this._fetchDaily();
   }
@@ -1339,7 +1383,9 @@ class LixiangAppHome extends HTMLElement {
 
 if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangAppHome);
 window.customCards = window.customCards || [];
-window.customCards.push({
+window.customCards = window.customCards || [];
+// 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
+if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "理想车控首页（v3 · 对齐 App）",
   description: "8 圆按钮 · 双态 3D · 空调/位置/里程/电量/哨兵 · 各页入口",
