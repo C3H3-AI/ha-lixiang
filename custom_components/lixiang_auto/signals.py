@@ -45,34 +45,34 @@ def _sum_range(vss: dict, std: str) -> float | None:
 def _charge_power(vss: dict) -> float | None:
     """充电功率（kW）= 输入电压 × 输入电流 / 1000。
 
-    ★ 2026-10-14 车主："充电功率实体没有"。
-
+    ★ 2026-10-14 车主："充电功率实体没有"；2026-10-15 日检用**实车充电数据**修好。
     依据（官方 App 逆向）：
       · 官方充电页 4 项指标 = 充电效率 / 充电功率 / 输入电流 / 输入电压；
         其 i18n 键名就是 `power`（充电效率）与 **`av`**（充电功率）——
         **av = A × V**，即"充电功率 = 电流 × 电压"，App 自己算的。
-      · 车辆侧**没有**独立的充电功率信号（只有 CLTC/WLTC 充电效率 km/h
+      · 车辆侧**没有**独立的充电功率信号（只有 CLTC/WLTC 充电效率 km/hr
         和 AC/OGC 两套电压电流），所以我们也按电学定义算。
 
-    取哪一对：
-      · 交流慢充 → ACChargeVoltage × ACChargeCurrent
-      · 直流/桩侧 → OGCChargeVoltage × OGCChargeCurrent（OGC 充电桩）
-      任一对有效值 > 0 即采用；都没有 → None（实体 unknown）。
+    ⚠️ 2026-10-15 日检修的两处错误（原本恒为 unknown）：
+      ① 键名用错：`vss` 的键是**信号 key**（`charge_voltage_ac`），不是 VSS 路径
+         （`Vehicle.Powertrain.Battery.ACChargeVoltage`）—— 对照 _sum_range 的取值方式。
+      ② 取值形式用错：`vss[key]` 是 `{"value": raw, ...}` 字典，要先取 `["value"]`
+         （原来直接 float(dict) → TypeError → None）。
+      实测证据（2026-10-15 00:04 实车交流充电中）：
+        交流充电电压 219 V × 交流充电电流 30 A = 6.57 kW（修后应显示此值）
     """
-    def _num(path: str):
+    def _val(k: str):
+        sig = vss.get(k) or {}
+        raw = sig.get("value") if isinstance(sig, dict) else sig
         try:
-            return float(vss.get(path))
+            return float(raw) if raw is not None else None
         except (TypeError, ValueError):
             return None
 
-    pairs = (
-        ("Vehicle.Powertrain.Battery.ACChargeVoltage",
-         "Vehicle.Powertrain.Battery.ACChargeCurrent"),
-        ("Vehicle.Powertrain.Battery.OGCChargeVoltage",
-         "Vehicle.Powertrain.Battery.OGCChargeCurrent"),
-    )
-    for vp, ap in pairs:
-        v, a = _num(vp), _num(ap)
+    # 交流慢充优先；直流/桩侧走 OGC 一对
+    for vk, ak in (("charge_voltage_ac", "charge_current_ac"),
+                   ("ogc_charge_voltage", "ogc_charge_current")):
+        v, a = _val(vk), _val(ak)
         # 只要这一对里有任一项有数（哪怕 0）就算 —— 停车未充电时显示 0 kW 更符合直觉；
         # 两项全无数据才返回 None（实体显示 unknown）。
         if v is None and a is None:
