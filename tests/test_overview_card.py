@@ -462,6 +462,40 @@ class TestQuickActiveState:
         seg = s[i:i + 400]
         assert "驻车" in seg and "startedName" in seg, "已启动判定未接状态实体"
 
+    def test_home_has_no_secondary_page_cards(self):
+        """★ 车主纠正："有些是二级菜单里面的"。
+
+        权威依据 `lixiang-reverse/docs/SUBPAGES.md` §3.5：
+        · `otaTag`   → 二级页 **VehicleOtaPage**（不是首页卡片）
+        · `configTag`→ 二级页 **VehicleSetting**（不是首页卡片）
+        · `lock/window/doorTag` → **首页快捷按钮**（不是状态卡）
+        所以首页只应有官方 §12.2 证实的那几张卡（空调/地图/里程/电量/哨兵）。
+        """
+        import re as _re
+        s = self._src()
+        cards = set(_re.findall(r'class="card ([a-z0-9]+)"', s))
+        assert not ({"door", "win", "stat4", "ota", "cfg"} & cards), (
+            f"首页又出现二级页卡片：{sorted(cards)}（车门/车窗是按钮，OTA/配置是二级页）")
+
+    def test_vinfo_page_shows_real_version_and_ota(self):
+        """车辆信息页（二级）必须显示真实车机版本 / OTA —— 不能再写"集成未采集"。"""
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-vehicle-info-page.js")
+        s = p.read_text(encoding="utf-8")
+        assert 'this._eid("head_unit_ver")' in s, "车机版本未接实体"
+        assert 'this._eid("ota_status")' in s, "OTA 状态未接实体"
+        assert ('id: "v-ota"' in s) or ('id="v-ota"' in s), "缺 OTA 行"
+        # 运行代码里不得再有"未采集"的提示（注释里保留历史说明可以）
+        code = "\n".join(l for l in s.splitlines() if not l.strip().startswith(("*", "//")))
+        assert "尚未采集" not in code, "仍在提示『整车软件版本集成尚未采集』"
+
+    def test_autobind_has_version_ota_fields(self):
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-auto-bind.js")
+        s = p.read_text(encoding="utf-8")
+        for f in ("head_unit_ver", "ota_version", "ota_status", "ota_progress"):
+            assert f in s, f"自动发现表缺字段 {f}"
+
     def test_two_columns_kept_on_phone(self):
         """★ 车主："为什么下面是一列了？"
 

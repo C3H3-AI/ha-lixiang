@@ -120,6 +120,11 @@ const AUTO_BIND = {
     seat_rr_heat:   { name: "二排右座椅加热", domain: "fan" },
     seat_rr_vent:   { name: "二排右座椅通风", domain: "fan" },
     /* 位置页 */
+    /* ★ 2026-10-14：车辆信息页（二级）用 —— 车机版本 / OTA（官方 VehicleSetting / VehicleOtaPage 的落点） */
+    head_unit_ver:  { name: "车机版本", domain: "sensor" },
+    ota_version:    { name: "OTA 版本(简)", domain: "sensor" },
+    ota_status:     { name: "OTA 状态", domain: "sensor" },
+    ota_progress:   { name: "OTA 进度", domain: "sensor" },
     photo_info:     { any: ["360", "拍照", "信息"], domain: "sensor" },
     photo_status:   { any: ["360", "拍照", "状态"], domain: "sensor" },
     vehicle_cfg:    ["车辆配置"],
