@@ -2380,7 +2380,9 @@ const I18N = {
   charging: "充电中",
   done: "充电完成",        // ★ 官方文案（不是"已充满"）
   power: "充电效率",
-  powerKw: "充电功率",  // ★ 官方 4 项指标之二（引擎键名 av = A×V）   // ★ 2026-10-14 官方文案（不是"充电功率"）
+  powerKw: "充电功率",
+  volt: "输入电压",     // ★ 官方 4 项指标之三
+  amp: "输入电流",      // ★ 官方 4 项指标之四  // ★ 官方 4 项指标之二（引擎键名 av = A×V）   // ★ 2026-10-14 官方文案（不是"充电功率"）
   remain: "剩余时间",
   limit: "充电上限",
   mode: "充电模式",
@@ -2762,13 +2764,17 @@ class LixiangChargePage extends HTMLElement {
             <div class="l">${I18N.power}</div></div>
         <div class="m"><div class="v"><span id="m-pw">—</span><small>kW</small></div>
           <div class="l">${I18N.powerKw}</div></div>
-          <div class="m"><div class="v"><span id="m-remain">—</span><small>min</small></div>
-            <div class="l">${I18N.remain}</div></div>
-          <div class="m"><div class="v"><span id="m-mode">—</span></div>
-            <div class="l">${I18N.mode}</div></div>
+        <div class="m"><div class="v"><span id="m-amp">—</span><small id="u-amp">A</small></div>
+          <div class="l">${I18N.amp}</div></div>
+        <div class="m"><div class="v"><span id="m-volt">—</span><small id="u-volt">V</small></div>
+          <div class="l">${I18N.volt}</div></div>
         </div>
       </div>
       <div class="stat3">
+        <div class="st"><div class="v"><span id="m-remain">—</span><small>min</small></div>
+            <div class="l">${I18N.remain}</div></div>
+        <div class="st"><div class="v"><span id="m-mode">—</span></div>
+            <div class="l">${I18N.mode}</div></div>
         <div class="st"><div class="v"><span id="s-month">—</span><small>kWh</small></div>
           <div class="l">${I18N.monthKwh}</div></div>
         <div class="st"><div class="v"><span id="s-times">—</span><small>${I18N.times}</small></div>
@@ -3235,6 +3241,15 @@ class LixiangChargePage extends HTMLElement {
       const pU = (pSt && pSt.attributes && pSt.attributes.unit_of_measurement) || "km/h";
       const uEl = q("#u-power"); if (uEl) uEl.textContent = pU;
     q("#m-remain").textContent = rm == null ? "—" : rm;
+      // ★ 官方 4 项指标之三/四：输入电压 / 输入电流（单位跟随实体）
+      const Sx = (id) => (id && this._hass && this._hass.states) ? this._hass.states[id] : null;
+      const vSt = Sx(this._eid("charge_voltage")), aSt = Sx(this._eid("charge_current"));
+      const okv = (x) => x && x.state && !["unknown", "unavailable"].includes(x.state);
+      q("#m-volt").textContent = okv(vSt) ? vSt.state : "—";
+      q("#m-amp").textContent = okv(aSt) ? aSt.state : "—";
+      const uv = q("#u-volt"), ua = q("#u-amp");
+      if (uv && vSt && vSt.attributes && vSt.attributes.unit_of_measurement) uv.textContent = vSt.attributes.unit_of_measurement;
+      if (ua && aSt && aSt.attributes && aSt.attributes.unit_of_measurement) ua.textContent = aSt.attributes.unit_of_measurement;
       q("#m-pw").textContent = this._num(this._eid("charge_power")) == null ? "—" : this._num(this._eid("charge_power"));
     q("#m-mode").textContent = md || "—";
     q("#m-mode").className = "v" + ((md && isNaN(parseFloat(md))) ? " txt" : "");

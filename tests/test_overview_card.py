@@ -523,6 +523,35 @@ class TestQuickActiveState:
                      ".entries { grid-template-columns: minmax(0,1fr)"):
             assert frag in tail, f"≤330px 段缺兜底：{frag}"
 
+    def test_charge_page_has_official_four_metrics(self):
+        """★ 官方充电页 4 项指标：充电效率 / 充电功率 / 输入电流 / 输入电压。
+
+        依据：官方 i18n 对象 powernew/avnew/anew/vnew + 英文
+        Efficiency/Power/Input current/Input voltage；组件 ChargePowerText /
+        ChargeAVText / ChargeCurrentText / ChargeVoltageText。
+        """
+        import re as _re, collections as _c
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-charge-page.js")
+        s = p.read_text(encoding="utf-8")
+        for iid in ("m-power", "m-pw", "m-amp", "m-volt"):
+            assert f'id="{iid}"' in s, f"缺官方 4 项指标之一：#{iid}"
+        for label in ('power: "充电效率"', 'powerKw: "充电功率"', 'amp: "输入电流"', 'volt: "输入电压"'):
+            assert label in s, f"指标文案不对：{label}"
+        # 指标行顺序必须是官方的：充电效率 → 充电功率 → 输入电流 → 输入电压
+        order = [_re.search(r'id="(m-power|m-pw|m-amp|m-volt)"', blk).group(1)
+                 for blk in _re.findall(r'<div class="m">.*?</div></div>', s, _re.S)
+                 if _re.search(r'id="(m-power|m-pw|m-amp|m-volt)"', blk)]
+        assert order == ["m-power", "m-pw", "m-amp", "m-volt"], f"指标顺序不对：{order}"
+        # 单位必须跟随实体（不写死）
+        for uid in ("u-power", "u-amp", "u-volt"):
+            assert f'id="{uid}"' in s, f"缺单位元素 {uid}"
+        assert 'unit_of_measurement' in s, "单位未跟随实体"
+        # 无重复 id（上次抠块差点留下重复）
+        ids = _re.findall(r'id="([\w-]+)"', s)
+        dup = {k: v for k, v in _c.Counter(ids).items() if v > 1}
+        assert not dup, f"充电页有重复 id：{dup}"
+
     def test_charge_page_wording_matches_official(self):
         """★ 车主："文案还有问题，充电效率，不是充电功率，单位也有问题。"
 
