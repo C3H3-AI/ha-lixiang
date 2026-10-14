@@ -723,7 +723,10 @@ const STYLE = `
   .root.expanded3d { --lx-3d-h: 260px; }
   .big3d iframe { width:100%; height:100%; border:0; display:block; }
   .big3d, .big3d iframe { touch-action:none; }
-  .big3d img { width:100%; height:100%; object-fit:contain; object-position:50% 62%; }
+  /* ★ 2026-10-14：车图缩到 84% 宽、居中 → 两侧各有约 8% 留白，
+     胎压标签放进留白里（车主："胎压还在车子上"）。 */
+  /* 必须 display:block —— 否则 img 是行内元素，margin:auto 不居中（实测左侧 0 留白） */
+  .big3d img { display:block; width:78%; margin:0 auto; height:100%; object-fit:contain; object-position:50% 62%; }
 
   /* minmax(0,1fr)：裸 1fr 的默认 min-width:auto 会让长内容撑破容器 → 手机右侧溢出 */
   .quick { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px;
@@ -918,13 +921,20 @@ const STYLE = `
          同时 container-type 必须挂在 .root（真实元素）上：
          light DOM 里写在 :host 上的 container-type 不生效，容器查询不会触发。 */
     @container (max-width: 480px) {
-      .quick { grid-template-columns: repeat(2, minmax(0,1fr)); }
       .row2 { grid-template-columns: minmax(0,1fr); }
       .entries { grid-template-columns: minmax(0,1fr); }
       .head { padding-left:14px; padding-right:14px; }
       .wrap { padding-left:14px; padding-right:14px; }
       .big3d, .root.expanded3d .big3d { height: 210px; }
       .mini { width:118px; height:78px; }
+    }
+
+    /* ★ 2026-10-14：快捷键只在**很窄**时才收成 2 列。
+       原来写在 ≤480px 里 —— 容器查询修好后（v1.5.10）它在 460~490px 的
+       desktop 栏里也命中，车主反馈"一行只有 2 个"。App 本体在 420pt 仍是 4 列，
+       所以阈值下调到 400px（约等于手机竖屏可用宽度以下）。 */
+    @container (max-width: 400px) {
+      .quick { grid-template-columns: repeat(2, minmax(0,1fr)); }
     }
 `;
 
@@ -1585,24 +1595,28 @@ class LixiangAppHome extends HTMLElement {
     const box = this.querySelector("#big3d");
     const layer = box && box.querySelector(".tires");
     if (!box || !layer) return;
+    const bw = box.clientWidth, bh = box.clientHeight;
+    let rowTop = bh * 0.29, rowBot = bh * 0.71;          // 兜底（无图时）
     const img = box.querySelector("img");
-    let w = box.clientWidth, h = box.clientHeight, ox = 0, oy = 0;
-    if (img && img.naturalWidth && box.clientWidth) {
+    if (img && img.naturalWidth) {
+      // 车图 object-fit:contain + object-position:50% 62% → 算出**实际渲染区域**
+      const r = img.getBoundingClientRect(), br = box.getBoundingClientRect();
       const ar = img.naturalHeight / img.naturalWidth;
-      h = Math.min(box.clientHeight, box.clientWidth * ar);
-      w = h / ar;
-      ox = (box.clientWidth - w) / 2;          // object-position: 50%
-      oy = (box.clientHeight - h) * 0.62;      // object-position: 62%
+      const cH = Math.min(r.height, r.width * ar), cW = cH / ar;
+      const oy = (r.top - br.top) + (r.height - cH) * 0.62;
+      // 实测轮心在车图高度的 29% / 71%（旋转后的俯视图：车头朝左）
+      rowTop = oy + cH * 0.29;
+      rowBot = oy + cH * 0.71;
     }
-    // 实测轮心（占整幅车图）：x≈28.4%/71.4%，y≈29%/71%。
-    // ★ 2026-10-14 车主反馈"显示在车上" → 往**两端 + 外侧**挪：
-    //   标签放到车身轮廓之外、轮子斜外侧，既贴着轮子又不压住车身。
-    // 轮心 x≈28.4%/71.4% y≈29%/71%；外移到 20%/80% 与 78%/22% ——
-    //   既离开车身主体（车主："显示在车上"），又不至于脱离开轮子看不出对应关系。
-    const POS = { lf: [0.20, 0.78], rf: [0.20, 0.22], lr: [0.80, 0.78], rr: [0.80, 0.22] };
+    // 车图已缩到 84% 宽 → 两侧 8% 是留白。左留白靠车头（前轮），右留白靠车尾（后轮）。
+    // 旋转后：车的右侧在上（rowTop）、左侧在下（rowBot）。
+    const POS = {
+      rf: [0.055, rowTop], lf: [0.055, rowBot],
+      rr: [0.945, rowTop], lr: [0.945, rowBot],
+    };
     for (const [k, [px, py]] of Object.entries(POS)) {
       const el = layer.querySelector(`.tp[data-k="${k}"]`);
-      if (el) { el.style.left = (ox + px * w) + "px"; el.style.top = (oy + py * h) + "px"; }
+      if (el) { el.style.left = (px * bw) + "px"; el.style.top = py + "px"; }
     }
   }
 

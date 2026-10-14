@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -289,3 +290,52 @@ class TestUnits:
         s = self._card()
         assert "<small>bar</small></div>" not in s, "胎压单位写死成 bar 了"
         assert '${this._unit(field)' in s, "未按实体单位显示"
+
+
+class TestAppHomeLayoutRegressions:
+    """2026-10-14 车主反馈的两个布局回归（都在车控首页）。"""
+
+    HOME = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+            / "www" / "lixiang-cards" / "lixiang-app-home.js")
+
+    def _src(self) -> str:
+        return self.HOME.read_text(encoding="utf-8")
+
+    def test_quick_two_columns_only_at_very_narrow(self):
+        """快捷按钮收成 2 列只在**很窄**时。
+
+        车主：「快捷按钮怎么一行只有2个了？」——
+        容器查询在 v1.5.10 修好后，写在 ≤480px 里的 2 列规则在 460~490px 的
+        desktop 栏里也命中。App 本体在 420pt 仍是 4 列，所以阈值必须更低。
+        """
+        s = self._src()
+        # ≤480 那段里不能有 .quick 的 2 列规则
+        i = s.find("@container (max-width: 480px)")
+        assert i > 0
+        blk = s[i:s.find("@container", i + 10)]
+        assert ".quick { grid-template-columns: repeat(2" not in blk, (
+            "≤480px 里又出现快捷按钮 2 列 —— 460~490px 的桌面栏会被误伤")
+        # 400px 段里必须有
+        j = s.find("@container (max-width: 400px)")
+        assert j > 0, "缺 ≤400px 的窄屏段（快捷按钮 2 列应在这里）"
+        blk2 = s[j:j + 200]
+        assert ".quick { grid-template-columns: repeat(2" in blk2, "≤400px 段里没有快捷按钮 2 列规则"
+
+    def test_car_image_leaves_side_margins(self):
+        """车图要缩窄并居中，两侧留白给胎压标签（车主：胎压还在车子上）。"""
+        s = self._src()
+        i = s.find(".big3d img {")
+        assert i > 0
+        rule = s[i:s.find("}", i)]
+        assert "display:block" in rule, "img 必须 display:block，否则 margin:auto 不居中"
+        assert "margin:0 auto" in rule, "车图需居中"
+        m = re.search(r"width:(\d+)%", rule)
+        assert m and int(m.group(1)) <= 85, f"车图仍占满（{m.group(0)}），两侧没有留白给标签"
+
+    def test_tire_labels_use_side_margins(self):
+        s = self._src()
+        i = s.find("_layoutTires() {")
+        assert i > 0
+        body = s[i:i + 1600]
+        assert "0.055" in body and "0.945" in body, "胎压标签未放到车图两侧留白"
+        assert "cH * 0.29" in body and "cH * 0.71" in body, "标签行高未对齐实测轮心（29%/71%）"
