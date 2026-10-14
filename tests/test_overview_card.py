@@ -553,6 +553,30 @@ class TestQuickActiveState:
         assert not dup, f"充电页有重复 id：{dup}"
 
 
+    def test_overview_detail_grid_always_four_columns(self):
+        """★ 车主："剩余时间下面，一行直接显示四个，跟 app 保持一致。我们这样两行不美观"
+
+        总览卡统计区共 8 项，其中「剩余充电时间」后面还有 4 项
+        （空调设定温度/电池包电压/本月里程/累计充电量）。原来窄屏断点把它降到
+        3 列、2 列 → 那 4 项掉成两行。现固定为一行四个。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-overview-card.js")
+        s = p.read_text(encoding="utf-8")
+        import re as _re
+        # 基准规则（容忍换行/缩进）
+        assert _re.search(r"\.detail-grid \{[^}]*display:grid;[^}]*grid-template-columns:\s*repeat\(4,minmax\(0,1fr\)\)",
+                          s), "统计区基准不是一行四个"
+        # 三处（基准 + 两个窄屏断点）都必须是 4 列
+        assert s.count("grid-template-columns:repeat(4,minmax(0,1fr))") >= 3, (
+            "窄屏断点没全部改成一行四个")
+        assert ".detail-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }" in s, (
+            "3 列断点未改成 4 列")
+        assert ".detail-grid { grid-template-columns:repeat(2,minmax(0,1fr))" not in s, (
+            "还有把统计区压成两列的规则")
+        assert ".detail-grid { grid-template-columns:repeat(3,minmax(0,1fr))" not in s, (
+            "还有把统计区压成三列的规则")
+
     def test_charge_metrics_single_row_four_columns(self):
         """★ 车主："剩余时间下面，一行直接显示四个，跟 app 保持一致。我们这样两行不美观"
 

@@ -157,7 +157,10 @@ const STYLE = `
     .top-car { width:84px; height:158px; }
     .title { font-size:26px; }
     .art { height:150px; }
-    .detail-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    /* ★ 2026-10-14 车主："剩余时间下面，一行直接显示四个" ——
+         统计区固定【一行四个】，不再随宽度降到 3/2 列（那样"剩余充电时间"下面
+         的 4 项会掉成两行）。 */
+    .detail-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
   }
   @container (max-width: 480px) {
     .main { grid-template-columns:1fr; padding:20px 18px 14px; gap:18px; }
@@ -168,7 +171,7 @@ const STYLE = `
     .tire-grid { grid-template-columns:1fr 88px 1fr; height:164px; }
     .top-car { width:88px; height:156px; }
     .footer { padding:12px 18px; gap:5px; }
-    .detail-grid { grid-template-columns:repeat(2,minmax(0,1fr)); padding:4px 18px 16px; }
+    .detail-grid { grid-template-columns:repeat(4,minmax(0,1fr)); padding:4px 14px 16px; gap:10px; }
     .details summary { padding:12px 18px; }
     .note { padding:0 18px 14px; }
   }
