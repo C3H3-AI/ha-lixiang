@@ -469,7 +469,7 @@ class LixiangChargePage extends HTMLElement {
           <span class="p" id="limitp">—</span>
         </div>
         <div class="metrics">
-          <div class="m"><div class="v"><span id="m-power">—</span><small id="u-power">km/h</small></div>
+          <div class="m"><div class="v"><span id="m-power">—</span><small id="u-power">km/hr</small></div>
             <div class="l">${I18N.power}</div></div>
         <div class="m"><div class="v"><span id="m-pw">—</span><small>kW</small></div>
           <div class="l">${I18N.powerKw}</div></div>
@@ -945,9 +945,9 @@ class LixiangChargePage extends HTMLElement {
     // 三项
     const p = this._num(this._eid("power")), rm = this._num(this._eid("remain")), md = this._txt(this._eid("mode"));
     q("#m-power").textContent = p == null ? "—" : p;
-      // ★ 2026-10-14 单位跟随实体（官方是 km/h；原来写死 kW 是错的）
+      // ★ 2026-10-14 单位跟随实体（官方是 km/hr；原来写死 kW 是错的）
       const pSt = this._hass && this._hass.states[this._eid("power")];
-      const pU = (pSt && pSt.attributes && pSt.attributes.unit_of_measurement) || "km/h";
+      const pU = (pSt && pSt.attributes && pSt.attributes.unit_of_measurement) || "km/hr";
       const uEl = q("#u-power"); if (uEl) uEl.textContent = pU;
     q("#m-remain").textContent = rm == null ? "—" : rm;
       // ★ 官方 4 项指标之三/四：输入电压 / 输入电流（单位跟随实体）

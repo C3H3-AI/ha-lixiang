@@ -568,14 +568,14 @@ class TestQuickActiveState:
         assert 'done: "充电完成"' in s, "充满状态应为官方的「充电完成」"
         # 单位跟随实体，不再写死 kW
         assert 'id="u-power"' in s, "缺单位元素"
-        assert 'unit_of_measurement' in s and '"km/h"' in s, "单位应跟随实体（默认 km/h）"
+        assert 'unit_of_measurement' in s and '"km/hr"' in s, "单位应跟随实体（默认 km/hr）"
         # 「充电效率」那一项的单位不能写死（跟随实体）；「充电功率」用 kW 是对的
         i_eff = s.find('id="m-power"')
         seg_eff = s[i_eff:i_eff + 160]
         assert "kW" not in seg_eff, "充电效率的单位不能写死 kW（应跟随实体）"
 
     def test_charge_efficiency_signal_renamed(self):
-        """信号/实体的名称与单位同步改为官方的「充电效率(km/h)」。"""
+        """信号/实体的名称与单位同步改为官方的「充电效率(km/hr)」。"""
         base = Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
         sig = (base / "signals.py").read_text(encoding="utf-8")
         sen = (base / "sensor.py").read_text(encoding="utf-8")
@@ -583,7 +583,7 @@ class TestQuickActiveState:
         for src in (sig, sen):
             assert "充电效率(CLTC)" in src and "充电效率(WLTC)" in src, "信号/实体名未改"
             assert "充电功率(CLTC)" not in src, "旧名残留（会与单位矛盾）"
-        assert 'unit="km/h"' in sig, "信号单位未改为 km/h"
+        assert 'unit="km/hr"' in sig, "信号单位未改为 km/hr"
         # 自动发现的匹配名必须同步，否则绑不上新实体
         assert "充电效率(CLTC)" in bind, "自动发现表未同步新实体名"
 

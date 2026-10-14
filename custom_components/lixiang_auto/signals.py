@@ -546,9 +546,10 @@ SIGNALS: dict[str, SignalSpec] = {
     "charge_power_cltc": SignalSpec(
         key="charge_power_cltc",
         path="Vehicle.Powertrain.Battery.CLTCChargePower",
-        # ★ 2026-10-14 按官方语义：官方充电页把该项显示为「充电效率」，单位是速率 km/h（每小时充入续航），不是 kW
+        # ★ 2026-10-14 按官方语义：官方充电页把该项显示为「充电效率」，
+        #   单位是官方的速率写法 **km/hr**（每小时充入续航），不是 kW。车主实测确认。
           name="充电效率(CLTC)",
-        unit="km/h",
+        unit="km/hr",
         freq=Freq.HIGH,
         icon="mdi:lightning-bolt",
         category="充电",
@@ -557,9 +558,10 @@ SIGNALS: dict[str, SignalSpec] = {
     "charge_power_wltc": SignalSpec(
         key="charge_power_wltc",
         path="Vehicle.Powertrain.Battery.WLTCChargePower",
-        # ★ 2026-10-14 按官方语义：官方充电页把该项显示为「充电效率」，单位是速率 km/h（每小时充入续航），不是 kW
+        # ★ 2026-10-14 按官方语义：官方充电页把该项显示为「充电效率」，
+        #   单位是官方的速率写法 **km/hr**（每小时充入续航），不是 kW。车主实测确认。
           name="充电效率(WLTC)",
-        unit="km/h",
+        unit="km/hr",
         freq=Freq.HIGH,
         icon="mdi:lightning-bolt",
         category="充电",
@@ -2360,8 +2362,11 @@ def to_sensor_description(spec: SignalSpec):
         kw["icon"] = spec.icon
     if spec.device_class and spec.device_class in _DCLASS:
         kw["device_class"] = _DCLASS[spec.device_class]
-    if spec.unit and spec.unit in _UNITS:
-        kw["native_unit_of_measurement"] = _UNITS[spec.unit]
+    # ★ 2026-10-14：_UNITS 里没有的单位**原样透传**。
+    #   用例：充电效率的官方单位是 km/hr（车主实测确认），HA 的 UnitOfSpeed 只有 km/h；
+    #   原来会被静默丢掉 → 实体没有单位。
+    if spec.unit:
+        kw["native_unit_of_measurement"] = _UNITS.get(spec.unit, spec.unit)
     if spec.state_class and spec.state_class in _SCLASS:
         kw["state_class"] = _SCLASS[spec.state_class]
     # ★ 2026-10-02：保养项例外 —— 归诊断类（设备页折叠）但【默认启用】。
