@@ -408,16 +408,25 @@ class TestQuickActiveState:
             "配了 stateField 但解析不到时必须为 null，不能回退到动作实体（button 时间戳会被当开着）")
 
 
-    def test_auth_is_pure_action_without_statefield(self):
-        """★ 车主："授权驾驶为什么一直显示开着"。
+    def test_auth_label_follows_state(self):
+        """★ 车主："授权驾驶为什么一直显示开着" → 对照官方 App 车控页截图修正。
 
-        原先 `stateField: "auth_state"` → `binary_sensor.车辆授权` 是**持久标志**
-        （绑定后恒为 on），拿它判按钮开关必然常亮。授权驾驶是动作（button），
-        应作为纯动作按钮，与「寻车」一致。
+        官方那里第 4 个按钮在已授权时**标签变成「已授权」+ 实心圆**，未授权时是「授权驾驶」。
+        所以状态要保留，但**标签必须跟着变** —— 只高亮不改标签，用户看到的就是
+        "授权驾驶一直开着"。
         """
         s = self._src()
         i = s.find('{ key:"auth"')
         assert i > 0
         entry = s[i:s.find("}", i) + 1]
-        assert "stateField" not in entry, "auth 不应再有 stateField（会导致按钮常亮）"
-        assert 'key:"auth"' in entry
+        assert 'stateField:"auth_state"' in entry, "auth 应保留状态实体（用于显示已授权）"
+        assert 'onName:"已授权"' in entry, "缺 onName：授权后标签不会变成「已授权」"
+
+    def test_quick_label_switches_on_state(self):
+        """_applyQuick 必须真的把标签切过去（不是只定义了 onName）。"""
+        s = self._src()
+        i = s.find("const nameEl = el.querySelector")
+        assert i > 0, "未找到标签切换逻辑"
+        seg = s[i:i + 400]
+        assert "it.onName" in seg and "active ? it.onName : it.name" in seg, (
+            "标签未按 active 在 onName/name 之间切换")

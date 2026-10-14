@@ -948,12 +948,11 @@ const QUICK = [
   { key:"trunk",  name:"尾门",       off:"ic_home_tail_w_off_2025.png",         on:"ic_home_tail_w_on_2025.png" },
   // ★ 2026-10-09：授权驾驶是【动作】（button，cmdKey=remoteVehAuth），
   //   可执行实体与状态显示实体分开：auth=动作，stateField=授权状态。
-  // ★ 2026-10-14 车主："授权驾驶为什么一直显示开着"。
-  //   原先用 stateField=auth_state（binary_sensor.车辆授权）判"开" ——
-  //   但那是"这台车是否已授权给当前账号"的**持久标志**（绑定后恒为 on），
-  //   拿它当按钮的开关状态必然常亮。授权驾驶是**动作**（button），改为纯动作按钮，
-  //   与「寻车」一致：不留常亮态，图标恒为 off 态。
-  { key:"auth",   name:"授权驾驶",
+  // ★ 2026-10-14 对照官方 App「车控」页截图修正：
+  //   官方在这里的按钮是 8 个（4×2），第 4 个在**已授权**时标签变成「已授权」+ 实心黑圆。
+  //   也就是说：状态**要**显示，但**标签必须跟着变** —— 只高亮而不改标签，
+  //   用户看到的就是"授权驾驶一直开着"（车主的疑问）。
+  { key:"auth",   name:"授权驾驶", onName:"已授权", stateField:"auth_state",
     off:"ic_home_authorization_off_lisa.png",  on:"ic_home_authorization_on_lisa.png" },
   { key:"summon", name:"直线召唤", unsupported:true, note:"命令走 JOB 通道，HTTP 不可达",
     off:"ic_home_parkingout_off_lisa.png",     on:"ic_home_parkingout_on_lisa.png" },
@@ -1771,6 +1770,12 @@ class LixiangAppHome extends HTMLElement {
       }
       el.className = "q" + (active ? " on" : "") + ((missing || offline) ? " dim" : "")
                    + (this._busy[it.key] ? " busy" : "");
+      // ★ 2026-10-14：带 onName 的按钮，标签随状态切换（官方「授权驾驶 ↔ 已授权」）
+      const nameEl = el.querySelector(".n");
+      if (nameEl && it.onName) {
+        const want = active ? it.onName : it.name;
+        if (nameEl.textContent !== want) nameEl.textContent = want;
+      }
       el.setAttribute("aria-pressed", active ? "true" : "false");
       // 未接入的按钮：把原因写在下面（例如"集成暂未支持"），避免用户反复点
       const sub = el.querySelector(".sub");
