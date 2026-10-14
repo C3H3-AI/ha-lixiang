@@ -51,7 +51,13 @@ jobs:
         if: steps.check.outputs.compare_result == 'success'
         run: |
           cd custom_components/lixiang_auto
-          zip -r ../../lixiang_auto.zip .
+          # ★ 2026-10-14：单文件发布 —— 只打包 lixiang-all.js，不打包 18 个源 JS。
+          #   源 JS 仍保留在仓库（开发/构建用），但 HACS 用户装到的是合并后的单文件，
+          #   既省一半体积，也避免"到底该注册哪个文件"的困惑。
+          test -f www/lixiang-cards/lixiang-all.js || {
+            echo "::error::lixiang-all.js 缺失（请先运行 scripts/build-cards.mjs）"; exit 1; }
+          zip -r ../../lixiang_auto.zip . -x 'www/lixiang-cards/*.js'
+          zip -u ../../lixiang_auto.zip www/lixiang-cards/lixiang-all.js
 
       # ── 先建轻量 tag ★（GitHub 草稿不会自动建 tag！）─────────────────────
       - name: Create and push tag

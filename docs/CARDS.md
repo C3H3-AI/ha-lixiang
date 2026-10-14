@@ -61,6 +61,11 @@ type: custom:lixiang-app
 手工注册单文件与自动注入并存也不会重复（卡片选择器已去重）。
 
 <details>
+<summary>旧版备忘：逐文件注册（**已不适用** —— 发布包只含单文件）</summary>
+
+> ⚠️ 2026-10-14 起，发布包内**只有** `lixiang-all.js`，下面这些单文件不再随包提供。
+> 想用它们请从仓库源码取，或直接用 `type: custom:xxx-page`（自定义元素已定义）。
+
 <summary>旧版用法：逐文件注册（已不推荐，仅当单文件不可用时）</summary>
 
 **多文件清单**
@@ -89,6 +94,11 @@ type: custom:lixiang-app
 
 
 </details>
+
+> **卡片选择器里只会看到 2 张**：`理想汽车 · 全部页面` 与 `理想汽车 · 车辆总览`。
+> 单页卡（充电页、空调页…）**不列在选择器里**，但 YAML 里直接写
+> `type: custom:lixiang-charge-page` 仍然可用（元素已定义，只是不在列表中）。
+> 想让它们也出现在选择器：在加载卡片前置 `window.__LX_PICKER_ALL = true`。
 
 ### 2. 添加卡片
 
