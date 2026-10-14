@@ -221,6 +221,19 @@ ic_home_sentry.png                 哨兵
 ic_home_energy / battery / oil / mileage / health / navigation / control ...
 ```
 
+### 图标找不到时会自动回退（★ 2026-10-14）
+
+卡片图标默认优先用 `/config/www/lixiang-icons/`（可自行替换/美化），
+**该目录不存在时自动回退到集成内置图标**（随集成发布，343 个）。
+
+回退是两层：
+1. HTML 里内联的 `<img>` → `onerror` 逐个回退；
+2. **JS 赋值**的图标（如首页快捷按钮）→ 页面加载时探测一次
+   `/local/lixiang-icons/`，不存在就把图标基址整体切到内置路径。
+
+> 所以：**不装图标目录也能正常显示**；只有你想替换某些图标时才需要建
+> `/config/www/lixiang-icons/`，放进去的同名文件会自动优先。
+
 ### 字体（`/config/www/lixiang-fonts/`）
 
 ```

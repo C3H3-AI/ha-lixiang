@@ -9,6 +9,8 @@ const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallb
   if (rel === s) return;
   img.src = "/lixiang_auto/lixiang-icons/" + rel;
 })) || function (img) {};
+
+
 /**
  * lixiang-app-home v3 —— 车控首页（严格对齐 App 截图 1260×2844 @3x = 420×948pt）
  *
@@ -30,6 +32,37 @@ const BUILTIN_ICON_BASE = "/lixiang_auto/lixiang-icons";
 const DEFAULT_ICON_BASE = "/local/lixiang-icons";   // 用户自定义优先
 let __iconBase = DEFAULT_ICON_BASE;   // setConfig 可覆盖
 const __iconFallback = BUILTIN_ICON_BASE;
+
+// —— 图标基址自动降级（★ 2026-10-14）——
+// 为什么需要：快捷按钮等图标是 **JS 赋值**的（img.src = ...），没有 HTML 属性
+// 可挂 onerror 回退 → 用户机器上没有 /local/lixiang-icons 时**永久破图**
+// （车主实测：别人家的 L8 八个快捷按钮全是破图）。
+// 做法：整页只探一次 /local/lixiang-icons（用 Image 探测，**不做 DOM 查询** ——
+// HA 卡片在 Shadow DOM 内，document 级选择器查不到；见
+// tests/test_frontend_cards.py::test_cards_no_global_dom_query）。
+// 探测失败 → 把本模块的图标基址切到集成内置路径。
+// 必须放在 __iconBase 声明**之后**（否则 TDZ 抛错，探测静默失效）。
+{
+  const __toBuiltin = () => { __iconBase = __iconFallback; };
+  if (typeof window !== "undefined") {
+    if (window.__lxIconBaseMissing) {
+      __toBuiltin();
+    } else {
+      window.__lxIconCbs = window.__lxIconCbs || [];
+      window.__lxIconCbs.push(__toBuiltin);
+      if (!window.__lxIconProbing) {
+        window.__lxIconProbing = true;
+        const __p = new Image();
+        __p.onerror = () => {
+          window.__lxIconBaseMissing = true;
+          (window.__lxIconCbs || []).forEach(fn => { try { fn(); } catch (e) { /* 忽略 */ } });
+        };
+        __p.src = DEFAULT_ICON_BASE + "/ic_home_battery.webp";
+      }
+    }
+  }
+}
+
 const BUILTIN_FONT_BASE = "/lixiang_auto/lixiang-fonts";
 const DEFAULT_FONT_BASE = "/local/lixiang-fonts";   // 用户自定义优先
 let __fontBase = DEFAULT_FONT_BASE;   // setConfig 可覆盖
@@ -840,7 +873,7 @@ class LixiangAppHome extends HTMLElement {
       d.className = "q"; d.dataset.key = it.key;
       d.setAttribute("role","button"); d.setAttribute("tabindex","0");
       d.setAttribute("aria-label", it.name);
-      d.innerHTML = `<div class="c"><img src="${this._img(it.off)}" alt=""></div>
+      d.innerHTML = `<div class="c"><img src="${this._img(it.off)}" alt="" onerror="__lxIconFallback(this)"></div>
                      <div class="n">${it.name}</div><div class="sp"></div><div class="sub"></div>`;
       d.addEventListener("click", () => this._tap(it.key));
       d.addEventListener("keydown", e => {
@@ -1015,7 +1048,16 @@ class LixiangAppHome extends HTMLElement {
       const sub = el.querySelector(".sub");
       if (sub && missing && it.note) sub.textContent = it.note;
       const img = el.querySelector("img");
-      if (img) img.src = this._img(active ? it.on : it.off);
+      if (img) {
+        // ★ 2026-10-14：只在目标变化时赋值，并清掉回退标记 ——
+        //   __lxIconFallback 带 dataset.lxFb 一次性保护；若每次都重新赋 /local 值，
+        //   回退救回来的内置图标会被再次写坏且不再回退 → 永久破图。
+        const want = this._img(active ? it.on : it.off);
+        if (img.getAttribute("src") !== want) {
+          delete img.dataset.lxFb;
+          img.src = want;
+        }
+      }
     });
   }
 

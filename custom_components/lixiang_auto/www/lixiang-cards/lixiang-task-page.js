@@ -9,6 +9,8 @@ const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallb
   if (rel === s) return;
   img.src = "/lixiang_auto/lixiang-icons/" + rel;
 })) || function (img) {};
+
+
 /**
  * lixiang-task-page —— 车控任务（对齐 App「任务大师」，但落地为 HA 自动化）
  *
@@ -69,6 +71,37 @@ const BUILTIN_FONT_BASE = "/lixiang_auto/lixiang-fonts";
 const DEFAULT_FONT_BASE = "/local/lixiang-fonts";   // 用户自定义优先
 let __iconBase = DEFAULT_ICON_BASE;   // setConfig 可覆盖
 const __iconFallback = BUILTIN_ICON_BASE;
+
+// —— 图标基址自动降级（★ 2026-10-14）——
+// 为什么需要：快捷按钮等图标是 **JS 赋值**的（img.src = ...），没有 HTML 属性
+// 可挂 onerror 回退 → 用户机器上没有 /local/lixiang-icons 时**永久破图**
+// （车主实测：别人家的 L8 八个快捷按钮全是破图）。
+// 做法：整页只探一次 /local/lixiang-icons（用 Image 探测，**不做 DOM 查询** ——
+// HA 卡片在 Shadow DOM 内，document 级选择器查不到；见
+// tests/test_frontend_cards.py::test_cards_no_global_dom_query）。
+// 探测失败 → 把本模块的图标基址切到集成内置路径。
+// 必须放在 __iconBase 声明**之后**（否则 TDZ 抛错，探测静默失效）。
+{
+  const __toBuiltin = () => { __iconBase = __iconFallback; };
+  if (typeof window !== "undefined") {
+    if (window.__lxIconBaseMissing) {
+      __toBuiltin();
+    } else {
+      window.__lxIconCbs = window.__lxIconCbs || [];
+      window.__lxIconCbs.push(__toBuiltin);
+      if (!window.__lxIconProbing) {
+        window.__lxIconProbing = true;
+        const __p = new Image();
+        __p.onerror = () => {
+          window.__lxIconBaseMissing = true;
+          (window.__lxIconCbs || []).forEach(fn => { try { fn(); } catch (e) { /* 忽略 */ } });
+        };
+        __p.src = DEFAULT_ICON_BASE + "/ic_home_battery.webp";
+      }
+    }
+  }
+}
+
 let __fontBase = DEFAULT_FONT_BASE;
 
 /* ── 车控常用模板（对应 App 社区的常见任务）──
