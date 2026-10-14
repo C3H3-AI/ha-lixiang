@@ -259,6 +259,10 @@ const STYLE = `
              align-items:center; justify-content:center;
              box-shadow:0 1px 4px rgba(0,0,0,.06); }
   .ac .fan img { width:18px; height:18px; }
+  /* ★ 2026-10-14 官方同款：空调开启时风扇 **蓝底 + 白图标 + 转动**。
+     官方资源本就是配套的：ic_home_fan_off = 深灰(浅底)、ic_home_fan_on = 纯白(蓝底)。 */
+  .ac .fan.on { background:var(--lx-blue); box-shadow:0 2px 10px rgba(10,88,246,.35); }
+  .ac .fan.on img { animation:spin 1.6s linear infinite; }
   .ac .fan.spin img { animation:spin 1.6s linear infinite; }
   /* 功能 chip：单行等分，不换行 */
   .ac .acrow { display:flex; gap:5px; margin-top:10px; }
@@ -696,6 +700,8 @@ class LixiangAppHome extends HTMLElement {
     if (String(id).split(".")[0] === "button") return false;
     if (/^\d{4}-\d{2}-\d{2}t/.test(v)) return false;              // 时间戳状态
     if (v === "1") return true;                                      // 精确的 1 才算开
+    // climate 域没有 "on" 状态：cool/heat/auto/dry/fan_only 都算"开着"
+    if (["cool", "heat", "heat_cool", "auto", "dry", "fan_only"].includes(v)) return true;
     return ["on","open","opening","unlocked","locked","home","playing","true","yes","detected",
             "开启","已开启","已锁定","已连接","已解锁","在线"].some((x) => v.includes(x));
   }
@@ -823,7 +829,7 @@ class LixiangAppHome extends HTMLElement {
               <span class="chip" id="ch-fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""><b>吹风</b></span>
               <span class="chip" id="ch-defrost"><img src="${__iconBase}/ic_home_ice_cool.webp" onerror="__lxIconFallback(this)" alt=""><b>除霜</b></span>
             </div>
-            <div class="fan" id="fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""></div>
+            <div class="fan" id="fan"><img src="${__iconBase}/ic_home_fan_off.webp" onerror="__lxIconFallback(this)" alt=""></div>
           </div>
           <div class="card loc" id="c-loc" role="button" tabindex="0">
             <div class="map" id="map">
@@ -1466,8 +1472,20 @@ class LixiangAppHome extends HTMLElement {
     const room = this._num(this._eid("room_temp")), tgt = this._num(this._eid("target_temp"));
     q("#v-room").textContent = room == null ? "—" : room.toFixed(1);
     q("#v-target").textContent = tgt == null ? "—" : tgt;
-    const acOn = this._eid("ac") ? this._on(this._eid("ac")) : false;
-    const fan = q("#fan"); if (fan) fan.className = "fan" + (acOn ? " spin" : "");
+    // ★ 2026-10-14：空调是 climate 域，状态是 cool/heat/auto/fan_only…（**不是 on**），
+    //   原来用 _on() 判 → 永远 false → 风扇不转；且图标固定用白色版（浅底上几乎看不见）。
+    const acEid = this._eid("ac");
+    const acSt = this._st(acEid);
+    const acRaw = acSt ? String(acSt.state).toLowerCase() : "";
+    const acOn = ["cool", "heat", "heat_cool", "auto", "dry", "fan_only", "on", "开启"]
+      .some((x) => acRaw.includes(x));
+    const fan = q("#fan");
+    if (fan) {
+      fan.className = "fan" + (acOn ? " on" : "");
+      const fi = fan.querySelector("img");
+      const want = this._img(acOn ? "ic_home_fan_on.webp" : "ic_home_fan_off.webp");
+      if (fi && fi.getAttribute("src") !== want) { delete fi.dataset.lxFb; fi.src = want; }
+    }
     // 功能状态 chip（有实体且开启时点亮；无实体则隐藏）
     const _chip = (sel, eid) => {
       const el = q(sel); if (!el) return;

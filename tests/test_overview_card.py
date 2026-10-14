@@ -523,6 +523,38 @@ class TestQuickActiveState:
                      ".entries { grid-template-columns: minmax(0,1fr)"):
             assert frag in tail, f"≤330px 段缺兜底：{frag}"
 
+    def test_ac_fan_blue_spin_when_on(self):
+        """★ 车主："风扇能动吗？开起来的时候风扇蓝色转动。"
+
+        官方资源本就是配套的（app 内实测）：
+          home_fan_open.png  = 纯白 (255,255,255)  → 开启态，配**蓝底**
+          ic_fan_close.png   = 灰色 (153,153,153)  → 关闭态，配浅底
+        我们此前永远用白色图标（浅底上几乎看不见），且用 `_on()` 判 climate 实体
+        （状态是 cool/heat/auto，不是 on）→ 永远判为关。
+        """
+        s = self._src()
+        # ① 默认必须是深色图标（浅底可见）
+        assert 'id="fan"><img src="${__iconBase}/ic_home_fan_off.webp"' in s, (
+            "风扇默认图标应为深色版（白色版在浅底上看不见）")
+        # ② 开启 = 蓝底 + 白图标 + 转动
+        assert ".ac .fan.on { background:var(--lx-blue)" in s, "开启态不是蓝底"
+        assert ".ac .fan.on img { animation:spin" in s, "开启态风扇不转"
+        # ③ climate 状态判定
+        i = s.find("const acRaw")
+        assert i > 0, "缺空调状态读取"
+        seg = s[i:i + 500]
+        for st in ("cool", "heat", "auto", "fan_only"):
+            assert f'"{st}"' in seg, f"空调状态判定漏了 {st}"
+        assert 'this._img(acOn ? "ic_home_fan_on.webp" : "ic_home_fan_off.webp")' in seg, (
+            "未按开关切换图标")
+
+    def test_on_handles_climate_states(self):
+        """`_on()` 也要认 climate 域（别处复用时不至于误判为关）。"""
+        s = self._src()
+        i = s.find("_on(id) {")
+        seg = s[i:i + 1400]
+        assert '"cool"' in seg and '"heat_cool"' in seg, "_on() 未处理 climate 状态"
+
     def test_no_duplicate_ids_in_template(self):
         """★ 模板里不得有重复 id。
 
