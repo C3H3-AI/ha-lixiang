@@ -532,7 +532,10 @@ if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangVehicl
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "车辆信息（二级页）",
   description: "车辆昵称/车牌/型号/车架号/软件版本/配置等级",
@@ -2027,7 +2030,10 @@ if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangAppHom
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "理想车控首页（v3 · 对齐 App）",
   description: "8 圆按钮 · 双态 3D · 空调/位置/里程/电量/哨兵 · 各页入口",
@@ -3023,7 +3029,10 @@ if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangCharge
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "充电（二级页）",
   description: "充电实时状态 + 按月记录（年折叠）+ 单次明细",
@@ -3697,7 +3706,10 @@ if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangEnergy
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "里程能耗（二级页）",
   description: "环形图：陪伴里程 + 电/油占比 + 智驾占比 + 年份折叠 + 每日明细",
@@ -4033,7 +4045,10 @@ if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangHealth
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "车辆健康（二级页）",
   description: "胎压图（bar + 胎温）+ 车辆保养计划",
@@ -4621,7 +4636,10 @@ if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangSettin
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "车辆设置（二级页）",
   description: "空调/充电/安全/远程操作 —— 全部可控制",
@@ -4978,7 +4996,10 @@ if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangSceneP
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "情景模式（二级页）",
   description: "宠物 / 露营 / 擦车 / 离车不下电（4 模式，对齐 App 布局）",
@@ -5466,7 +5487,10 @@ if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangClimat
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "空调控制（二级页）",
   description: "温度调节 + 空调/极速制冷/极速制热/除雪除冰 + 空气质量",
@@ -5980,7 +6004,10 @@ if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangSeatPa
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "座椅控制（二级页）",
   description: "座椅俯视布局：主/副驾加热通风 + 二排三座 + 方向盘加热，激活橙色",
@@ -6759,7 +6786,10 @@ if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangLocati
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "车辆位置（二级页）",
   description: "地图定位 + 地址 + 距离 + 闪灯/鸣笛 + 驻车照片入口",
@@ -7697,7 +7727,10 @@ if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangTaskPa
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "任务大师（HA 版）",
   description: "用 App 的交互创建 HA 自动化：模板库 + 如果/就执行 + 我的任务",
@@ -8126,7 +8159,10 @@ if(!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangAdPage)
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "智驾统计（二级页）",
   description: "NOA/LCC/ACC 里程与占比、使用天数、日均里程",
@@ -8444,7 +8480,10 @@ if (!customElements.get(CARD_TAG)) customElements.define(CARD_TAG, LixiangBindin
 window.customCards = window.customCards || [];
 window.customCards = window.customCards || [];
 // 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
-if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
+// ★ 2026-10-14：单页卡默认不列进卡片选择器（车主要求选择器里只留两张）。
+  //   YAML 里直接写 type: custom:xxx-page 仍然可用 —— 自定义元素照样已定义，
+  //   只是不在选择列表里。需要列出时：加载卡片前置 window.__LX_PICKER_ALL = true。
+  if (window.__LX_PICKER_ALL === true && !window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
   type: CARD_TAG,
   name: "实体自动发现（诊断）",
   description: "查看卡片自动绑定了哪些实体；未匹配项一目了然；可复制详情反馈",

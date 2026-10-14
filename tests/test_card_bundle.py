@@ -116,3 +116,55 @@ class TestIntegrationPrefersBundle:
         s = SHELL.read_text(encoding="utf-8")
         assert "filter((name) => !customElements.get(name))" in s, (
             "外壳应跳过已被单文件定义的元素（否则重复 import 13 个文件）")
+
+
+INTERNAL_CARDS = [
+    "lixiang-app-home.js", "lixiang-charge-page.js", "lixiang-energy-page.js",
+    "lixiang-health-page.js", "lixiang-setting-page.js", "lixiang-scene-page.js",
+    "lixiang-climate-page.js", "lixiang-seat-page.js", "lixiang-location-page.js",
+    "lixiang-vehicle-info-page.js", "lixiang-task-page.js", "lixiang-ad-page.js",
+    "lixiang-bindings-card.js",
+]
+PUBLIC_CARDS = ["lixiang-app.js", "lixiang-overview-card.js"]
+
+
+class TestCardPickerPolicy:
+    """车主：「卡片选择器里只留两张」。
+
+    单页卡（充电页/空调页/…）仍然是有用的自定义元素（YAML 直接写 type 即可），
+    但不应占满 HA 的卡片选择器 —— 那会让新用户不知道该选哪个。
+    """
+
+    def test_public_cards_register_unconditionally(self):
+        for name in PUBLIC_CARDS:
+            s = (CARDS / name).read_text(encoding="utf-8")
+            assert "if (!window.customCards.some" in s, (
+                f"{name}: 对外卡片必须无条件注册到选择器")
+
+    def test_internal_cards_hidden_by_default(self):
+        for name in INTERNAL_CARDS:
+            s = (CARDS / name).read_text(encoding="utf-8")
+            assert "__LX_PICKER_ALL === true" in s, (
+                f"{name}: 单页卡默认不应出现在卡片选择器（应加 __LX_PICKER_ALL 守卫）")
+
+    def test_internal_cards_still_define_elements(self):
+        """隐藏只是不列进选择器 —— 自定义元素仍要定义（YAML 可用）。"""
+        for name in INTERNAL_CARDS:
+            s = (CARDS / name).read_text(encoding="utf-8")
+            assert "customElements.define" in s, f"{name}: 元素未被定义（YAML 用法会失效）"
+
+
+class TestReleasePackaging:
+    """发布包只含单文件（源 JS 不再随包提供）。"""
+
+    def test_workflow_excludes_source_js(self):
+        wf = ROOT / ".github" / "workflows" / "draft-release.yml"
+        s = wf.read_text(encoding="utf-8")
+        assert "lixiang-all.js" in s, "工作流未提及单文件"
+        assert "-x" in s, "工作流未排除源 JS（发布包会同时含两套，体积翻倍）"
+
+    def test_workflow_fails_if_bundle_missing(self):
+        """单文件缺失要让 CI 失败 —— 否则会发布出"没有任何卡片"的包。"""
+        wf = ROOT / ".github" / "workflows" / "draft-release.yml"
+        s = wf.read_text(encoding="utf-8")
+        assert "lixiang-all.js 缺失" in s, "缺单文件守卫（缺失时应让发布失败）"
