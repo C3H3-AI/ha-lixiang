@@ -1158,7 +1158,7 @@ SIGNALS: dict[str, SignalSpec] = {
     "ota_version": SignalSpec(
         key="ota_version",
         path="Vehicle.Version.OTA.Baseline",
-        name="车机版本",
+        name="整车软件版本",  # ★ 官方措辞（原"车机版本"）,
         freq=Freq.LOW,
         icon="mdi:car-info",
         category="OTA",

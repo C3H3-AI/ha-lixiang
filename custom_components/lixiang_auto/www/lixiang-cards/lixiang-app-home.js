@@ -778,7 +778,7 @@ class LixiangAppHome extends HTMLElement {
                  且放在头部 —— 3D 展开/收起都能看到。 -->
             <span class="plug" id="v-plug" style="display:none" role="status">
               <img src="${__iconBase}/icon_charge_lighting.webp" alt="" onerror="this.style.display='none'">
-              <b id="v-plug-t">已插枪</b>
+              <b id="v-plug-t">充电枪已插入</b>
             </span>
             <!-- ★ 2026-10-14 对齐官方顶部徽标（HomeControlHeaderWarning / HeaderSentry） -->
             <span class="badge warn" id="v-badge-warn" style="display:none" role="status">
@@ -825,9 +825,9 @@ class LixiangAppHome extends HTMLElement {
             <div class="temp"><span id="v-room">—</span><sup>°C</sup></div>
             <div class="target">目标温度 <span id="v-target">—</span>°C</div>
             <div class="acrow" id="acrow">
-              <span class="chip" id="ch-seat"><img src="${__iconBase}/ic_home_seat_heating3.webp" alt="" onerror="this.style.visibility='hidden'"><b id="ch-seat-t">座椅</b></span>
+              <span class="chip" id="ch-seat"><img src="${__iconBase}/ic_home_seat_heating3.webp" alt="" onerror="this.style.visibility='hidden'"><b id="ch-seat-t">座椅加热</b></span>
               <span class="chip" id="ch-fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""><b id="ch-fan-t">吹风</b></span>
-              <span class="chip" id="ch-defrost"><img src="${__iconBase}/ic_home_ice_cool.webp" onerror="__lxIconFallback(this)" alt=""><b id="ch-defrost-t">除霜</b></span>
+              <span class="chip" id="ch-defrost"><img src="${__iconBase}/ic_home_ice_cool.webp" onerror="__lxIconFallback(this)" alt=""><b id="ch-defrost-t">除雪除霜</b></span>
             </div>
             <div class="fan" id="fan"><img src="${__iconBase}/ic_home_fan_off.webp" onerror="__lxIconFallback(this)" alt=""></div>
           </div>
@@ -1558,7 +1558,7 @@ class LixiangAppHome extends HTMLElement {
       if (acGun || dcGun) {
         plugEl.style.display = "";
         const pt = q("#v-plug-t");
-        if (pt) pt.textContent = dcGun ? "直流快充已插枪" : "交流慢充已插枪";
+        if (pt) pt.textContent = (dcGun ? "直流快充" : "交流慢充") + " · 充电枪已插入";
       } else {
         plugEl.style.display = "none";
       }

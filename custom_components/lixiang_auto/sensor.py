@@ -316,7 +316,7 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
     _mk("speed", ('车速', 'SPEED', 'km/h', 'MEASUREMENT', 'mdi:speedometer', '位置')),
     # ---- 连接 ----
     # ---- OTA ----
-    _mk("ota_version", ('车机版本', None, None, None, 'mdi:car-info', 'OTA')),
+    _mk("ota_version", ('整车软件版本', None, None, None, 'mdi:car-info', 'OTA')),
     _mk("ota_short", ('车机版本(短)', None, None, None, 'mdi:car-info', 'OTA')),
     _mk("ota_state", ('OTA 状态', None, None, None, 'mdi:download', 'OTA')),
     _mk("ota_status", ('OTA 结果', None, None, None, 'mdi:download-circle', 'OTA')),

@@ -425,7 +425,7 @@ class LixiangVehicleInfoPage extends HTMLElement {
           { rows: [
               // ★ 2026-10-14 修正：原来写死「暂不可用/集成未采集」，但集成确有
               //   `车机版本`（head_unit_ver）与 `OTA 版本/状态/进度` 实体。
-              { icon: "ic_home_health.webp",     k: "车机版本", id: "v-sw" },
+              { icon: "ic_home_health.webp",     k: "整车软件版本", id: "v-sw" },
               { icon: "ic_home_update.webp",     k: "OTA",      id: "v-ota" },
           ]},
           { rows: [
@@ -1347,7 +1347,7 @@ class LixiangAppHome extends HTMLElement {
                  且放在头部 —— 3D 展开/收起都能看到。 -->
             <span class="plug" id="v-plug" style="display:none" role="status">
               <img src="${__iconBase}/icon_charge_lighting.webp" alt="" onerror="this.style.display='none'">
-              <b id="v-plug-t">已插枪</b>
+              <b id="v-plug-t">充电枪已插入</b>
             </span>
             <!-- ★ 2026-10-14 对齐官方顶部徽标（HomeControlHeaderWarning / HeaderSentry） -->
             <span class="badge warn" id="v-badge-warn" style="display:none" role="status">
@@ -1394,9 +1394,9 @@ class LixiangAppHome extends HTMLElement {
             <div class="temp"><span id="v-room">—</span><sup>°C</sup></div>
             <div class="target">目标温度 <span id="v-target">—</span>°C</div>
             <div class="acrow" id="acrow">
-              <span class="chip" id="ch-seat"><img src="${__iconBase}/ic_home_seat_heating3.webp" alt="" onerror="this.style.visibility='hidden'"><b id="ch-seat-t">座椅</b></span>
+              <span class="chip" id="ch-seat"><img src="${__iconBase}/ic_home_seat_heating3.webp" alt="" onerror="this.style.visibility='hidden'"><b id="ch-seat-t">座椅加热</b></span>
               <span class="chip" id="ch-fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""><b id="ch-fan-t">吹风</b></span>
-              <span class="chip" id="ch-defrost"><img src="${__iconBase}/ic_home_ice_cool.webp" onerror="__lxIconFallback(this)" alt=""><b id="ch-defrost-t">除霜</b></span>
+              <span class="chip" id="ch-defrost"><img src="${__iconBase}/ic_home_ice_cool.webp" onerror="__lxIconFallback(this)" alt=""><b id="ch-defrost-t">除雪除霜</b></span>
             </div>
             <div class="fan" id="fan"><img src="${__iconBase}/ic_home_fan_off.webp" onerror="__lxIconFallback(this)" alt=""></div>
           </div>
@@ -2127,7 +2127,7 @@ class LixiangAppHome extends HTMLElement {
       if (acGun || dcGun) {
         plugEl.style.display = "";
         const pt = q("#v-plug-t");
-        if (pt) pt.textContent = dcGun ? "直流快充已插枪" : "交流慢充已插枪";
+        if (pt) pt.textContent = (dcGun ? "直流快充" : "交流慢充") + " · 充电枪已插入";
       } else {
         plugEl.style.display = "none";
       }
@@ -2396,9 +2396,9 @@ const I18N = {
   limit: "充电上限",
   mode: "充电模式",
   appt: "预约充电",
-  apptTime: "预约时段",
-  acGun: "交流枪",
-  dcGun: "直流枪",
+  apptTime: "预约时间段",
+  acGun: "交流慢充",
+  dcGun: "直流快充",
   portCover: "充电口盖",
   coverOpen: "开",
   coverClose: "关",
@@ -5772,13 +5772,13 @@ class LixiangClimatePage extends HTMLElement {
       <div class="modes" id="modes"></div>
 
       <div class="sect">
-        <h2>定时出发</h2>
+        <h2>按时出发</h2>
         <div id="scheds"></div>
       </div>
 
       <div class="notice">
         <img src="${__iconBase}/ic_home_control.webp" onerror="__lxIconFallback(this)" alt="" style="width:17px;height:17px;flex:0 0 auto;margin-top:1px">
-        <div><b>定时出发暂不可用。</b>该功能的控制指令走 LiNdn（JOB）通道，集成尚未打通，
+        <div><b>按时出发暂不可用。</b>该功能的控制指令走 LiNdn（JOB）通道，集成尚未打通，
           因此仅能展示、不能新增或修改。请在理想 App 内设置。</div>
       </div>
 
@@ -5822,7 +5822,7 @@ class LixiangClimatePage extends HTMLElement {
     }
 
     // 添加按钮（只读）
-    const add = () => this._toast("定时出发需在理想 App 内设置（JOB 通道未打通）");
+    const add = () => this._toast("按时出发需在理想 App 内设置（JOB 通道未打通）");
     this._a11y(this.querySelector("#add"), "添加定时", add);
     this.querySelector("#add").addEventListener("click", add);
 
@@ -5888,7 +5888,7 @@ class LixiangClimatePage extends HTMLElement {
     // 空气质量（数值越小越好；App 显示"2 优"）
     const aqi = this._num(this._eid("aqi"));
     const aqiEl = q("#v-aqi");
-    if (aqi == null) { aqiEl.textContent = "—"; aqiEl.className = "v"; q("#l-aqi").textContent = "空气"; }
+    if (aqi == null) { aqiEl.textContent = "—"; aqiEl.className = "v"; q("#l-aqi").textContent = "空气质量"; }
     else {
       aqiEl.textContent = aqi <= 50 ? "优" : (aqi <= 100 ? "良" : "差");
       aqiEl.className = "v" + (aqi <= 50 ? " good" : "");
@@ -10076,7 +10076,8 @@ const AUTO_BIND = {
     seat_rr_vent:   { name: "二排右座椅通风", domain: "fan" },
     /* 位置页 */
     /* ★ 2026-10-14：车辆信息页（二级）用 —— 车机版本 / OTA（官方 VehicleSetting / VehicleOtaPage 的落点） */
-    head_unit_ver:  { name: "车机版本", domain: "sensor" },
+    head_unit_ver:  { name: "整车软件版本", domain: "sensor" },
+    head_unit_ver_old: { name: "车机版本", domain: "sensor" },
     ota_version:    { name: "OTA 版本(简)", domain: "sensor" },
     ota_status:     { name: "OTA 状态", domain: "sensor" },
     ota_progress:   { name: "OTA 进度", domain: "sensor" },

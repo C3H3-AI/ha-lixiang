@@ -309,13 +309,13 @@ class LixiangClimatePage extends HTMLElement {
       <div class="modes" id="modes"></div>
 
       <div class="sect">
-        <h2>定时出发</h2>
+        <h2>按时出发</h2>
         <div id="scheds"></div>
       </div>
 
       <div class="notice">
         <img src="${__iconBase}/ic_home_control.webp" onerror="__lxIconFallback(this)" alt="" style="width:17px;height:17px;flex:0 0 auto;margin-top:1px">
-        <div><b>定时出发暂不可用。</b>该功能的控制指令走 LiNdn（JOB）通道，集成尚未打通，
+        <div><b>按时出发暂不可用。</b>该功能的控制指令走 LiNdn（JOB）通道，集成尚未打通，
           因此仅能展示、不能新增或修改。请在理想 App 内设置。</div>
       </div>
 
@@ -359,7 +359,7 @@ class LixiangClimatePage extends HTMLElement {
     }
 
     // 添加按钮（只读）
-    const add = () => this._toast("定时出发需在理想 App 内设置（JOB 通道未打通）");
+    const add = () => this._toast("按时出发需在理想 App 内设置（JOB 通道未打通）");
     this._a11y(this.querySelector("#add"), "添加定时", add);
     this.querySelector("#add").addEventListener("click", add);
 
@@ -425,7 +425,7 @@ class LixiangClimatePage extends HTMLElement {
     // 空气质量（数值越小越好；App 显示"2 优"）
     const aqi = this._num(this._eid("aqi"));
     const aqiEl = q("#v-aqi");
-    if (aqi == null) { aqiEl.textContent = "—"; aqiEl.className = "v"; q("#l-aqi").textContent = "空气"; }
+    if (aqi == null) { aqiEl.textContent = "—"; aqiEl.className = "v"; q("#l-aqi").textContent = "空气质量"; }
     else {
       aqiEl.textContent = aqi <= 50 ? "优" : (aqi <= 100 ? "良" : "差");
       aqiEl.className = "v" + (aqi <= 50 ? " good" : "");

@@ -219,7 +219,7 @@ class LixiangVehicleInfoPage extends HTMLElement {
           { rows: [
               // ★ 2026-10-14 修正：原来写死「暂不可用/集成未采集」，但集成确有
               //   `车机版本`（head_unit_ver）与 `OTA 版本/状态/进度` 实体。
-              { icon: "ic_home_health.webp",     k: "车机版本", id: "v-sw" },
+              { icon: "ic_home_health.webp",     k: "整车软件版本", id: "v-sw" },
               { icon: "ic_home_update.webp",     k: "OTA",      id: "v-ota" },
           ]},
           { rows: [
