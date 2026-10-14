@@ -404,7 +404,9 @@ const STYLE = `
          同时 container-type 必须挂在 .root（真实元素）上：
          light DOM 里写在 :host 上的 container-type 不生效，容器查询不会触发。 */
     @container (max-width: 480px) {
-      .row2 { grid-template-columns: minmax(0,1fr); }
+      /* ★ 2026-10-14 车主："为什么下面是一列了？" ——
+         官方 App 在手机宽度**也是两张并排**（空调 + 地图）。
+         原来这里收成一列是我定错了，移除；只在极窄（≤330px）才收。 */
       .entries { grid-template-columns: minmax(0,1fr); }
       .head { padding-left:14px; padding-right:14px; }
       .wrap { padding-left:14px; padding-right:14px; }
@@ -418,6 +420,7 @@ const STYLE = `
        所以阈值下调到 400px（约等于手机竖屏可用宽度以下）。 */
     @container (max-width: 330px) {
       .quick { grid-template-columns: repeat(2, minmax(0,1fr)); }
+      .row2 { grid-template-columns: minmax(0,1fr); }
     }
 `;
 

@@ -462,6 +462,23 @@ class TestQuickActiveState:
         seg = s[i:i + 400]
         assert "驻车" in seg and "startedName" in seg, "已启动判定未接状态实体"
 
+    def test_two_columns_kept_on_phone(self):
+        """★ 车主："为什么下面是一列了？"
+
+        官方 App 在手机宽度**也是两张并排**（空调 + 地图）。此前的 ≤480px 段把
+        `.row2` 收成一列，是我定错了 —— 只在极窄（≤330px）才应收。
+        """
+        s = self._src()
+        i = s.find("@container (max-width: 480px)")
+        assert i > 0
+        blk = s[i:s.find("@container", i + 10)]
+        assert ".row2 { grid-template-columns: minmax(0,1fr)" not in blk, (
+            "≤480px 段又把下方两卡收成一列了（手机宽度应与官方一样两列）")
+        j = s.find("@container (max-width: 330px)")
+        assert j > 0
+        assert ".row2 { grid-template-columns: minmax(0,1fr)" in s[j:j + 300], (
+            "极窄（≤330px）才应收成一列")
+
     def test_no_duplicate_ids_in_template(self):
         """★ 模板里不得有重复 id。
 
