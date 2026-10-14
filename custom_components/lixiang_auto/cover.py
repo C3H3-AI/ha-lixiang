@@ -9,7 +9,9 @@
 命令（全部来自 App 反编译 XHttp*Control.getParams）:
   尾门    remoteVehPlgControl  {"plgPosi":"100"} / {"plgPosi":"0"}
   车窗    remoteVehWdwControl  四窗位置 99 / 0
-  ★ 前备箱 fTkC                {"lockSw":"1"}(开) / {"lockSw":"0"}(关)  ★ 2026-09-30 修正（用户实测方向反了）
+  ★ 前备箱 fTkC                {"lockSw":"0"}(开) / {"lockSw":"1"}(关)
+                              ★★ 2026-10-14 车主实测：命令与状态**两者都反了**，
+                                 已双双反转（详见下方 LiCarFrunkCover 的说明）
   ★ 左滑门 remoteVehPlgControl  {"lSlidingDoor":"100"}(开) / {"lSlidingDoor":"0"}(关)
   ★ 右滑门 remoteVehPlgControl  {"rSlidingDoor":"100"}(开) / {"rSlidingDoor":"0"}(关)
 
@@ -518,6 +520,9 @@ class LiCarFrunkCover(CoordinatorEntity, CoverEntity):
     ★ cmdKey 特殊：`fTkC`（不是 remoteVehXxx）
     ★ 状态：Vehicle.Body.DoorLockStatus.FrontTrunkDoor（锁状态）
            真正的开关状态信号 L6 没有 → 用乐观更新兜底
+    ★★ 2026-10-14 车主实车实测：状态与命令**都反了**，已双双反转：
+         · 状态 1 = 上锁/关、0 = 解锁/开
+         · 命令 打开 = lockSw "0"、关闭 = lockSw "1"
     """
 
     _attr_has_entity_name = True
@@ -545,7 +550,16 @@ class LiCarFrunkCover(CoordinatorEntity, CoverEntity):
 
         vss = (self.coordinator.data or {}).get("vss") or {}
         v = _sig_num(vss, _FRUNK_STATE_KEY)
-        vss_closed: bool | None = None if v is None else (v != 1)
+        # ★★ 2026-10-14 车主实测（实车）：该路径 1 = 上锁（=箱盖关），0 = 解锁（=箱盖开）。
+        #   与「1=开」相反的旧判定已废弃；非 0/1 的取值一律视为未知，不乱猜。
+        if v is None:
+            vss_closed: bool | None = None
+        elif v == 1:
+            vss_closed = True
+        elif v == 0:
+            vss_closed = False
+        else:
+            vss_closed = None
 
         if self._optimistic_closed is not None:
             if _t.monotonic() < self._optimistic_until:
@@ -558,20 +572,31 @@ class LiCarFrunkCover(CoordinatorEntity, CoverEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        attrs: dict = {"cmd_key": CMD_FRUNK}
+        # ★ 2026-10-14：暴露**原始锁定值**，便于车主一眼判断方向是否反了
+        #   （该路径是「前备箱锁」而非「箱盖位置」，语义上不如门开关直接）
+        vss = (self.coordinator.data or {}).get("vss") or {}
+        raw = _sig_num(vss, _FRUNK_STATE_KEY)
+        attrs: dict = {
+            "cmd_key": CMD_FRUNK,
+            "原始锁定值": raw,          # 1 → 「已上锁/关」；0 → 「已解锁/开」（2026-10-14 车主实测）
+            "本实体的状态依据": "DoorLockStatus.FrontTrunkDoor（锁状态，非箱盖位置）",
+            "命令方向": "打开=lockSw:0 / 关闭=lockSw:1（2026-10-14 车主实车实测）",
+        }
         if self._last_result is not None:
             attrs["last_command_result"] = self._last_result
         return attrs
 
     @require_control
     async def async_open_cover(self, **kwargs: Any) -> None:
-        # ★ 2026-09-30 修正：用户实测 lockSw="1" 才是开
-        await self._send({"lockSw": "1"}, closed=False)
+        # ★★ 2026-10-14 车主实测（实车）：打开 = lockSw "0"
+        #   先前按反编译命令表写成 "1"（LXVehicleControlTypeOpenFrontTrunk），
+        #   但实车方向相反 —— 反编译表与真实语义有出入时以实车为准。
+        await self._send({"lockSw": "0"}, closed=False)
 
     @require_control
     async def async_close_cover(self, **kwargs: Any) -> None:
-        # ★ 2026-09-30 修正：用户实测 lockSw="0" 才是关
-        await self._send({"lockSw": "0"}, closed=True)
+        # ★★ 2026-10-14 车主实测（实车）：关闭 = lockSw "1"
+        await self._send({"lockSw": "1"}, closed=True)
 
     async def _send(self, cmd_data: dict, *, closed: bool) -> None:
         try:

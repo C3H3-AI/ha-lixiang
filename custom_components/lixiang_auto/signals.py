@@ -773,7 +773,9 @@ SIGNALS: dict[str, SignalSpec] = {
         path="Vehicle.MSG.MSG_FuelLevelPos",
         name="油量",
         freq=Freq.HIGH,
-        unit="L",
+        # ★ 2026-10-14：实为**百分比**（同源 residueBattery=98 亦是百分比；
+        #   实测 78 而 L6 油箱 65 L；满油续航反推 893/0.78≈1145km≈官方 1183km）
+        unit="%",
         state_class="MEASUREMENT",
         icon="mdi:fuel",
         category="续航",

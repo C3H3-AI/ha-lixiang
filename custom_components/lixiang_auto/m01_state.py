@@ -276,7 +276,8 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
                 _v = 0 if _v else 1
             put(key, _v)
 
-    # 剩余油量（chargeSetting.enduranceStatus.residueFuel，单位 L）
+    # 剩余油量（chargeSetting.enduranceStatus.residueFuel，单位 %）
+      # ★ 2026-10-14：原注释写 L 有误，证据见 sensor.py 中 fuel_level 注释
     _rf = _num(_dig(res, "chargeSetting", "enduranceStatus").get("residueFuel"))
     if _rf is not None:
         put("fuel_level", _rf)
