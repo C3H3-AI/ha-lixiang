@@ -552,6 +552,27 @@ class TestQuickActiveState:
         dup = {k: v for k, v in _c.Counter(ids).items() if v > 1}
         assert not dup, f"充电页有重复 id：{dup}"
 
+
+    def test_charge_metrics_single_row_four_columns(self):
+        """★ 车主："剩余时间下面，一行直接显示四个，跟 app 保持一致。我们这样两行不美观"
+
+        官方充电管理页的 4 项指标（充电效率/充电功率/输入电流/输入电压）在手机宽度
+        也是【一行四列】。我们原来在 ≤480px 里压成 2×2 两行。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-charge-page.js")
+        s = p.read_text(encoding="utf-8")
+        assert ".hero .metrics { display:grid; grid-template-columns:repeat(4, minmax(0,1fr))" in s, (
+            "指标行基准不是一行四列")
+        i = s.find("@container (max-width: 480px)")
+        # 找到含 .hero .metrics 的那个手机断点块
+        j = s.find(".hero .metrics { grid-template-columns: repeat(4, minmax(0,1fr))", i)
+        assert j > 0, "手机断点没有保持一行四列"
+        # 不得再出现两列写法
+        assert ".hero .metrics { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }" not in s, (
+            "还有把指标压成两行的规则")
+
+
     def test_charge_manage_page_matches_official(self):
         """★ 官方「充电管理」页（车主 2026-10-14 截图）逐块对齐。
 

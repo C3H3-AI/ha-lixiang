@@ -2515,7 +2515,10 @@ const STYLE = `
   .hero .st { font-size:16px; font-weight:500; }
   .hero .sub { margin-left:auto; font-size:12px; color:var(--lx-t3); }
   /* 三栏：前两个数值等宽，第三个（模式·文字）给更多空间 */
-  .hero .metrics { display:grid; grid-template-columns:1fr 1fr 1.5fr; gap:8px; margin-top:14px; }
+  /* ★ 2026-10-14 车主："剩余时间下面，一行直接显示四个，跟 app 保持一致"
+     官方充电管理页 4 项指标就是【一行四列】（44km/hr · 8.8kW · 24A · 373V）。 */
+  .hero .metrics { display:grid; grid-template-columns:repeat(4, minmax(0,1fr));
+                   gap:6px; margin-top:14px; }
   .hero .m .v { font-family:"LxNum","Licium"; font-size:21px; font-weight:600;
                 white-space:nowrap; }
   .hero .m .v.txt { font-family:"Licium"; font-size:14px; font-weight:500;
@@ -2690,7 +2693,11 @@ const STYLE = `
 
     /* ── 手机断点（≤480px）── */
     @container (max-width: 480px) {
-      .hero .metrics { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+      /* 官方在手机宽度也是【一行四列】，不压成两行 */
+      .hero .metrics { grid-template-columns: repeat(4, minmax(0,1fr)); gap:4px; }
+      .hero .m .v { font-size:19px; }
+      .hero .m .v small { font-size:10px; margin-left:1px; }
+      .hero .m .l { font-size:10.5px; }
       .stat3 { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
       .grid, .row3 { grid-template-columns: minmax(0,1fr); }
     }
