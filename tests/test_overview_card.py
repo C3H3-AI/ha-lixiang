@@ -337,28 +337,30 @@ class TestAppHomeLayoutRegressions:
         m = re.search(r"width:(\d+)%", rule)
         assert m and int(m.group(1)) <= 85, f"车图仍占满（{m.group(0)}），两侧没有留白给标签"
 
-    def test_tire_labels_use_side_margins(self):
+    def test_tire_labels_anchored_to_wheels(self):
+        """★ 车主 2026-10-14 纠正：车是**横放**的，四个轮子在车的**上下两条边**上，
+        标签要贴在各自车轮的上/下侧 —— 不是放在卡片左右两端（那是车头/车尾）。
+
+        实测轮心：纵向 x≈28.4% / 71.4%（前/后），横向 y≈29% / 71%
+        （车的右侧在上、左侧在下）；车体轮廓占图高 8%~92%。
+        """
         s = self._src()
         i = s.find("_layoutTires() {")
         assert i > 0
-        body = s[i:i + 1600]
-        # ★ 2026-10-14：用"贴边 + 内边距"而不是盒宽百分比 ——
-        #   百分比版本会让标签紧贴卡片边缘（车主截图实测右缘只剩 2px）
-        assert 'el.style.left = PAD + "px"' in body, "左侧标签未用贴边内边距"
-        assert 'el.style.right = PAD + "px"' in body, "右侧标签未用贴边内边距"
-        assert "cH * 0.29" in body and "cH * 0.71" in body, "标签行高未对齐实测轮心（29%/71%）"
+        body = s[i:i + 2000]
+        assert "cW * 0.284" in body and "cW * 0.714" in body, "标签未按实测轮心纵向定位（28.4%/71.4%）"
+        assert "cH * 0.08" in body and "cH * 0.92" in body, "标签未贴车体轮廓上/下边缘（8%/92%）"
+        # 上排是车的右侧、下排是车的左侧
+        assert 'rf: [xF, yT], rr: [xR, yT]' in body, "上排应为右前/右后"
+        assert 'lf: [xF, yB], lr: [xR, yB]' in body, "下排应为左前/左后"
 
-    def test_tire_chip_transform_is_vertical_only(self):
-        """水平定位交给 left/right，transform 只做垂直居中。
-
-        否则 `translate(-50%,-50%)` 会把贴边 8px 的标签再往左推半个身位（实测 -14px）。
-        """
+    def test_tire_chip_transform_centers_on_point(self):
+        """按"点"定位 → transform 需要双向居中。"""
         s = self._src()
         i = s.find(".big3d .tp {")
         assert i > 0
         rule = s[i:s.find("}", i)]
-        assert "translate(0,-50%)" in rule, "tp 的 transform 应为 translate(0,-50%)"
-        assert "translate(-50%,-50%)" not in rule, "仍是 translate(-50%,-50%)：贴边定位会被推翻"
+        assert "translate(-50%,-50%)" in rule, "tp 的 transform 应为 translate(-50%,-50%)（按点居中）"
 
 
 class TestQuickActiveState:
@@ -404,3 +406,18 @@ class TestQuickActiveState:
         line = s[i:s.find("\n", i)]
         assert "it.stateField ?" in line, (
             "配了 stateField 但解析不到时必须为 null，不能回退到动作实体（button 时间戳会被当开着）")
+
+
+    def test_auth_is_pure_action_without_statefield(self):
+        """★ 车主："授权驾驶为什么一直显示开着"。
+
+        原先 `stateField: "auth_state"` → `binary_sensor.车辆授权` 是**持久标志**
+        （绑定后恒为 on），拿它判按钮开关必然常亮。授权驾驶是动作（button），
+        应作为纯动作按钮，与「寻车」一致。
+        """
+        s = self._src()
+        i = s.find('{ key:"auth"')
+        assert i > 0
+        entry = s[i:s.find("}", i) + 1]
+        assert "stateField" not in entry, "auth 不应再有 stateField（会导致按钮常亮）"
+        assert 'key:"auth"' in entry

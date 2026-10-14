@@ -359,7 +359,7 @@ const STYLE = `
      位置由 JS 按"车图实际渲染区域"计算（见 _layoutTires），不用百分比硬套盒子，
      因为车图是 object-fit:contain + object-position:50% 62%，并不铺满盒子。 */
   .big3d .tires { position:absolute; inset:0; pointer-events:none; }
-  .big3d .tp { position:absolute; transform:translate(0,-50%); padding:1px 5px;
+  .big3d .tp { position:absolute; transform:translate(-50%,-50%); padding:1px 5px;
                border-radius:8px; background:#0d1828cc; border:1px solid #ffffff1f;
                font-size:11px; font-weight:600; color:#eaf1fb; white-space:nowrap; }
   .big3d .tp small { font-size:9px; font-weight:400; opacity:.75; margin-left:1px; }
@@ -401,7 +401,12 @@ const QUICK = [
   { key:"trunk",  name:"尾门",       off:"ic_home_tail_w_off_2025.png",         on:"ic_home_tail_w_on_2025.png" },
   // ★ 2026-10-09：授权驾驶是【动作】（button，cmdKey=remoteVehAuth），
   //   可执行实体与状态显示实体分开：auth=动作，stateField=授权状态。
-  { key:"auth",   name:"授权驾驶", stateField:"auth_state",
+  // ★ 2026-10-14 车主："授权驾驶为什么一直显示开着"。
+  //   原先用 stateField=auth_state（binary_sensor.车辆授权）判"开" ——
+  //   但那是"这台车是否已授权给当前账号"的**持久标志**（绑定后恒为 on），
+  //   拿它当按钮的开关状态必然常亮。授权驾驶是**动作**（button），改为纯动作按钮，
+  //   与「寻车」一致：不留常亮态，图标恒为 off 态。
+  { key:"auth",   name:"授权驾驶",
     off:"ic_home_authorization_off_lisa.png",  on:"ic_home_authorization_on_lisa.png" },
   { key:"summon", name:"直线召唤", unsupported:true, note:"命令走 JOB 通道，HTTP 不可达",
     off:"ic_home_parkingout_off_lisa.png",     on:"ic_home_parkingout_on_lisa.png" },
@@ -1067,31 +1072,35 @@ class LixiangAppHome extends HTMLElement {
     const layer = box && box.querySelector(".tires");
     if (!box || !layer) return;
     const bw = box.clientWidth, bh = box.clientHeight;
-    let rowTop = bh * 0.29, rowBot = bh * 0.71;          // 兜底（无图时）
+    // 车图（object-fit:contain + object-position:50% 62%）的实际渲染区域
+    let ox = 0, oy = 0, cW = bw, cH = bh;
     const img = box.querySelector("img");
     if (img && img.naturalWidth) {
-      // 车图 object-fit:contain + object-position:50% 62% → 算出**实际渲染区域**
       const r = img.getBoundingClientRect(), br = box.getBoundingClientRect();
       const ar = img.naturalHeight / img.naturalWidth;
-      const cH = Math.min(r.height, r.width * ar), cW = cH / ar;
-      const oy = (r.top - br.top) + (r.height - cH) * 0.62;
-      // 实测轮心在车图高度的 29% / 71%（旋转后的俯视图：车头朝左）
-      rowTop = oy + cH * 0.29;
-      rowBot = oy + cH * 0.71;
+      cH = Math.min(r.height, r.width * ar); cW = cH / ar;
+      ox = r.left - br.left + (r.width - cW) / 2;
+      oy = r.top - br.top + (r.height - cH) * 0.62;
     }
-    // 旋转后：车的右侧在上（rowTop）、左侧在下（rowBot）。
-    // ★ 用"贴边 + 8px 内边距"而不是盒宽百分比 —— 百分比会让标签紧贴甚至被卡片圆角裁掉
-    //   （车主截图实测：标签右缘距卡片边缘只有 2px）。
-    const SIDE = { rf: "l", lf: "l", rr: "r", lr: "r" };
-    const PAD = 8;
-    for (const [k, side] of Object.entries(SIDE)) {
+    // ★ 2026-10-14 车主纠正：车是**横放**的，四个轮子在车的**上下两条边**上，
+    //   标签要贴在各自车轮的上/下侧 —— 不是放在卡片左右两端（车头/车尾）。
+    //   实测轮心：纵向 x≈28.4% / 71.4%（前/后），横向 y≈29% / 71%（车的右侧在上、左侧在下）。
+    //   车体轮廓占图高的 8%~92%，所以上排标签放车顶边之上、下排放车底边之下。
+    const xF = ox + cW * 0.284;      // 前轮
+    const xR = ox + cW * 0.714;      // 后轮
+    const yT = oy + cH * 0.08 - 15;  // 车顶边之上（标签半高 + 间隙）
+    const yB = oy + cH * 0.92 + 15;  // 车底边之下
+    const POS = {
+      rf: [xF, yT], rr: [xR, yT],    // 上排 = 车的右侧（右前 / 右后）
+      lf: [xF, yB], lr: [xR, yB],    // 下排 = 车的左侧（左前 / 左后）
+    };
+    for (const [k, [px, py]] of Object.entries(POS)) {
       const el = layer.querySelector(`.tp[data-k="${k}"]`);
       if (!el) continue;
-      el.style.top = (k === "rf" || k === "rr" ? rowTop : rowBot) + "px";
-      if (side === "l") { el.style.left = PAD + "px"; el.style.right = "auto"; }
-      else { el.style.right = PAD + "px"; el.style.left = "auto"; }
+      el.style.left = Math.round(px) + "px";
+      el.style.top = Math.round(py) + "px";
+      el.style.right = "auto";
     }
-    void bw;
   }
 
   /// 失败时保留占位图（不显示破图）。
