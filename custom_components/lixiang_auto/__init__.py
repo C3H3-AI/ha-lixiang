@@ -435,11 +435,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     #   —— 1 个资源即含全部卡片，没有相对路径依赖（车主："不能合成一个？"）。
                     #   单文件不存在时（老部署）回退为逐个模块注入。
                     _bundle = _cards_dir / "lixiang-cards" / "lixiang-all.js"
-                    _urls = (
-                        [f"/lixiang_auto/lixiang-cards/{_bundle.name}"]
-                        if _bundle.is_file()
-                        else [f"/lixiang_auto/lixiang-cards/{n}" for n in _CARD_MODULES]
+                    # ★ 2026-10-14：必须带 cache-buster。
+                    #   HA 的静态文件只给 Etag/Last-Modified、**没有 Cache-Control**，
+                    #   浏览器会走启发式缓存（甚至不校验），升级后用户仍拿到旧模块 ——
+                    #   车主的"我看到的没变化"就是这个原因（服务端已经是新文件）。
+                    #   用文件 mtime 当令牌：每次部署 URL 都变 → 必然重新拉取。
+                    try:
+                        _tok = str(int(_bundle.stat().st_mtime))
+                    except OSError:
+                        _tok = "0"
+                    _names = (
+                        [_bundle.name] if _bundle.is_file() else list(_CARD_MODULES)
                     )
+                    _urls = [
+                        f"/lixiang_auto/lixiang-cards/{n}?v={_tok}" for n in _names
+                    ]
                     for _url in _urls:
                         add_extra_js_url(hass, _url)
                     _LOGGER.debug("已自动注入前端卡片资源 %d 个（%s）",
