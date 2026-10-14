@@ -83,7 +83,7 @@ let __fontBase = DEFAULT_FONT_BASE;   // setConfig 可覆盖
 const __fontFallback = BUILTIN_FONT_BASE;
 
 const I18N = {
-  title: "充电",
+  title: "充电管理",          // ★ 官方标题（不是"充电"）
   status: "充电状态",
   notCharging: "等待充电",   // ★ 官方文案（不是"未充电"）
   charging: "充电中",
@@ -93,6 +93,12 @@ const I18N = {
   volt: "输入电压",     // ★ 官方 4 项指标之三
   amp: "输入电流",      // ★ 官方 4 项指标之四  // ★ 官方 4 项指标之二（引擎键名 av = A×V）   // ★ 2026-10-14 官方文案（不是"充电功率"）
   remain: "剩余时间",
+  records: "充电记录",        // ★ 官方右上角入口
+  remainPrefix: "剩余",       // ★ 官方「剩余2小时7分钟」
+  hour: "小时",
+  apptEnd: "按时结束",        // ★ 官方文案
+  hint: "日常快充建议最高设置为95%，95%以上充电功率较低。",
+  footer: "适用于交流充电桩和理想20kW直流充电桩",
   limit: "充电上限",
   mode: "充电模式",
   appt: "预约充电",
@@ -140,12 +146,12 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_bold.ttf");    font-weight:600; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
-  :host { display:block;
+  lixiang-charge-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-charge-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
   .root { container-type:inline-size; position:relative; background:var(--lx-bg); color:var(--lx-t1); padding-bottom:16px;
@@ -164,6 +170,51 @@ const STYLE = `
   .hero { margin:6px 20px 0; border-radius:18px; padding:16px;
           background:linear-gradient(150deg,var(--lx-card) 0%,var(--lx-bg) 100%); }
   .hero .row1 { display:flex; align-items:center; gap:9px; }
+    /* ★ 2026-10-14 官方充电管理页：环形电量表 */
+    .ringwrap { position:relative; width:150px; height:150px; margin:14px auto 4px; }
+    .ring { width:100%; height:100%; display:block; }
+    .ring .rbg { fill:none; stroke:#e8eaee; stroke-width:9; }
+    .ring .rfg { fill:none; stroke:var(--lx-green); stroke-width:9; stroke-linecap:round;
+                 transform:rotate(-90deg); transform-origin:50% 50%;
+                 transition:stroke-dashoffset .5s ease; }
+    .ringwrap .bolt { position:absolute; left:50%; top:-13px; width:34px; margin-left:-17px; }
+    .ringwrap .rtx { position:absolute; inset:0; display:flex; align-items:center;
+                     justify-content:center; font-weight:600; }
+    .ringwrap .rtx span { font-size:42px; letter-spacing:-1px; }
+    .ringwrap .rtx small { font-size:15px; margin:12px 0 0 3px; }
+    .remline { text-align:center; font-size:15px; color:var(--lx-t2); margin:2px 0 12px; }
+    /* 上限滑杆块（官方） */
+    .limitbox { margin:12px 20px 0; background:var(--lx-card); border-radius:18px; padding:16px; }
+    .limitbox .lbrow1 { display:flex; align-items:baseline; justify-content:space-between;
+                        font-size:16px; font-weight:500; }
+    .limitbox .lbrow1 b { font-size:16px; font-weight:600; }
+    .limitbox .rng { -webkit-appearance:none; appearance:none; width:100%; height:6px;
+                     margin:16px 0 6px; border-radius:3px; background:linear-gradient(
+                       to right, var(--lx-green) 0%, var(--lx-green) var(--fill,100%),
+                       #e8eaee var(--fill,100%), #e8eaee 100%); outline:none; }
+    .limitbox .rng::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px;
+                      border-radius:50%; background:#fff; box-shadow:0 1px 4px rgba(0,0,0,.25); }
+    .limitbox .rng::-moz-range-thumb { width:18px; height:18px; border:0; border-radius:50%;
+                      background:#fff; box-shadow:0 1px 4px rgba(0,0,0,.25); }
+    .limitbox .lbrow2 { display:flex; justify-content:space-between; font-size:12px; color:var(--lx-t3); }
+    .limitbox .hint { margin-top:12px; font-size:12px; line-height:1.6; color:var(--lx-t3); }
+    /* 设置行（预约充电 / 按时结束） */
+    .setcard { margin:12px 20px 0; background:var(--lx-card); border-radius:18px; padding:0 16px; }
+    .setcard .setrow { display:flex; align-items:center; justify-content:space-between;
+                       min-height:56px; border-bottom:1px solid rgba(0,0,0,.05); }
+    .setcard .setrow:last-child { border-bottom:0; }
+    .setcard .sl { font-size:16px; }
+    .setcard .tg { position:relative; width:50px; height:30px; border-radius:15px;
+                   background:#dfe3e9; transition:background .2s; cursor:pointer; flex:0 0 auto; }
+    .setcard .tg i { position:absolute; top:3px; left:3px; width:24px; height:24px; border-radius:50%;
+                     background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.2); transition:left .2s; }
+    .setcard .tg.on { background:var(--lx-blue); }
+    .setcard .tg.on i { left:23px; }
+    .setcard .tmin { border:0; background:transparent; font-size:16px; color:var(--lx-t2);
+                     text-align:right; font-family:inherit; }
+    .pfoot { margin:14px 20px 26px; text-align:center; font-size:12px; color:var(--lx-t3); }
+    .topbar .reclink { margin-left:auto; margin-right:10px; border:0; background:transparent;
+                       font-size:15px; color:var(--lx-t1); font-family:inherit; cursor:pointer; }
   .hero .dot { width:9px; height:9px; border-radius:50%; background:var(--lx-t3); }
   .hero .dot.on { background:var(--lx-green); box-shadow:0 0 0 4px rgba(52,199,89,.16); }
   .hero .dot.err { background:var(--lx-red); }
@@ -453,6 +504,7 @@ class LixiangChargePage extends HTMLElement {
       <div class="topbar">
         <img class="back" id="back" src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="返回">
         <h1>${I18N.title}</h1>
+        <button class="reclink" id="go-records" type="button">${I18N.records}</button>
         <div class="refresh" id="refresh" role="button" tabindex="0" aria-label="刷新数据">
           <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="" style="transform:rotate(-90deg)">
         </div>
@@ -463,11 +515,16 @@ class LixiangChargePage extends HTMLElement {
           <span class="st" id="st">—</span>
           <span class="sub" id="sub"></span>
         </div>
-        <div class="barrow">
-          <span class="lb">${I18N.limit}</span>
-          <div class="bar"><i id="bar" style="width:0%"></i></div>
-          <span class="p" id="limitp">—</span>
+        <!-- ★ 2026-10-14 对齐官方「充电管理」页：环形电量表（SOC + 绿弧 + 闪电） -->
+        <div class="ringwrap">
+          <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="rbg" cx="60" cy="60" r="52"></circle>
+            <circle class="rfg" id="ring-arc" cx="60" cy="60" r="52"></circle>
+          </svg>
+          <img class="bolt" src="${__iconBase}/ic_home_lightning.png" onerror="__lxIconFallback(this)" alt="">
+          <div class="rtx"><span id="ring-soc">—</span><small>%</small></div>
         </div>
+        <div class="remline" id="rem-text">—</div>
         <div class="metrics">
           <div class="m"><div class="v"><span id="m-power">—</span><small id="u-power">km/hr</small></div>
             <div class="l">${I18N.power}</div></div>
@@ -479,9 +536,22 @@ class LixiangChargePage extends HTMLElement {
           <div class="l">${I18N.volt}</div></div>
         </div>
       </div>
+      <!-- ★ 2026-10-14 对齐官方：充电上限可拖滑杆 + 提示原文 -->
+      <div class="limitbox">
+        <div class="lbrow1"><span>${I18N.limit}</span><b id="limitp">—</b></div>
+        <input class="rng" type="range" id="limit-range" min="50" max="100" step="1" value="100"
+               aria-label="${I18N.limit}">
+        <div class="lbrow2"><span id="limit-min">50%</span><span id="limit-max">100%</span></div>
+        <div class="hint">${I18N.hint}</div>
+      </div>
+      <div class="setcard">
+        <div class="setrow"><span class="sl">${I18N.appt}</span>
+          <span class="tg" id="tg-appt" role="switch" tabindex="0" aria-checked="false"><i></i></span></div>
+        <div class="setrow"><span class="sl">${I18N.apptEnd}</span>
+          <input class="tmin" type="time" id="end-time" aria-label="${I18N.apptEnd}"></div>
+      </div>
+      <div class="pfoot">${I18N.footer}</div>
       <div class="stat3">
-        <div class="st"><div class="v"><span id="m-remain">—</span><small>min</small></div>
-            <div class="l">${I18N.remain}</div></div>
         <div class="st"><div class="v"><span id="m-mode">—</span></div>
             <div class="l">${I18N.mode}</div></div>
         <div class="st"><div class="v"><span id="s-month">—</span><small>kWh</small></div>
@@ -519,6 +589,56 @@ class LixiangChargePage extends HTMLElement {
       const p = (this._config.nav || {}).back || "/lixiang/app";
       lxNavigate(this, p);
     });
+    // ★ 2026-10-14 官方充电管理页：上限滑杆 / 预约开关 / 按时结束 / 记录入口
+    const rng = this.querySelector("#limit-range");
+    if (rng) {
+      rng.addEventListener("change", async () => {
+        const eid = this._eid("limit_num");
+        if (!eid) { this._toast("充电上限不可设置", "err"); return; }
+        const v = Number(rng.value);
+        try {
+          await this._hass.callService("number", "set_value", { entity_id: eid, value: v });
+          this._toast("充电上限已设为 " + v + "%", "ok");
+        } catch (err) { this._toast("设置失败：" + ((err && err.message) || "未知"), "err"); }
+      });
+    }
+    const tgEl = this.querySelector("#tg-appt");
+    if (tgEl) {
+      const flip = async () => {
+        const eid = this._eid("appt_sw");
+        if (!eid) { this._toast("预约充电不可用", "err"); return; }
+        const st = this._hass && this._hass.states ? this._hass.states[eid] : null;
+        const on = !!(st && st.state === "on");
+        try {
+          await this._hass.callService("switch", on ? "turn_off" : "turn_on", { entity_id: eid });
+          tgEl.classList.toggle("on", !on);
+          tgEl.setAttribute("aria-checked", !on ? "true" : "false");
+          this._toast(I18N.appt + (on ? "已关闭" : "已开启"), "ok");
+        } catch (err) { this._toast("操作失败：" + ((err && err.message) || "未知"), "err"); }
+      };
+      this._a11y(tgEl, I18N.appt, flip);
+      tgEl.addEventListener("click", flip);
+    }
+    const teEl = this.querySelector("#end-time");
+    if (teEl) {
+      teEl.addEventListener("change", async () => {
+        const eid = this._eid("end_time");
+        if (!eid || !teEl.value) { this._toast("按时结束不可设置", "err"); return; }
+        try {
+          await this._hass.callService("time", "set_value", { entity_id: eid, time: teEl.value + ":00" });
+          this._toast(I18N.apptEnd + " " + teEl.value, "ok");
+        } catch (err) { this._toast("设置失败：" + ((err && err.message) || "未知"), "err"); }
+      });
+    }
+    const rec = this.querySelector("#go-records");
+    if (rec) {
+      const go = () => {
+        const t = this.querySelector("#ctabs") || this.querySelector("#years");
+        if (t && t.scrollIntoView) t.scrollIntoView({ behavior: "smooth", block: "start" });
+      };
+      this._a11y(rec, I18N.records, go);
+      rec.addEventListener("click", go);
+    }
     // ★ 2026-10-11：充电类型筛选绑定（漏了这行就只是"画了不响应"）
     this._bindCTypes();
     const rf2 = this.querySelector("#refresh");
@@ -573,6 +693,33 @@ class LixiangChargePage extends HTMLElement {
     })();
 
     this._built = true;
+  }
+
+  /** ★ 2026-10-14 时长格式化：官方「剩余2小时7分钟」（不是 185 min）。 */
+  _fmtDur(minutes) {
+    const t = Math.max(0, Math.round(Number(minutes) || 0));
+    const h = Math.floor(t / 60), m = t % 60;
+    if (h <= 0) return m + I18N.min;
+    if (m === 0) return h + I18N.hour;
+    return h + I18N.hour + m + I18N.min;
+  }
+
+  /** ★ 2026-10-14 上限滑杆：范围取 number 实体的 min/max（官方页显示 80%–100%）。 */
+  _syncLimitSlider(lim) {
+    const r = this.querySelector("#limit-range");
+    if (!r) return;
+    const st = this._hass && this._hass.states ? this._hass.states[this._eid("limit_num")] : null;
+    const a = (st && st.attributes) || {};
+    const mn = Number.isFinite(Number(a.min)) ? Number(a.min) : 50;
+    const mx = Number.isFinite(Number(a.max)) ? Number(a.max) : 100;
+    r.min = String(mn); r.max = String(mx);
+    const v = lim == null ? mx : Math.max(mn, Math.min(mx, lim));
+    if (document.activeElement !== r) r.value = String(Math.round(v));
+    const pct = mx > mn ? ((v - mn) / (mx - mn)) * 100 : 100;
+    r.style.setProperty("--fill", pct + "%");
+    const la = this.querySelector("#limit-min"), lb = this.querySelector("#limit-max");
+    if (la) la.textContent = mn + "%";
+    if (lb) lb.textContent = mx + "%";
   }
 
   /** 轻提示（★ 2026-10-09 新增：充电口盖开合需要"已下发/失败原因"的明确反馈） */
@@ -932,15 +1079,39 @@ class LixiangChargePage extends HTMLElement {
     if (fault && String(fault) !== "off" && String(fault) !== "正常") {
       q("#dot").className = "dot err";
     }
-    q("#sub").textContent = isCharging ? "⚡ 充电中" : "";
+    // ★ 2026-10-14：状态行已显示「充电中」，这里不再重复一遍（官方页状态由环形表表达）
+    q("#sub").textContent = fault && String(fault) !== "off" && String(fault) !== "正常" ? "充电故障" : "";
 
-    // 上限 + 电量
-    const lim = this._num(this._eid("limit"));
+    // ★ 2026-10-14 对齐官方：环形电量表（SOC）+ 上限滑杆
+    const lim = this._num(this._eid("limit") || this._eid("limit_sensor"));
     const soc = this._num(this._eid("soc"));
+    const arc = q("#ring-arc");
+    if (arc) {
+      const C = 2 * Math.PI * 52;
+      const frac = soc == null ? 0 : Math.max(0, Math.min(100, soc)) / 100;
+      arc.style.strokeDasharray = C + " " + C;
+      arc.style.strokeDashoffset = String(C * (1 - frac));
+    }
+    const rs = q("#ring-soc");
+    if (rs) rs.textContent = soc == null ? "—" : String(Math.round(soc));
     q("#limitp").textContent = lim == null ? "—" : lim + "%";
-    const bar = q("#bar");
-    if (soc != null) { bar.style.width = Math.max(0, Math.min(100, soc)) + "%"; }
-    else if (lim != null) { bar.style.width = lim + "%"; }
+    this._syncLimitSlider(lim);
+    // 预约充电开关 / 按时结束
+    const apptEid = this._eid("appt_sw");
+    const apptSt = apptEid && this._hass && this._hass.states ? this._hass.states[apptEid] : null;
+    const tg0 = q("#tg-appt");
+    if (tg0) {
+      const on = !!(apptSt && apptSt.state === "on");
+      tg0.classList.toggle("on", on);
+      tg0.setAttribute("aria-checked", on ? "true" : "false");
+      tg0.setAttribute("aria-label", I18N.appt + (on ? "（已开启）" : "（已关闭）"));
+    }
+    const te0 = q("#end-time");
+    if (te0 && document.activeElement !== te0) {
+      const tSt = this._hass && this._hass.states[this._eid("end_time")];
+      const tv = tSt && tSt.state && /^\d{1,2}:\d{2}/.test(tSt.state) ? tSt.state.slice(0, 5) : "";
+      te0.value = tv;
+    }
 
     // 三项
     const p = this._num(this._eid("power")), rm = this._num(this._eid("remain")), md = this._txt(this._eid("mode"));
@@ -949,7 +1120,9 @@ class LixiangChargePage extends HTMLElement {
       const pSt = this._hass && this._hass.states[this._eid("power")];
       const pU = (pSt && pSt.attributes && pSt.attributes.unit_of_measurement) || "km/hr";
       const uEl = q("#u-power"); if (uEl) uEl.textContent = pU;
-    q("#m-remain").textContent = rm == null ? "—" : rm;
+    // ★ 2026-10-14 官方格式：「剩余2小时7分钟」（原来显示 185 min）
+    const rEl = q("#rem-text");
+    if (rEl) rEl.textContent = rm == null ? I18N.remainPrefix + " —" : I18N.remainPrefix + this._fmtDur(rm);
       // ★ 官方 4 项指标之三/四：输入电压 / 输入电流（单位跟随实体）
       const Sx = (id) => (id && this._hass && this._hass.states) ? this._hass.states[id] : null;
       const vSt = Sx(this._eid("charge_voltage")), aSt = Sx(this._eid("charge_current"));

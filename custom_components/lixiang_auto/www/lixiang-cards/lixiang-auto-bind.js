@@ -78,6 +78,12 @@ const AUTO_BIND = {
     charge_status:  ["充电状态"],
     charge_complete:["充电完成状态"],
     charge_limit:   ["充电上限"],
+    // ★ 2026-10-14 官方充电管理页：上限要能"拖"→ 必须拿到 number 实体
+    limit_num:      { name: "充电上限", domain: "number" },
+    limit_sensor:   { name: "充电上限", domain: "sensor" },
+    appt_sw:        { name: "预约充电", domain: "switch" },
+    end_time:       { name: "充电结束时间", domain: "time" },
+    start_time:     { name: "充电开始时间", domain: "time" },
     charge_mode:    ["充电模式"],
     // ★ 2026-10-14：总览卡的「充电功率」用它（派生实体，kW，V×A）
     charge_power:   { name: "充电功率", domain: "sensor" },

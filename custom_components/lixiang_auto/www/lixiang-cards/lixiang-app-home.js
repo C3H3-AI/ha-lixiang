@@ -92,21 +92,21 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_bold.ttf");    font-weight:600; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
 
-  :host { display:block;
+  lixiang-app-home { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-app-home { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
   /* 2026-10-12：兜底 —— 长内容不得撑破视口（车主："手机上右边溢出"）。
      真正修复是把 grid 列改成 minmax(0,1fr)；这里再加一道保险。
      ★★ 必须 clip，不能 hidden（2026-10-13 实测）：overflow-x:hidden 会把
-        overflow-y 计算成 auto → :host/.root 成为滚动容器 → 里面的
+        overflow-y 计算成 auto → lixiang-app-home/.root 成为滚动容器 → 里面的
         .head{position:sticky} 被困住，「抬头固定」直接失效（滚动后抬头消失）。
         clip 同样裁剪但【不创建滚动容器】。别再改回 hidden。 */
-  :host { display:block; max-width:100%; overflow-x:clip; }
+  lixiang-app-home { display:block; max-width:100%; overflow-x:clip; }
   .wrap > *, .row2 > *, .entries > *, .quick > * { min-width:0; }
   .root { container-type:inline-size; background:var(--lx-bg); color:var(--lx-t1); padding-bottom:14px; overflow-x:clip;
     font-family:"Licium",-apple-system,"PingFang SC",sans-serif;
@@ -406,7 +406,7 @@ const STYLE = `
        ★ 2026-10-14：v1.5.7 的提交说明声称加过这段，但 diff 里只改了 11 张
          页面卡，app-home **从未真正加上** —— 断点一直不存在。
          同时 container-type 必须挂在 .root（真实元素）上：
-         light DOM 里写在 :host 上的 container-type 不生效，容器查询不会触发。 */
+         light DOM 里写在 lixiang-app-home 上的 container-type 不生效，容器查询不会触发。 */
     @container (max-width: 480px) {
       /* ★ 2026-10-14 车主："为什么下面是一列了？"
          官方在手机宽度：下方两张卡**并排**、入口瓦片**一行两个**、

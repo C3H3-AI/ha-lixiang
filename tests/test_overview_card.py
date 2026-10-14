@@ -552,6 +552,59 @@ class TestQuickActiveState:
         dup = {k: v for k, v in _c.Counter(ids).items() if v > 1}
         assert not dup, f"充电页有重复 id：{dup}"
 
+    def test_charge_manage_page_matches_official(self):
+        """★ 官方「充电管理」页（车主 2026-10-14 截图）逐块对齐。
+
+        官方结构：标题充电管理 + 右上充电记录 · 环形电量表(SOC+绿弧+闪电) ·
+        「剩余2小时7分钟」 · 4 项指标 · 充电上限滑杆(80–100%) + 提示 ·
+        预约充电开关 · 按时结束 · 页脚。
+        （「停止充电」不做：命令 remote_charge_control 走 App metaJob 通道，
+          HTTP 实测 2009，见 li_api.py 的 _JOB_CHANNEL_COMMANDS。）
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-charge-page.js")
+        s = p.read_text(encoding="utf-8")
+        for eid in ("ring-arc", "ring-soc", "rem-text", "limit-range",
+                    "limit-min", "limit-max", "tg-appt", "end-time", "go-records"):
+            assert f'id="{eid}"' in s, f"缺官方元素 #{eid}"
+        assert 'title: "充电管理"' in s, "标题应为官方的「充电管理」"
+        assert 'records: "充电记录"' in s, "缺右上角「充电记录」入口"
+        assert "日常快充建议最高设置为95%" in s, "缺官方提示原文"
+        assert "适用于交流充电桩和理想20kW直流充电桩" in s, "缺官方页脚原文"
+        assert 'apptEnd: "按时结束"' in s, "缺官方文案「按时结束」"
+        # 时长格式：官方「剩余2小时7分钟」（不是 185 min）
+        i = s.find("_fmtDur(minutes)")
+        assert i > 0, "缺时长格式化"
+        seg = s[i:i + 400]
+        assert "I18N.hour" in seg and "I18N.min" in seg, "时长格式未用官方单位"
+        # 滑杆要真的能下发（number.set_value）且范围取实体 min/max
+        assert 'callService("number", "set_value"' in s, "上限滑杆未接下发"
+        assert 'attributes.min' in s.replace("a.min", "attributes.min") or "a.min" in s, "滑杆未取实体 min/max"
+        # 预约开关 / 按时结束也要能下发
+        assert 'callService("switch", on ? "turn_off" : "turn_on"' in s, "预约开关未接下发"
+        assert 'callService("time", "set_value"' in s, "按时结束未接下发"
+
+    def test_no_host_selector_without_shadow_dom(self):
+        """★ 2026-10-14 真 bug：14 个卡把主题变量写在 `:host`，但它们都不用 Shadow DOM
+        → `:host` 永不匹配 → 强调色变量（--lx-green/orange/red）一直是空的
+        （实测：环形电量表的弧线 stroke 计算成 none、状态点不变绿）。
+
+        仓库里 test_card_container_queries.py 早就记录过同类教训（container-type 挂 :host
+        导致容器查询永不触发），这次是主题变量重蹈覆辙。
+        """
+        import re as _re
+        d = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards")
+        bad = []
+        for f in sorted(d.glob("lixiang-*.js")):
+            if f.name == "lixiang-all.js":
+                continue
+            src = f.read_text(encoding="utf-8")
+            # 只认「选择器」形式（:host 后跟 { ），排除注释里提到 :host 的情况
+            if _re.search(r":host\s*(\{|,)", src) and "attachShadow" not in src:
+                bad.append(f.name)
+        assert not bad, f"这些卡不用 Shadow DOM 却写了 :host：{bad}"
+
     def test_charge_page_wording_matches_official(self):
         """★ 车主："文案还有问题，充电效率，不是充电功率，单位也有问题。"
 
