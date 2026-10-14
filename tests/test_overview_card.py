@@ -247,3 +247,45 @@ class TestRuntime:
         process.stdout.write(el._eid('battery'));
         """
         assert self._run(code) == "sensor.mine", "手填实体应优先于自动发现"
+
+
+class TestUnits:
+    """★ 单位不能被假设（2026-10-14，车主截图实测到的真 bug）。
+
+    截图里总览卡把胎压显示成 `250.3 bar`、油量显示成 `78 %`：
+      · 胎压实体单位是 **kPa**（250.25），卡片直接当 bar 显示 → 250.3 bar
+      · 油量实体当时标着 L，卡片当百分比画条 → 两者都不对
+
+    现在卡片按实体真实 `unit_of_measurement` 换算/显示。
+    """
+
+    def _card(self) -> str:
+        return _strip_comments(_src())
+
+    def test_pressure_converts_kpa_to_bar(self):
+        s = self._card()
+        assert "_pressure(" in s, "缺胎压换算方法"
+        assert 'u.includes("kpa")' in s and "v / 100" in s, "kPa 未换算成 bar"
+        assert 'u.includes("psi")' in s, "未处理 psi"
+        assert 'u.includes("bar")' in s, "未处理 bar"
+
+    def test_tire_uses_pressure_helper(self):
+        s = self._card()
+        i = s.find("const tire = (field, label)")
+        assert i > 0, "未找到胎压渲染"
+        seg = s[i:i + 400]
+        assert "this._pressure(field)" in seg, "胎压渲染没走换算"
+        assert "2.0" in seg and "2.9" in seg, "低压/高压阈值缺失（应与健康页一致）"
+
+    def test_percent_requires_percent_unit(self):
+        s = self._card()
+        assert "_pct(" in s, "缺百分比判定"
+        i = s.find("_pct(field)")
+        seg = s[i:i + 320]
+        assert 'u.includes("%")' in seg, "百分比判定未校验实体单位"
+
+    def test_no_hardcoded_bar_or_percent_labels(self):
+        """胎压/油量的单位必须来自实体，不能写死。"""
+        s = self._card()
+        assert "<small>bar</small></div>" not in s, "胎压单位写死成 bar 了"
+        assert '${this._unit(field)' in s, "未按实体单位显示"

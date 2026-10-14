@@ -181,11 +181,18 @@ class TestHomePageWiring:
     """源码层面：确认过滤真的接在渲染路径上（不只是有个孤立方法）。"""
 
     def test_quick_filtered_at_render(self):
+        """渲染前必须过滤 QUICK。
+
+        ★ 2026-10-14 结构调整：网格渲染从 `_build()` 抽成 `_renderQuick()`，
+        过滤仍在其内部（`_build` 与更新链路都调用它）。
+        """
         src = HOME.read_text(encoding="utf-8")
-        i = src.index('const q = this.querySelector("#quick")')
-        blk = src[i:i + 500]
+        i = src.index("  _renderQuick(warmup) {")
+        blk = src[i:i + 700]
         assert "QUICK.filter" in blk, "渲染前必须过滤 QUICK"
         assert "avail.forEach" in blk, "必须遍历过滤后的集合"
+        # 而且真的接在渲染路径上（不只存在一个孤立方法）
+        assert "this._renderQuick(" in src, "_renderQuick 未被调用"
 
     def test_empty_state_present(self):
         src = HOME.read_text(encoding="utf-8")

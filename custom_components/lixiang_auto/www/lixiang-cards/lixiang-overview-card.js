@@ -108,6 +108,38 @@ const STYLE = `
                  grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
   .note { font-size:10px; color:#98a7bb; padding:0 26px 15px; line-height:1.7; }
 
+  /* ── 超宽屏（电脑/分区视图占满整行）────────────────────────────
+     ★ 2026-10-14：卡片拉到 1400px+ 时三栏被拉散、内容稀疏（大片空白）。
+     处理：① 内容区限宽 1440px 居中，避免无限拉伸；
+           ② 同档放大车图与字号，让宽屏有"大屏该有的信息密度"。 */
+  @container (min-width: 1250px) {
+    .main { max-width:1440px; margin:0 auto; gap:34px; padding:26px 34px 20px; }
+    .title { font-size:34px; }
+    .subtitle { font-size:13px; }
+    .badge { font-size:12px; padding:5px 12px; }
+    .art { height:214px; }
+    .art-note { font-size:10px; }
+    .range-main>b { font-size:44px; }
+    .range-main>span { font-size:13px; }
+    .meter { padding:15px 18px; margin-top:12px; border-radius:17px; }
+    .meter-top strong { font-size:26px; }
+    .track { height:6px; margin:12px 0; }
+    .range b { font-size:18px; }
+    .charge { font-size:12px; margin-top:14px; }
+    .section-label { font-size:13px; margin:8px 0 12px; }
+    .tire-grid { height:196px; grid-template-columns:1fr 96px 1fr; gap:8px 6px; }
+    .top-car { width:96px; height:184px; }
+    .tire b { font-size:25px; }
+    .tire span { font-size:11px; }
+    .cabin { gap:10px; margin-top:16px; }
+    .cabin .detail-stat { padding:12px 11px; }
+    .cabin .detail-stat b { font-size:17px; }
+    .cabin .detail-stat span { font-size:11px; }
+    .footer, .details summary, .detail-grid, .note { max-width:1440px; margin-left:auto; margin-right:auto; }
+    .footer { padding:12px 34px; font-size:11px; }
+    .detail-grid { gap:20px; }
+  }
+
   @container (max-width: 950px) {
     .main { gap:18px; padding:20px; }
     .title { font-size:25px; }
@@ -116,10 +148,15 @@ const STYLE = `
     .top-car { width:58px; }
     .footer { padding:10px 20px; }
   }
+  /* 中等宽度（HA masonry 单列 ≈500-750px）：身份区与能量区**并排**，
+     而不是把身份区拉满整行（那样在电脑上像手机版）。车况整行放下面。 */
   @container (max-width: 750px) {
-    .main { grid-template-columns:1fr 1fr; gap:16px; }
-    .identity { grid-column:1/-1; }
-    .title { font-size:28px; }
+    .main { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:16px 18px; }
+    .condition { grid-column:1/-1; padding-top:14px; border-top:1px solid #ffffff12; }
+    .tire-grid { grid-template-columns:minmax(0,1fr) 84px minmax(0,1fr); height:170px; }
+    .top-car { width:84px; height:158px; }
+    .title { font-size:26px; }
+    .art { height:150px; }
     .detail-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
   }
   @container (max-width: 480px) {
@@ -209,6 +246,32 @@ class LixiangOverviewCard extends __Base {
     if (n === null) return "—";
     return n.toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d });
   }
+  /** 实体单位（小写）—— 不假设单位，按实体实际单位换算/显示 */
+  _unit(field) {
+    const st = this._st(field);
+    return String(((st && st.attributes) || {}).unit_of_measurement || "").toLowerCase();
+  }
+
+  /** 胎压 → {v, unit}：实体是 kPa 时换算成 bar（与「车辆健康」页同一规则） */
+  _pressure(field) {
+    const v = this.num(field);
+    if (v === null) return { v: null, unit: "bar" };
+    const u = this._unit(field);
+    if (u.includes("kpa")) return { v: v / 100, unit: "bar" };
+    if (u.includes("psi")) return { v: v / 14.5038, unit: "bar" };
+    if (u.includes("bar")) return { v, unit: "bar" };
+    return { v, unit: u || "bar" };
+  }
+
+  /** 百分比类字段：只有实体单位确实是 % 才当作百分比（可画进度条） */
+  _pct(field) {
+    const v = this.num(field);
+    if (v === null) return null;
+    const u = this._unit(field);
+    if (u && !u.includes("%")) return null;
+    return Math.max(0, Math.min(100, v));
+  }
+
   esc(v) {
     return String(v ?? "").replace(/[&<>"']/g, (c) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -295,24 +358,27 @@ class LixiangOverviewCard extends __Base {
     const charge = this.state("charge_status");
     const drive = this.state("status");
 
-    const battery = this.num("battery");
-    const fuel = this.num("fuel");
     const w = (v) => Math.max(0, Math.min(100, v || 0));
 
+    // pct=null 表示该实体不是百分比（例如油量若按升上报）→ 只显示带单位的数值，不画误导性进度条
     const meter = (label, field, rangeField, color, pct) => `
       <section class="meter ${color}">
-        <div class="meter-top"><span>${label}</span><strong>${pct === null ? "—" : this.fmt(field)}<small> %</small></strong></div>
-        <div class="track" role="meter" aria-label="${label}" aria-valuemin="0" aria-valuemax="100"
-             ${pct === null ? "" : `aria-valuenow="${pct}"`}><i style="width:${w(pct)}%"></i></div>
+        <div class="meter-top"><span>${label}</span><strong>${this.num(field) === null ? "—"
+          : pct === null ? `${this.fmt(field, 1)}<small> ${this._unit(field) || ""}</small>`
+          : `${this.fmt(field)}<small> %</small>`}</strong></div>
+        ${pct === null ? "" : `<div class="track" role="meter" aria-label="${label}" aria-valuemin="0" aria-valuemax="100"
+             aria-valuenow="${pct}"><i style="width:${w(pct)}%"></i></div>`}
         <div class="range"><span>${color === "electric" ? "纯电续航" : "燃油续航"}</span>
           <b>${this.fmt(rangeField)} <small>km</small></b></div>
       </section>`;
 
     const tire = (field, label) => {
-      const n = this.num(field);
-      const low = n !== null && n > 0 && n < 2.0;
-      return `<div class="tire${low ? " low" : ""}"><span>${label}</span>
-        <b>${this.fmt(field, 1)}</b><small>bar</small></div>`;
+      const p = this._pressure(field);          // ★ kPa → bar（之前直接显示 kPa 数值当 bar）
+      const bad = p.v !== null && p.v > 0 && (p.v < 2.0 || p.v > 2.9);   // 与健康页同阈值
+      // 低压时多给一位小数，避免"显示 2.0 却标黄"的困惑（如 1.977 bar）
+      const txt = p.v === null ? "—" : (bad && p.v < 2.0 ? p.v.toFixed(2) : p.v.toFixed(1));
+      return `<div class="tire${bad ? " low" : ""}"><span>${label}</span>
+        <b>${txt}</b><small>${p.unit}</small></div>`;
     };
     const stat = (label, value) =>
       `<div class="detail-stat"><span>${label}</span><b>${value}</b></div>`;
@@ -347,8 +413,8 @@ class LixiangOverviewCard extends __Base {
         <section class="energy">
           <div class="range-main"><span>总续航</span>
             <b>${this.fmt("range_total")} <small>km</small></b></div>
-          ${meter("电池电量", "battery", "range_elec", "electric", battery)}
-          ${meter("油量", "fuel", "range_fuel", "fuel", fuel)}
+          ${meter("电池电量", "battery", "range_elec", "electric", this._pct("battery"))}
+          ${meter("油量", "fuel", "range_fuel", "fuel", this._pct("fuel"))}
           <div class="charge"><span>${this.esc(chargeText)}</span>
             <b>${this.num("charge_power") === null ? "—" : this.fmt("charge_power", 1) + " kW"}</b></div>
         </section>
@@ -446,7 +512,8 @@ if (typeof customElements !== "undefined" && !customElements.get(CARD_TAG)) {
 }
 if (typeof window !== "undefined") {
   window.customCards = window.customCards || [];
-  window.customCards.push({
+// 去重：自动注入 + 手工注册可能同时存在，避免卡片选择器出现重复项
+if (!window.customCards.some((c) => c && c.type === CARD_TAG)) window.customCards.push({
     type: CARD_TAG,
     name: "理想汽车 · 车辆总览",
     description: "电量 / 续航 / 胎压 / 车况的只读总览卡（深色玻璃风格，实体自动发现，零配置）",

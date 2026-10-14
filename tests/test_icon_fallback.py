@@ -185,3 +185,36 @@ class TestQuickIconReassignment:
         seg = s[i:i + 3000]
         assert 'img.getAttribute("src") !== want' in seg, (
             "应只在目标变化时赋值，避免把已回退成功的内置图标再写回 /local")
+
+
+class TestFrontendAutoInjection:
+    """★ 集成必须**自动注入**前端卡片资源（2026-10-14）。
+
+    背景：HACS 不会替自定义集成注册 Lovelace 资源，用户要自己逐条添加；
+    漏加就只显示第一个界面、其余页面点不动（车主反馈：其他用户只能用第一个界面）。
+    现在由集成用 frontend.add_extra_js_url 注入，用户零配置。
+    """
+
+    def test_init_calls_add_extra_js_url(self):
+        src = (ROOT / "custom_components" / "lixiang_auto" / "__init__.py").read_text(encoding="utf-8")
+        assert "add_extra_js_url" in src, "未自动注入前端资源（用户需手工注册，易漏）"
+
+    def test_injects_shell_and_overview(self):
+        src = (ROOT / "custom_components" / "lixiang_auto" / "__init__.py").read_text(encoding="utf-8")
+        assert "lixiang-app.js" in src, "未注入总卡片外壳（一张卡即全部页面的入口）"
+        assert "lixiang-overview-card.js" in src, "未注入车辆总览卡"
+        assert "_CARD_MODULES" in src, "缺注入清单常量"
+        # 历史"每页一个视图"的用法也必须有定义，否则那些视图会空白
+        for card in ("lixiang-charge-page.js", "lixiang-climate-page.js", "lixiang-seat-page.js"):
+            assert card in src, f"注入清单缺 {card}（多视图用法下该页会空白）"
+
+    def test_guarded_by_frontend_component(self):
+        src = (ROOT / "custom_components" / "lixiang_auto" / "__init__.py").read_text(encoding="utf-8")
+        assert '"frontend" in hass.config.components' in src, (
+            "注入前必须判断 frontend 组件是否就绪（否则会抛错或被记录为集成错误）")
+
+    def test_cards_dedupe_card_picker(self):
+        """自动注入 + 手工注册并存时，卡片选择器不能出现重复项。"""
+        for f in _cards_with_icons():
+            s = f.read_text(encoding="utf-8")
+            assert "window.customCards.some" in s, f"{f.name}: 未对 customCards 去重"

@@ -58,6 +58,34 @@ from .signer import LiCarSigner
 _OWNER_ONLY_NOTICE = "仅车主账号可用（服务端按账号角色限制）"
 
 
+# ★ 2026-10-14：随集成自动注入的前端卡片模块清单。
+#
+# 为什么全部注入（而不只注入外壳）：
+#   · 外壳（lixiang-app.js）**一张卡就含全部 13 个页面**，是推荐用法；
+#   · 但历史文档教用户"每个页面各建一个视图"，那 13 个视图各自的卡片
+#     （custom:lixiang-charge-page 等）也必须被定义，否则视图一片空白。
+#     HACS 不会替集成注册 Lovelace 资源 → 用户漏加就"下面的都无法操作"。
+#   · 这些模块只在被用到的页面实例化（外壳内部也按需 import），
+#     静态文件由浏览器缓存，代价可控。
+_CARD_MODULES = (
+    "lixiang-app.js",              # 总卡片（内部含全部页面 + 导航）
+    "lixiang-app-home.js",
+    "lixiang-charge-page.js",
+    "lixiang-energy-page.js",
+    "lixiang-health-page.js",
+    "lixiang-setting-page.js",
+    "lixiang-scene-page.js",
+    "lixiang-climate-page.js",
+    "lixiang-seat-page.js",
+    "lixiang-location-page.js",
+    "lixiang-vehicle-info-page.js",
+    "lixiang-task-page.js",
+    "lixiang-ad-page.js",
+    "lixiang-bindings-card.js",
+    "lixiang-overview-card.js",    # 车辆总览（可单独使用）
+)
+
+
 async def _owner_only_hint(hass, result) -> str:
     """任务/充电服务在「结果为空」时给出准确原因。
 
@@ -388,6 +416,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 StaticPathConfig("/lixiang_auto", str(_cards_dir), False),
             ])
             _LOGGER.debug("已注册前端卡片静态路径: /lixiang_auto → %s", _cards_dir)
+
+            # ★ 2026-10-14：**自动注入前端卡片资源**，用户无需手工注册 Lovelace 资源。
+            #
+            # 背景：HACS 不会替自定义集成注册前端资源，用户必须自己到
+            # 「设置 → 仪表盘 → 资源」里逐条添加；漏加就只显示第一个界面、
+            # 其余页面点不动（车主反馈"其他用户只能用第一个界面"）。
+            # 这里用 HA 官方 frontend.add_extra_js_url 注入：
+            #   · 只注入「总卡片外壳」——它内部按需 import 全部子页面，
+            #     所以一个资源即可覆盖 13 个页面（已实测：单资源 → 13/13 加载成功）
+            #   · 另注入「车辆总览卡」（独立单卡，用户可能单独使用）
+            # 手工注册过也没关系：HA 对重复 URL 去重，卡片列表也做了去重。
+            try:
+                if "frontend" in hass.config.components:
+                    from homeassistant.components.frontend import add_extra_js_url
+
+                    # ★ 2026-10-14：优先注入**单文件版**（scripts/build-cards.mjs 生成）
+                    #   —— 1 个资源即含全部卡片，没有相对路径依赖（车主："不能合成一个？"）。
+                    #   单文件不存在时（老部署）回退为逐个模块注入。
+                    _bundle = _cards_dir / "lixiang-cards" / "lixiang-all.js"
+                    _urls = (
+                        [f"/lixiang_auto/lixiang-cards/{_bundle.name}"]
+                        if _bundle.is_file()
+                        else [f"/lixiang_auto/lixiang-cards/{n}" for n in _CARD_MODULES]
+                    )
+                    for _url in _urls:
+                        add_extra_js_url(hass, _url)
+                    _LOGGER.debug("已自动注入前端卡片资源 %d 个（%s）",
+                                  len(_urls), "单文件" if _bundle.is_file() else "多文件")
+            except Exception as _ferr:  # noqa: BLE001
+                _LOGGER.debug("自动注入前端资源失败（用户可手工注册）: %s", _ferr)
 
             # ★ 2026-10-12：官方静态车模图缓存目录（按需下载，见 car_image.py）。
             #   挂在 /lixiang_car 下，卡片直接 <img src="/lixiang_car/…"> 引用。
