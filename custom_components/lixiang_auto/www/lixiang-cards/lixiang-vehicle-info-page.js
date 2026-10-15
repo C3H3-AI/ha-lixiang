@@ -20,14 +20,14 @@ const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallb
  * App 实测结构（截图 1260×2844 @3x）：
  *   卡1（4 行）：🚗车辆昵称 理想L6 / 🚗车牌号 浙A12345 /
  *                🚗车辆型号 理想L6 / Ⓥ车架号 HLX32XXXXXXXXXXXX
- *   卡2（1 行）：ⓘ整车软件版本 V8.6.0
+ *   卡2（2 行）：ⓘ车机版本 / OTA（版本 · 状态 · 进度）
  *
  * 数据源：
  *   ✅ 车辆昵称/型号 —— HA 设备注册表
  *   ✅ 车架号 —— 设备 serial_number
  *   ✅ 配置等级 / 辅助驾驶等级 —— 车辆配置实体属性
  *   ⚠️ 车牌号 —— 接口需特殊 token（100032），暂不可用
- *   ⚠️ 整车软件版本 —— 集成未采集
+ *   ✅ 车机版本 / OTA —— head_unit_ver + ota_version/status/progress（2026-10-14 补）
  */
 
 import { renderCards } from "./lixiang-info-page.js";
@@ -94,11 +94,11 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
-  :host { display:block;
+  lixiang-vehicle-info-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-vehicle-info-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
     .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
@@ -217,7 +217,10 @@ class LixiangVehicleInfoPage extends HTMLElement {
               { icon: "ic_home_dialogue.png",    k: "车架号",   id: "v-vin", mono: true },
           ]},
           { rows: [
-              { icon: "ic_home_health.webp",     k: "整车软件版本", id: "v-sw", na: "暂不可用", rowId: "r-sw", click: true },
+              // ★ 2026-10-14 修正：原来写死「暂不可用/集成未采集」，但集成确有
+              //   `车机版本`（head_unit_ver）与 `OTA 版本/状态/进度` 实体。
+              { icon: "ic_home_health.webp",     k: "整车软件版本", id: "v-sw" },
+              { icon: "ic_home_update.webp",     k: "OTA",      id: "v-ota" },
           ]},
           { rows: [
               { icon: "ic_home_control.webp",    k: "配置等级",     id: "v-cfg" },
@@ -239,8 +242,7 @@ class LixiangVehicleInfoPage extends HTMLElement {
     // 暂不可用的两项：点击说明原因
     const why = (msg) => () => this._toast(msg);
     const p1 = why("车牌号需要额外的接口令牌（当前返回 100032），集成暂无法读取");
-    const p2 = why("整车软件版本集成尚未采集，可在 App「车辆设置」或车机内查看");
-    [["#r-plate", p1, "车牌号"], ["#r-sw", p2, "整车软件版本"]].forEach(([sel, fn, label]) => {
+    [["#r-plate", p1, "车牌号"]].forEach(([sel, fn, label]) => {
       const el = this.querySelector(sel); if (!el) return;
       this._a11y(el, label, fn);
       el.addEventListener("click", fn);
@@ -310,6 +312,23 @@ class LixiangVehicleInfoPage extends HTMLElement {
       || ((this._hass && this._hass.states && this._eid("battery"))
           ? "" : "");
     q("#v-vin").textContent = vin || "—";
+
+    // ★ 2026-10-14：车机版本 / OTA（对齐官方 —— OTA 与软件版本都属车辆设置类二级页）
+    // 本卡没有 _st 助手（那是首页卡的），用局部 S() 取状态
+    const S = (id) => (id && this._hass && this._hass.states) ? this._hass.states[id] : null;
+    const swEid = this._eid("head_unit_ver") || this._eid("ota_version");
+    const swSt = swEid ? S(swEid) : null;
+    q("#v-sw").textContent = (swSt && swSt.state && !["unknown", "unavailable"].includes(swSt.state))
+      ? String(swSt.state) : "—";
+    const oV = S(this._eid("ota_version"));
+    const oS = S(this._eid("ota_status"));
+    const oP = S(this._eid("ota_progress"));
+    const ok = (x) => x && x.state && !["unknown", "unavailable"].includes(x.state);
+    const ver = ok(oV) ? String(oV.state) : "";
+    const pg = oP ? parseFloat(oP.state) : NaN;
+    q("#v-ota").textContent = ok(oS)
+      ? (String(oS.state) + (ver ? " · " + ver : "") + (pg > 0 && pg < 100 ? " " + Math.round(pg) + "%" : ""))
+      : (ver || "—");
 
     // 配置等级 / 辅助驾驶（从「车辆配置」实体属性读）
     const cfgEid = this._eid("vehicle_cfg");

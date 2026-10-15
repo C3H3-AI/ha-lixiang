@@ -92,21 +92,21 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_bold.ttf");    font-weight:600; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
 
-  :host { display:block;
+  lixiang-app-home { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-app-home { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
   /* 2026-10-12：兜底 —— 长内容不得撑破视口（车主："手机上右边溢出"）。
      真正修复是把 grid 列改成 minmax(0,1fr)；这里再加一道保险。
      ★★ 必须 clip，不能 hidden（2026-10-13 实测）：overflow-x:hidden 会把
-        overflow-y 计算成 auto → :host/.root 成为滚动容器 → 里面的
+        overflow-y 计算成 auto → lixiang-app-home/.root 成为滚动容器 → 里面的
         .head{position:sticky} 被困住，「抬头固定」直接失效（滚动后抬头消失）。
         clip 同样裁剪但【不创建滚动容器】。别再改回 hidden。 */
-  :host { display:block; max-width:100%; overflow-x:clip; }
+  lixiang-app-home { display:block; max-width:100%; overflow-x:clip; }
   .wrap > *, .row2 > *, .entries > *, .quick > * { min-width:0; }
   .root { container-type:inline-size; background:var(--lx-bg); color:var(--lx-t1); padding-bottom:14px; overflow-x:clip;
     font-family:"Licium",-apple-system,"PingFang SC",sans-serif;
@@ -139,6 +139,21 @@ const STYLE = `
   .root.stuck .head .ranges { margin-top:0; gap:10px; }
   .root.stuck .head .parked { margin-top:0; font-size:12px; }
   /* 插枪徽标（插电时显示） */
+  /* ★ 头部徽标：告警（琥珀）/ 哨兵（蓝） */
+  .badge { display:inline-flex; align-items:center; gap:3px; margin-left:6px;
+           vertical-align:middle; font-size:11px; padding:2px 7px; border-radius:8px; }
+  .badge img { width:12px; height:12px; }
+  .badge.warn { color:#8A5300; background:rgba(232,163,60,.16); }
+  .badge-sentry { color:#0A58F6; background:rgba(10,88,246,.10); }
+  /* ★ 地图卡拍照按钮（官方 HomeControlMapPhoto） */
+  .loc .map .shot { position:absolute; right:8px; top:50%; transform:translateY(-50%);
+                    width:34px; height:34px; border-radius:50%; background:#fff; border:0;
+                    display:flex; align-items:center; justify-content:center; cursor:pointer;
+                    box-shadow:0 2px 8px rgba(16,20,28,.2); padding:0; }
+  .loc .map .shot img { width:18px; height:18px; }
+  /* ★ 空调卡座椅插图（官方布局：右下角、不抢文字） */
+  .ac .seatart { position:absolute; right:-6px; bottom:-10px; width:104px; height:110px;
+                      opacity:.9; pointer-events:none; }
   .plug { display:inline-flex; align-items:center; gap:3px; margin-left:8px;
           vertical-align:middle; font-size:11px; padding:2px 7px; border-radius:8px;
           color:#0A7B3E; background:rgba(10,123,62,.10); }
@@ -176,7 +191,10 @@ const STYLE = `
   .root.expanded3d { --lx-3d-h: 260px; }
   .big3d iframe { width:100%; height:100%; border:0; display:block; }
   .big3d, .big3d iframe { touch-action:none; }
-  .big3d img { width:100%; height:100%; object-fit:contain; object-position:50% 62%; }
+  /* ★ 2026-10-14：车图缩到 84% 宽、居中 → 两侧各有约 8% 留白，
+     胎压标签放进留白里（车主："胎压还在车子上"）。 */
+  /* 必须 display:block —— 否则 img 是行内元素，margin:auto 不居中（实测左侧 0 留白） */
+  .big3d img { display:block; width:84%; margin:0 auto; height:100%; object-fit:contain; object-position:50% 62%; }
 
   /* minmax(0,1fr)：裸 1fr 的默认 min-width:auto 会让长内容撑破容器 → 手机右侧溢出 */
   .quick { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px;
@@ -196,8 +214,10 @@ const STYLE = `
   .q:active .c { transform:scale(.9); }
   .q .c img { width:28px; height:28px; pointer-events:none; }
   .q .n { font-size:12px; color:var(--lx-t2); line-height:1.1; }
-  .q.on .c { border-color:var(--lx-blue); background:rgba(10,88,246,.06); }
-  .q.on .n { color:var(--lx-blue); font-weight:500; }
+  /* ★ 2026-10-14 官方同款：激活 = 实心深色圆（配官方白色 *_on_* 图标）；
+     未激活 = 空心圆（配深色线稿图标）。原来是"蓝圈+浅蓝底"，与官方不一致。 */
+  .q.on .c { border-color:#1b1f27; background:#1b1f27; box-shadow:0 2px 10px rgba(16,20,28,.22); }
+  .q.on .n { color:#111418; font-weight:600; }
   .q.busy .c { border-color:var(--lx-blue); }
   .q .sp { position:absolute; top:16px; width:26px; height:26px; border-radius:50%;
            border:2.5px solid rgba(10,88,246,.2); border-top-color:var(--lx-blue);
@@ -228,7 +248,8 @@ const STYLE = `
      此前写死 150px → 卡片偏扁（比 App 矮约 20%）。改用 clamp 随视口缩放，
      窄屏不过高、宽屏不过矮。 */
   .ac { min-height:clamp(168px, 46vw, 200px); display:flex; flex-direction:column;
-        justify-content:space-between; }
+        justify-content:space-between; 
+             position:relative; overflow:hidden; }
   .ac .temp { font-family:"LxNum"; font-size:30px; font-weight:600; line-height:1.1; }
   .ac .temp sup { font-size:15px; font-weight:500; }
   .ac .target { font-size:11.5px; color:var(--lx-t3); margin-top:3px; }
@@ -238,6 +259,10 @@ const STYLE = `
              align-items:center; justify-content:center;
              box-shadow:0 1px 4px rgba(0,0,0,.06); }
   .ac .fan img { width:18px; height:18px; }
+  /* ★ 2026-10-14 官方同款：空调开启时风扇 **蓝底 + 白图标 + 转动**。
+     官方资源本就是配套的：ic_home_fan_off = 深灰(浅底)、ic_home_fan_on = 纯白(蓝底)。 */
+  .ac .fan.on { background:var(--lx-blue); box-shadow:0 2px 10px rgba(10,88,246,.35); }
+  .ac .fan.on img { animation:spin 1.6s linear infinite; }
   .ac .fan.spin img { animation:spin 1.6s linear infinite; }
   /* 功能 chip：单行等分，不换行 */
   .ac .acrow { display:flex; gap:5px; margin-top:10px; }
@@ -359,6 +384,18 @@ const STYLE = `
   .big3d .tp { position:absolute; transform:translate(-50%,-50%); padding:1px 5px;
                border-radius:8px; background:#0d1828cc; border:1px solid #ffffff1f;
                font-size:11px; font-weight:600; color:#eaf1fb; white-space:nowrap; }
+  /* ★ 官方同款二次确认弹框 */
+  .cfm { position:fixed; inset:0; z-index:99; background:rgba(16,20,28,.45);
+         display:flex; align-items:center; justify-content:center; padding:24px; }
+  .cfm-box { width:100%; max-width:340px; background:#fff; border-radius:20px;
+             padding:24px 20px 16px; box-shadow:0 18px 50px rgba(10,14,22,.28); }
+  .cfm-text { font-size:16px; line-height:1.55; color:#111418; text-align:center; font-weight:500; }
+  .cfm-row { display:flex; gap:12px; margin-top:22px; }
+  .cfm-row button { flex:1; height:46px; border-radius:23px; font-size:16px; font-weight:600;
+                    border:1px solid #e3e6ea; background:#fff; color:#111418; cursor:pointer; }
+  .cfm-row .cfm-yes { background:#1b1f27; border-color:#1b1f27; color:#fff; }
+  .cfm-rem { display:flex; align-items:center; justify-content:center; gap:6px;
+             margin-top:14px; font-size:13px; color:#6b7480; }
   .big3d .tp small { font-size:9px; font-weight:400; opacity:.75; margin-left:1px; }
   .big3d .tp.low { background:#4a3410cc; border-color:#e8b96b55; color:#f2c98a; }
   .big3d .ph .spin2 { width:22px; height:22px; border-radius:50%;
@@ -369,15 +406,26 @@ const STYLE = `
        ★ 2026-10-14：v1.5.7 的提交说明声称加过这段，但 diff 里只改了 11 张
          页面卡，app-home **从未真正加上** —— 断点一直不存在。
          同时 container-type 必须挂在 .root（真实元素）上：
-         light DOM 里写在 :host 上的 container-type 不生效，容器查询不会触发。 */
+         light DOM 里写在 lixiang-app-home 上的 container-type 不生效，容器查询不会触发。 */
     @container (max-width: 480px) {
+      /* ★ 2026-10-14 车主："为什么下面是一列了？"
+         官方在手机宽度：下方两张卡**并排**、入口瓦片**一行两个**、
+         快捷按钮**一行 4 个**。原来这里把 .row2/.entries 收成一列是我定错了。
+         全部移除，只在极窄（≤330px）才收。 */
+      .head { padding-left:14px; padding-right:14px; }
+      .wrap { padding-left:14px; padding-right:14px; }
+      .big3d, .root.expanded3d .big3d { height: 188px; }
+      .mini { width:118px; height:78px; }
+    }
+
+    /* ★ 2026-10-14：快捷键只在**很窄**时才收成 2 列。
+       原来写在 ≤480px 里 —— 容器查询修好后（v1.5.10）它在 460~490px 的
+       desktop 栏里也命中，车主反馈"一行只有 2 个"。App 本体在 420pt 仍是 4 列，
+       所以阈值下调到 400px（约等于手机竖屏可用宽度以下）。 */
+    @container (max-width: 330px) {
       .quick { grid-template-columns: repeat(2, minmax(0,1fr)); }
       .row2 { grid-template-columns: minmax(0,1fr); }
       .entries { grid-template-columns: minmax(0,1fr); }
-      .head { padding-left:14px; padding-right:14px; }
-      .wrap { padding-left:14px; padding-right:14px; }
-      .big3d, .root.expanded3d .big3d { height: 210px; }
-      .mini { width:118px; height:78px; }
     }
 `;
 
@@ -386,12 +434,26 @@ const STYLE = `
 //   理由：之前不支持的车也会出现入口，点了只提示"该功能尚未接入"（体验差，
 //   而且用户会以为集成坏了）。实体存在性由**服务端能力门控**决定，不是前端猜车型。
 const QUICK = [
-  { key:"lock",   name:"车锁",       off:"ic_home_lock_off_lisa.png",           on:"ic_home_lock_open_lisa.png" },
-  { key:"window", name:"车窗",       off:"ic_home_window_off_lisa.png",         on:"ic_home_window_on_lisa.png" },
-  { key:"trunk",  name:"尾门",       off:"ic_home_tail_w_off_2025.png",         on:"ic_home_tail_w_on_2025.png" },
+  // ★ 2026-10-14 车主（两次澄清）：
+  //   1) "所有的按键变化都是这样的" → 2) "我说的是空心圆和实心圆的变化"。
+  //   即状态用**圆圈**表达：未激活 = 空心圆 + 深色线稿图标；
+  //   激活 = **实心深色圆** + 白色图标（官方图资本来就是配套的：
+  //   *_off_* 是深色线稿、*_on_* 是纯白，正好配实心圆）。
+  //   标签默认保持动作名；仅官方截图已证实的「授权驾驶 → 已授权」带 onName。
+  { key:"lock",   name:"车锁",   off:"ic_home_lock_off_lisa.png",      on:"ic_home_lock_open_lisa.png" },
+  { key:"window", name:"车窗",   off:"ic_home_window_off_lisa.png",    on:"ic_home_window_on_lisa.png" },
+  { key:"trunk",  name:"尾门",   off:"ic_home_tail_w_off_2025.png",    on:"ic_home_tail_w_on_2025.png" },
   // ★ 2026-10-09：授权驾驶是【动作】（button，cmdKey=remoteVehAuth），
   //   可执行实体与状态显示实体分开：auth=动作，stateField=授权状态。
-  { key:"auth",   name:"授权驾驶", stateField:"auth_state",
+  // ★ 2026-10-14 对照官方 App「车控」页截图修正：
+  //   官方在这里的按钮是 8 个（4×2），第 4 个在**已授权**时标签变成「已授权」+ 实心黑圆。
+  //   也就是说：状态**要**显示，但**标签必须跟着变** —— 只高亮而不改标签，
+  //   用户看到的就是"授权驾驶一直开着"（车主的疑问）。
+  // 官方 I18N（VehicleHomeControl）：authorization=授权驾驶 / alreadyAuthorization=已授权 /
+  // alreadyStart=已启动 / dismiss=不再提醒 → 授权按钮有**两态**且动作前要**二次确认**。
+  { key:"auth",   name:"授权驾驶", onName:"已授权", startedName:"已启动",
+    confirm:"请在 2 分钟内上车并踩下刹车踏板，下车后请远程上锁。",
+    remember:true, stateField:"auth_state",
     off:"ic_home_authorization_off_lisa.png",  on:"ic_home_authorization_on_lisa.png" },
   { key:"summon", name:"直线召唤", unsupported:true, note:"命令走 JOB 通道，HTTP 不可达",
     off:"ic_home_parkingout_off_lisa.png",     on:"ic_home_parkingout_on_lisa.png" },
@@ -619,14 +681,70 @@ class LixiangAppHome extends HTMLElement {
     const n = parseFloat(s.state); return isNaN(n) ? null : n;
   }
   _txt(id) { const s = this._st(id); return (s && !["unknown","unavailable"].includes(s.state)) ? s.state : null; }
+  /**
+   * 实体是否处于"开"状态。
+   * ★ 2026-10-14 修复（车主："授权驾驶为什么一直显示开着"）：
+   *   原实现 `["…","1"].some(x => v.includes(x))` 会把**任何含 1 的状态**判成开 ——
+   *   button 实体的状态是时间戳（如 2026-10-14T07:14:35+00:00，含 "1"），
+   *   于是「授权驾驶」永远显示为开着。
+   *   现在：先排掉明确的"关"、动作型实体（button）与时间戳状态，再做包含判断。
+   */
   _on(id) {
-    const v = this._txt(id); if (v == null) return false;
-    return ["on","open","opening","locked","已锁定","开启","已连接","true","1"].some(x => String(v).includes(x));
+    const s = this._st(id);
+    if (!s) return false;
+    const v = String(s.state == null ? "" : s.state).trim().toLowerCase();
+    if (!v) return false;
+    // 明确的"关/无效"值
+    if (["off","closed","0","false","no","none","unknown","unavailable","idle","standby"].includes(v)) return false;
+    // 动作型实体没有开/关语义（状态是"最后一次动作时间"）
+    if (String(id).split(".")[0] === "button") return false;
+    if (/^\d{4}-\d{2}-\d{2}t/.test(v)) return false;              // 时间戳状态
+    if (v === "1") return true;                                      // 精确的 1 才算开
+    // climate 域没有 "on" 状态：cool/heat/auto/dry/fan_only 都算"开着"
+    if (["cool", "heat", "heat_cool", "auto", "dry", "fan_only"].includes(v)) return true;
+    return ["on","open","opening","unlocked","locked","home","playing","true","yes","detected",
+            "开启","已开启","已锁定","已连接","已解锁","在线"].some((x) => v.includes(x));
   }
   _online() {
     const s = this._st(this._config.online); if (!s) return true;
     return !["离线","off","unavailable","unknown"].some(v => String(s.state).includes(v));
   }
+  /** 二次确认弹框（官方样式：白卡 + 取消/确定 + 不再提醒）。resolve {ok, remember} */
+  _confirm(opts) {
+    return new Promise((resolve) => {
+      const old = this.querySelector(".cfm"); if (old) old.remove();
+      const d = document.createElement("div");
+      d.className = "cfm";
+      d.innerHTML = `<div class="cfm-box" role="dialog" aria-modal="true">
+          <div class="cfm-text">${opts.text}</div>
+          <div class="cfm-row">
+            <button type="button" class="cfm-no">取消</button>
+            <button type="button" class="cfm-yes">确定</button>
+          </div>
+          ${opts.remember ? '<label class="cfm-rem"><input type="checkbox">不再提醒</label>' : ""}
+        </div>`;
+      this.appendChild(d);
+      const box = d.querySelector(".cfm-rem input");
+      const done = (ok) => {
+        const remember = !!(box && box.checked);
+        d.remove();
+        resolve({ ok, remember });
+      };
+      d.querySelector(".cfm-no").addEventListener("click", () => done(false));
+      d.querySelector(".cfm-yes").addEventListener("click", () => done(true));
+      d.addEventListener("click", (e) => { if (e.target === d) done(false); });
+      const y = d.querySelector(".cfm-yes"); if (y && y.focus) y.focus();
+    });
+  }
+
+  /** 「不再提醒」是否已勾选并记住 */
+  _noAsk(key) {
+    try { return localStorage.getItem("lx_noask_" + key) === "1"; } catch (e) { return false; }
+  }
+  _setNoAsk(key, on) {
+    try { on ? localStorage.setItem("lx_noask_" + key, "1") : localStorage.removeItem("lx_noask_" + key); } catch (e) { /* 隐私模式禁用存储 */ }
+  }
+
   _toast(msg, kind) {
     const t = this.querySelector(".toast"); if (!t) return;
     t.textContent = msg; t.className = "toast show" + (kind ? " " + kind : "");
@@ -660,7 +778,16 @@ class LixiangAppHome extends HTMLElement {
                  且放在头部 —— 3D 展开/收起都能看到。 -->
             <span class="plug" id="v-plug" style="display:none" role="status">
               <img src="${__iconBase}/icon_charge_lighting.webp" alt="" onerror="this.style.display='none'">
-              <b id="v-plug-t">已插枪</b>
+              <b id="v-plug-t">充电枪已插入</b>
+            </span>
+            <!-- ★ 2026-10-14 对齐官方顶部徽标（HomeControlHeaderWarning / HeaderSentry） -->
+            <span class="badge warn" id="v-badge-warn" style="display:none" role="status">
+              <img src="${__iconBase}/src_assets_images_vehicle_header_ic_home_warning.png" alt="" onerror="this.style.display='none'">
+              <b id="v-badge-warn-t">告警</b>
+            </span>
+            <span class="badge badge-sentry" id="v-badge-sentry" style="display:none" role="status">
+              <img src="${__iconBase}/src_assets_images_vehicle_header_ic_home_sentry.png" alt="" onerror="this.style.display='none'">
+              <b>哨兵</b>
             </span>
           </div>
           <div class="mini" id="mini" role="button" tabindex="0" aria-label="展开车辆 3D"></div>
@@ -684,20 +811,35 @@ class LixiangAppHome extends HTMLElement {
       <div class="wrap">
         <div class="row2">
           <div class="card ac" id="c-ac" role="button" tabindex="0">
+            <!-- ★ 2026-10-14 对齐官方：空调卡右下角的座椅插图（官方包内无可复用位图，自绘 SVG） -->
+            <svg class="seatart" viewBox="0 0 120 128" aria-hidden="true">
+              <defs><linearGradient id="lxseat" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e9edf3"/></linearGradient></defs>
+              <path d="M34 12h30c7 0 12 6 12 13l-3 44H37l-3-44c0-7 5-13 12-13z" fill="url(#lxseat)" stroke="#d7dde6" stroke-width="1"/>
+              <rect x="30" y="72" width="58" height="14" rx="7" fill="url(#lxseat)" stroke="#d7dde6" stroke-width="1"/>
+              <path d="M28 92h62c4 0 7 3 7 7v14c0 4-3 7-7 7H28c-4 0-7-3-7-7v-14c0-4 3-7 7-7z" fill="url(#lxseat)" stroke="#d7dde6" stroke-width="1"/>
+              <rect x="40" y="20" width="18" height="4" rx="2" fill="#dde3ea"/>
+              <rect x="40" y="30" width="18" height="4" rx="2" fill="#dde3ea"/>
+              <rect x="40" y="40" width="18" height="4" rx="2" fill="#dde3ea"/>
+            </svg>
             <div class="temp"><span id="v-room">—</span><sup>°C</sup></div>
             <div class="target">目标温度 <span id="v-target">—</span>°C</div>
             <div class="acrow" id="acrow">
-              <span class="chip" id="ch-seat"><img src="${__iconBase}/ic_home_seat_heating3.webp" alt="" onerror="this.style.visibility='hidden'"><b>座椅</b></span>
-              <span class="chip" id="ch-fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""><b>吹风</b></span>
-              <span class="chip" id="ch-defrost"><img src="${__iconBase}/ic_home_ice_cool.webp" onerror="__lxIconFallback(this)" alt=""><b>除霜</b></span>
+              <span class="chip" id="ch-seat"><img src="${__iconBase}/ic_home_seat_heating3.webp" alt="" onerror="this.style.visibility='hidden'"><b id="ch-seat-t">座椅加热</b></span>
+              <span class="chip" id="ch-fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""><b id="ch-fan-t">吹风</b></span>
+              <span class="chip" id="ch-defrost"><img src="${__iconBase}/ic_home_ice_cool.webp" onerror="__lxIconFallback(this)" alt=""><b id="ch-defrost-t">除雪除霜</b></span>
             </div>
-            <div class="fan" id="fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""></div>
+            <div class="fan" id="fan"><img src="${__iconBase}/ic_home_fan_off.webp" onerror="__lxIconFallback(this)" alt=""></div>
           </div>
           <div class="card loc" id="c-loc" role="button" tabindex="0">
             <div class="map" id="map">
               <div class="tiles" id="hm-tiles"></div>
               <div class="puck" id="hm-puck" style="display:none">
                 <img src="${__iconBase}/icon_car_loc.webp" onerror="__lxIconFallback(this)" alt="车辆位置"></div>
+              <!-- ★ 2026-10-14 对齐官方 HomeControlMapPhoto：地图卡上的拍照按钮 -->
+              <button type="button" class="shot" id="hm-shot" aria-label="远程拍照" style="display:none">
+                <img src="${__iconBase}/ic_home_photo.png" onerror="__lxIconFallback(this)" alt="">
+              </button>
             </div>
             <div class="addr"><img src="${__iconBase}/icon_vehicle_my_location.webp" alt="" onerror="this.style.display='none'">
               <span id="v-addr">定位获取中…</span></div>
@@ -967,6 +1109,22 @@ class LixiangAppHome extends HTMLElement {
     // → 点击完全没反应。与其他入口一致，补上默认路径。
     wire("#e-health", nav.health || "/lixiang/health");
     wire("#e-setting", nav.setting || "/lixiang/setting");
+    // ★ 地图卡拍照按钮（官方 HomeControlMapPhoto）
+    const shotEl = this.querySelector("#hm-shot");
+    if (shotEl) {
+      const shoot = async () => {
+        const pe = this._eid("btn_photo");
+        if (!pe) { this._toast("远程拍照未接入", "err"); return; }
+        if (!this._online()) { this._toast("车辆离线，操作不可用", "err"); return; }
+        try {
+          await this._hass.callService("button", "press", { entity_id: pe });
+          this._toast("已发送拍照", "ok");
+        } catch (e) { this._toast("拍照失败：" + ((e && e.message) || "未知"), "err"); }
+      };
+      this._a11y(shotEl, "远程拍照", shoot);
+      shotEl.addEventListener("click", shoot);
+    }
+
     // 哨兵卡：点击直接切换（可控制），键盘同样支持
     const senEl = this.querySelector("#c-sentry");
     if (senEl) {
@@ -1038,55 +1196,91 @@ class LixiangAppHome extends HTMLElement {
     const box = this.querySelector("#big3d");
     const layer = box && box.querySelector(".tires");
     if (!box || !layer) return;
+    const bw = box.clientWidth, bh = box.clientHeight;
+    // 车图（object-fit:contain + object-position:50% 62%）的实际渲染区域
+    let ox = 0, oy = 0, cW = bw, cH = bh;
     const img = box.querySelector("img");
-    let w = box.clientWidth, h = box.clientHeight, ox = 0, oy = 0;
-    if (img && img.naturalWidth && box.clientWidth) {
+    if (img && img.naturalWidth) {
+      const r = img.getBoundingClientRect(), br = box.getBoundingClientRect();
       const ar = img.naturalHeight / img.naturalWidth;
-      h = Math.min(box.clientHeight, box.clientWidth * ar);
-      w = h / ar;
-      ox = (box.clientWidth - w) / 2;          // object-position: 50%
-      oy = (box.clientHeight - h) * 0.62;      // object-position: 62%
+      cH = Math.min(r.height, r.width * ar); cW = cH / ar;
+      ox = r.left - br.left + (r.width - cW) / 2;
+      oy = r.top - br.top + (r.height - cH) * 0.62;
     }
-    // 实测轮心（占整幅车图）：x≈28.4%/71.4%，y≈29%/71%。
-    // ★ 2026-10-14 车主反馈"显示在车上" → 往**两端 + 外侧**挪：
-    //   标签放到车身轮廓之外、轮子斜外侧，既贴着轮子又不压住车身。
-    // 轮心 x≈28.4%/71.4% y≈29%/71%；外移到 20%/80% 与 78%/22% ——
-    //   既离开车身主体（车主："显示在车上"），又不至于脱离开轮子看不出对应关系。
-    const POS = { lf: [0.20, 0.78], rf: [0.20, 0.22], lr: [0.80, 0.78], rr: [0.80, 0.22] };
+    // ★ 2026-10-14 车主纠正：车是**横放**的，四个轮子在车的**上下两条边**上，
+    //   标签要贴在各自车轮的上/下侧 —— 不是放在卡片左右两端（车头/车尾）。
+    //   实测轮心：纵向 x≈28.4% / 71.4%（前/后），横向 y≈29% / 71%（车的右侧在上、左侧在下）。
+    //   车体轮廓占图高的 8%~92%，所以上排标签放车顶边之上、下排放车底边之下。
+    const xF = ox + cW * 0.284;      // 前轮
+    const xR = ox + cW * 0.714;      // 后轮
+    const yT = oy + cH * 0.08 - 15;  // 车顶边之上（标签半高 + 间隙）
+    const yB = oy + cH * 0.92 + 15;  // 车底边之下
+    const POS = {
+      rf: [xF, yT], rr: [xR, yT],    // 上排 = 车的右侧（右前 / 右后）
+      lf: [xF, yB], lr: [xR, yB],    // 下排 = 车的左侧（左前 / 左后）
+    };
     for (const [k, [px, py]] of Object.entries(POS)) {
       const el = layer.querySelector(`.tp[data-k="${k}"]`);
-      if (el) { el.style.left = (ox + px * w) + "px"; el.style.top = (oy + py * h) + "px"; }
+      if (!el) continue;
+      el.style.left = Math.round(px) + "px";
+      el.style.top = Math.round(py) + "px";
+      el.style.right = "auto";
     }
   }
 
   /// 失败时保留占位图（不显示破图）。
   async _loadCarImage(b3, mini, fallback) {
+    // ★ 2026-10-16 修「车图时有时无」：
+    //   ① 先用**上次成功的 URL**（localStorage）→ 秒出；JSON 拿不到时也不至于退回 20×20 占位图标
+    //   ② JSON 失败**重试一次**（1.5s 后），仍失败且无缓存 → 5s 后再试一轮（网络恢复自动出图）
+    //   ③ <img> onerror **带 ?v= 重试一次**（破掉浏览器可能缓存的坏响应）
+    const CK = "lx_car_img_v1";
+    const hit = (() => { try { const o = JSON.parse(localStorage.getItem(CK) || "{}"); return o && o.src ? o : null; } catch (e) { return null; } })();
+    const applySrc = (src, key) => {
+      const put = (box) => {
+        if (!box) return;
+        const img = box.querySelector("img");
+        if (!img) return;
+        if (img.dataset.lxReal === "1" && img.getAttribute("src") === src) return;
+        img.dataset.lxReal = "1";
+        delete img.dataset.lxRetried;
+        img.onload = () => { img.style.opacity = "1"; delete img.dataset.lxRetried; };
+        img.onerror = () => {
+          if (img.dataset.lxRetried === "1") { img.style.opacity = "0"; return; }   // 两次都失败 → 先藏，下轮再试
+          img.dataset.lxRetried = "1";
+          const bust = src + (src.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
+          setTimeout(() => { img.src = bust; }, 600);
+        };
+        img.style.opacity = "1";
+        img.src = src;
+        img.alt = "车辆 " + (key || "");
+        img.style.objectFit = "contain";
+      };
+      put(b3); put(mini);
+      if (b3) {
+        const _im = b3.querySelector("img");
+        if (_im) _im.addEventListener("load", () => this._layoutTires(), { once: true });
+        this._layoutTires();
+      }
+    };
+    if (hit) applySrc(hit.src, hit.key);                 // ① 缓存优先
     let data = null;
-    try {
-      const resp = await fetch("/lixiang_auto/car-image.json", { cache: "no-store" });
-      if (resp.ok) data = await resp.json();
-    } catch (err) {
-      // 静默：占位图已在 DOM 里
+    for (let i = 0; i < 2 && !data; i++) {                // ② 拉 JSON（失败重试一次）
+      try {
+        const resp = await fetch("/lixiang_auto/car-image.json", { cache: "no-store" });
+        if (resp.ok) data = await resp.json();
+      } catch (err) { /* 静默：占位图已在 DOM 里 */ }
+      if (!data && i === 0) await new Promise((r) => setTimeout(r, 1500));
     }
-    if (!data || !data.ok || !data.vertical) return;
+    if (!data || !data.ok || !data.vertical) {
+      if (!hit) setTimeout(() => { if (this.isConnected) this._loadCarImage(b3, mini, fallback); }, 5000);
+      return;
+    }
     // ★ 横版优先（官方竖图逆时针旋转 90° 派生，车头朝左）—— 横容器不再"车小如邮票"
     const src = (data.horizontal && data.horizontal.static) || data.vertical.static || "";
     if (!src) return;                     // 还没缓存好 → 保持占位，下次刷新再来
-    const apply = (box) => {
-      if (!box) return;
-      const img = box.querySelector("img");
-      if (!img) return;
-      img.src = src;
-      img.alt = "车辆 " + (data.color_code || "");
-      img.style.objectFit = "contain";
-    };
-    apply(b3); apply(mini);
-    // 车图尺寸/位置确定后才能把胎压摆到轮子上
-    if (b3) {
-      const _im = b3.querySelector("img");
-      if (_im) _im.addEventListener("load", () => this._layoutTires(), { once: true });
-      this._layoutTires();
-    }
+    if (!hit || hit.src !== src) applySrc(src, data.color_code);   // ③ 只在变化时重设，避免闪
+    try { localStorage.setItem(CK, JSON.stringify({ src, key: data.color_code || "", t: Date.now() })); } catch (e) {}
   }
   _more(key) {
     const eid = (this._config.more || {})[key];
@@ -1107,6 +1301,12 @@ class LixiangAppHome extends HTMLElement {
       return;
     }
     if (!this._online()) { this._toast("车辆离线，操作不可用", "err"); return; }
+    // ★ 官方同款：这类动作执行前要二次确认（可勾选"不再提醒"）
+    if (def.confirm && !this._noAsk(key)) {
+      const r = await this._confirm({ text: def.confirm, remember: def.remember });
+      if (!r.ok) return;
+      if (r.remember) this._setNoAsk(key, true);
+    }
     const s = this._hass.states[eid];
     if (!s) { this._toast("实体不存在", "err"); return; }
 
@@ -1166,8 +1366,10 @@ class LixiangAppHome extends HTMLElement {
       const el = this.querySelector(`.q[data-key="${it.key}"]`);
       if (!el) return;
       const eid = this._eidIn("quick", it.key);
-      // stateField：动作类按钮（如授权驾驶 = button）用另一个实体显示状态
-      const stateEid = (it.stateField && this._eid(it.stateField)) || eid;
+      // stateField：动作类按钮（如授权驾驶 = button）用另一个实体显示状态。
+      // ★ 配了 stateField 但解析不到（该车没有这个实体）时必须返回 null ——
+      //   回退到动作实体本身会让 button 的时间戳状态被当成"开着"（真实踩过的坑）。
+      const stateEid = it.stateField ? (this._eid(it.stateField) || null) : eid;
       let active = false; const missing = !eid || !this._st(eid);
       if (stateEid && this._st(stateEid)) {
         if (it.key in this._optim) active = this._optim[it.key];
@@ -1178,6 +1380,19 @@ class LixiangAppHome extends HTMLElement {
       }
       el.className = "q" + (active ? " on" : "") + ((missing || offline) ? " dim" : "")
                    + (this._busy[it.key] ? " busy" : "");
+      // ★ 2026-10-14 官方逻辑：授权按钮有**两态** ——
+      //   车辆已启动（非驻车）→ 已启动；已授权 → 已授权；否则 授权驾驶。
+      //   （官方 I18N：alreadyAuthorization='已授权' / alreadyStart='已启动'）
+      const nameEl = el.querySelector(".n");
+      if (nameEl && it.onName) {
+        let want = active ? it.onName : it.name;
+        if (it.startedName) {
+          const stTxt = String(this._txt(this._eid("status")) || "");
+          const started = !!stTxt && !/驻车|P\s*档|park/i.test(stTxt);
+          if (started) { want = it.startedName; active = true; }
+        }
+        if (nameEl.textContent !== want) nameEl.textContent = want;
+      }
       el.setAttribute("aria-pressed", active ? "true" : "false");
       // 未接入的按钮：把原因写在下面（例如"集成暂未支持"），避免用户反复点
       const sub = el.querySelector(".sub");
@@ -1282,8 +1497,20 @@ class LixiangAppHome extends HTMLElement {
     const room = this._num(this._eid("room_temp")), tgt = this._num(this._eid("target_temp"));
     q("#v-room").textContent = room == null ? "—" : room.toFixed(1);
     q("#v-target").textContent = tgt == null ? "—" : tgt;
-    const acOn = this._eid("ac") ? this._on(this._eid("ac")) : false;
-    const fan = q("#fan"); if (fan) fan.className = "fan" + (acOn ? " spin" : "");
+    // ★ 2026-10-14：空调是 climate 域，状态是 cool/heat/auto/fan_only…（**不是 on**），
+    //   原来用 _on() 判 → 永远 false → 风扇不转；且图标固定用白色版（浅底上几乎看不见）。
+    const acEid = this._eid("ac");
+    const acSt = this._st(acEid);
+    const acRaw = acSt ? String(acSt.state).toLowerCase() : "";
+    const acOn = ["cool", "heat", "heat_cool", "auto", "dry", "fan_only", "on", "开启"]
+      .some((x) => acRaw.includes(x));
+    const fan = q("#fan");
+    if (fan) {
+      fan.className = "fan" + (acOn ? " on" : "");
+      const fi = fan.querySelector("img");
+      const want = this._img(acOn ? "ic_home_fan_on.webp" : "ic_home_fan_off.webp");
+      if (fi && fi.getAttribute("src") !== want) { delete fi.dataset.lxFb; fi.src = want; }
+    }
     // 功能状态 chip（有实体且开启时点亮；无实体则隐藏）
     const _chip = (sel, eid) => {
       const el = q(sel); if (!el) return;
@@ -1291,9 +1518,17 @@ class LixiangAppHome extends HTMLElement {
       el.style.display = "";
       el.className = "chip" + (this._on(eid) ? " on" : "");
     };
-    _chip("#ch-seat", this._eid("steer_heat") || this._eid("ac_fast_hot"));
+    // ★ 2026-10-14 对齐官方空调页文案（从 index.vehicle.bundle 反汇编提取，共 23 项）：
+    //   deicing:'除雪除霜' · rapidCool:'极速制冷' · rapidHeat:'极速制热' · steeringWheelHeat:'方向盘加热'
+    //   我们原来写的是 座椅 / 吹风 / 除霜 —— 与官方措辞不一致。
+    const seatEid = this._eid("steer_heat");
+    _chip("#ch-seat", seatEid || this._eid("ac_fast_hot"));
+    const seatT = q("#ch-seat-t");
+    if (seatT) seatT.textContent = seatEid ? "方向盘加热" : "极速制热";
     _chip("#ch-fan", this._eid("ac_fast_cold"));
+    const fanT = q("#ch-fan-t"); if (fanT) fanT.textContent = "极速制冷";
     _chip("#ch-defrost", this._eid("ac_defrost"));
+    const defT = q("#ch-defrost-t"); if (defT) defT.textContent = "除雪除霜";
 
     // 地址：device_tracker 的 attributes 里可能有 address / 也支持坐标回退
     let addr = null;
@@ -1348,7 +1583,7 @@ class LixiangAppHome extends HTMLElement {
       if (acGun || dcGun) {
         plugEl.style.display = "";
         const pt = q("#v-plug-t");
-        if (pt) pt.textContent = dcGun ? "直流快充已插枪" : "交流慢充已插枪";
+        if (pt) pt.textContent = (dcGun ? "直流快充" : "交流慢充") + " · 充电枪已插入";
       } else {
         plugEl.style.display = "none";
       }
@@ -1365,6 +1600,23 @@ class LixiangAppHome extends HTMLElement {
     if (!this.querySelector("#quick .q")) this._renderQuick(false);
     this._applyQuick(); this._spark();
     this._applyTires();
+    // ★ 2026-10-14 对齐官方顶部徽标：告警（胎压告警任一）/ 哨兵（开启时）
+    const wEl = this.querySelector("#v-badge-warn");
+    if (wEl) {
+      const wids = ["warn_lf", "warn_rf", "warn_lr", "warn_rr"]
+        .map((k) => this._eid(k)).filter(Boolean);
+      const won = wids.filter((id) => this._on(id)).length;
+      wEl.style.display = won ? "" : "none";
+      const wt = this.querySelector("#v-badge-warn-t");
+      if (wt) wt.textContent = won > 1 ? `告警 ${won}` : "胎压告警";
+    }
+    const sBEl = this.querySelector("#v-badge-sentry");
+    if (sBEl) {
+      const se = this._eid("sentry");
+      sBEl.style.display = (se && this._on(se)) ? "" : "none";
+    }
+    const shotBEl = this.querySelector("#hm-shot");
+    if (shotBEl) shotBEl.style.display = this._eid("btn_photo") ? "" : "none";
     if (!this._tireResize) {
       this._tireResize = () => this._layoutTires();
       window.addEventListener("resize", this._tireResize);

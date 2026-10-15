@@ -67,7 +67,10 @@ class TestSignalTable:
                                "today_mileage", "today_elec_energy",
                                "today_fuel_consumption", "month_fuel_energy",
                                "month_save_money", "month_avg_elec_energy",
-                               "month_avg_fuel_energy"), \
+                               "month_avg_fuel_energy",
+                                 # ★ 2026-10-14：充电功率（官方 4 项指标之二）
+                                 #   派生 = 输入电压 × 输入电流；车辆侧无独立充电功率信号
+                                 "charge_power"), \
                     f"{key}: 空路径但不是已知虚拟信号"
 
     def test_alias_signals_resolve(self):
@@ -412,6 +415,7 @@ class TestDescriptionEquivalence:
         # ★ 2026-09-24：新增信号不在旧 _mk 表里（那表已废弃，不用于创建实体）
         #   这些是【新增】的，不是"多余"的
         NEW_KEYS = {
+            "charge_power",                     # ★ 2026-10-14：派生（V×A，官方 4 项指标之二）
             "online_status",                    # 虚拟信号
             "virtual_key_auth", "vehicle_accounts",
             "provision_complete", "provision_finish",

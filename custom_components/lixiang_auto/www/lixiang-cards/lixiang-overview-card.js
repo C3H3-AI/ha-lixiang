@@ -157,7 +157,10 @@ const STYLE = `
     .top-car { width:84px; height:158px; }
     .title { font-size:26px; }
     .art { height:150px; }
-    .detail-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    /* ★ 2026-10-14 车主："剩余时间下面，一行直接显示四个" ——
+         统计区固定【一行四个】，不再随宽度降到 3/2 列（那样"剩余充电时间"下面
+         的 4 项会掉成两行）。 */
+    .detail-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
   }
   @container (max-width: 480px) {
     .main { grid-template-columns:1fr; padding:20px 18px 14px; gap:18px; }
@@ -168,7 +171,7 @@ const STYLE = `
     .tire-grid { grid-template-columns:1fr 88px 1fr; height:164px; }
     .top-car { width:88px; height:156px; }
     .footer { padding:12px 18px; gap:5px; }
-    .detail-grid { grid-template-columns:repeat(2,minmax(0,1fr)); padding:4px 18px 16px; }
+    .detail-grid { grid-template-columns:repeat(4,minmax(0,1fr)); padding:4px 14px 16px; gap:10px; }
     .details summary { padding:12px 18px; }
     .note { padding:0 18px 14px; }
   }
@@ -464,21 +467,50 @@ class LixiangOverviewCard extends __Base {
 
   /* 车图：config.image > 侧视 > 横版 > 竖版（后端 /lixiang_auto/car-image.json） */
   async _loadArt() {
+    // ★ 2026-10-16 修「车图时有时无」：缓存优先 + JSON 重试 + img 带 ?v= 重试
+    //   （与 app-home 的 _loadCarImage 同一套策略，共用缓存键 lx_car_img_v1）
     if (this._config.image) return;             // 用户显式指定 → 不覆盖
     if (this._artLoading) return;
     this._artLoading = true;
+    const CK = "lx_car_img_v1";
+    const put = (src, key) => {
+      const img = this._body && this._body.querySelector(".art img");
+      if (!img) return;
+      if (img.dataset.lxReal === "1" && img.getAttribute("src") === src) return;
+      img.dataset.lxReal = "1";
+      delete img.dataset.lxRetried;
+      img.onload = () => { img.style.opacity = "1"; };
+      img.onerror = () => {
+        if (img.dataset.lxRetried === "1") { img.style.opacity = "0"; return; }
+        img.dataset.lxRetried = "1";
+        const bust = src + (src.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
+        setTimeout(() => { img.src = bust; }, 600);
+      };
+      img.style.opacity = "1";
+      img.src = src;
+      img.alt = "爱车车型示意图" + (key ? " · " + key : "");
+    };
+    let hit = null;
+    try { const o = JSON.parse(localStorage.getItem(CK) || "{}"); if (o && o.src) hit = o; } catch (e) {}
+    if (hit) put(hit.src, hit.key);              // ① 缓存优先 → 秒出
     let data = null;
-    try {
-      const r = await fetch("/lixiang_auto/car-image.json", { cache: "no-store" });
-      if (r.ok) data = await r.json();
-    } catch (e) { /* 保持空图，不显示破图 */ }
+    for (let i = 0; i < 2 && !data; i++) {       // ② 失败重试一次
+      try {
+        const r = await fetch("/lixiang_auto/car-image.json", { cache: "no-store" });
+        if (r.ok) data = await r.json();
+      } catch (e) { /* 保持空图，不显示破图 */ }
+      if (!data && i === 0) await new Promise((res) => setTimeout(res, 1500));
+    }
     this._artLoading = false;
-    if (!data || !data.ok) return;
+    if (!data || !data.ok) {
+      if (!hit) setTimeout(() => { if (this.isConnected) this._loadArt(); }, 5000);
+      return;
+    }
     const d = data.side || data.horizontal || data.vertical || null;
     const src = d && d.static ? d.static : "";
     if (!src) return;
-    const img = this._body && this._body.querySelector(".art img");
-    if (img) { img.src = src; img.alt = "爱车车型示意图" + (data.color_code ? " · " + data.color_code : ""); }
+    if (!hit || hit.src !== src) put(src, data.color_code);
+    try { localStorage.setItem(CK, JSON.stringify({ src, key: data.color_code || "", t: Date.now() })); } catch (e) {}
   }
 
   static getConfigElement() { return null; }

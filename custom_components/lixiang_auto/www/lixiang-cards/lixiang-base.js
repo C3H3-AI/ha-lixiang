@@ -17,6 +17,9 @@ const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallb
  *
  * 提供：
  *   · BASE_CSS      主题变量 + 通用样式（卡片/行/图标/深浅色）
+ *     ⚠️ 2026-10-14：原来变量写在 `:host` —— 但除 overview-card 外我们的卡都**不用**
+ *        Shadow DOM，`:host` 永不匹配 → 强调色变量（--lx-green/orange/red）一直为空。
+ *        改为零特异度的 `:where(.root)`：消费方自己的 .root[data-theme] 仍优先。
  *   · fontFaceCss() 字体声明（按 fontBase 生成）
  *   · iconUrl()     图标 URL（带 cache-buster）
  *   · html`/esc`    小工具
@@ -39,11 +42,11 @@ export function fontFaceCss(fontBase) {
 
 /** 页面级通用样式（主题变量 + 卡片 + 行） */
 export const BASE_CSS = `
-  :host { display:block;
+  :where(.root) { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-blue:#4C9AFF; --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    :where(.root) { --lx-blue:#4C9AFF; --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; }
   }
   .wrap { font-family:"Licium",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
