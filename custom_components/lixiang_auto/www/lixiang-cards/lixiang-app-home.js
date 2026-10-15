@@ -1230,32 +1230,57 @@ class LixiangAppHome extends HTMLElement {
 
   /// 失败时保留占位图（不显示破图）。
   async _loadCarImage(b3, mini, fallback) {
+    // ★ 2026-10-16 修「车图时有时无」：
+    //   ① 先用**上次成功的 URL**（localStorage）→ 秒出；JSON 拿不到时也不至于退回 20×20 占位图标
+    //   ② JSON 失败**重试一次**（1.5s 后），仍失败且无缓存 → 5s 后再试一轮（网络恢复自动出图）
+    //   ③ <img> onerror **带 ?v= 重试一次**（破掉浏览器可能缓存的坏响应）
+    const CK = "lx_car_img_v1";
+    const hit = (() => { try { const o = JSON.parse(localStorage.getItem(CK) || "{}"); return o && o.src ? o : null; } catch (e) { return null; } })();
+    const applySrc = (src, key) => {
+      const put = (box) => {
+        if (!box) return;
+        const img = box.querySelector("img");
+        if (!img) return;
+        if (img.dataset.lxReal === "1" && img.getAttribute("src") === src) return;
+        img.dataset.lxReal = "1";
+        delete img.dataset.lxRetried;
+        img.onload = () => { img.style.opacity = "1"; delete img.dataset.lxRetried; };
+        img.onerror = () => {
+          if (img.dataset.lxRetried === "1") { img.style.opacity = "0"; return; }   // 两次都失败 → 先藏，下轮再试
+          img.dataset.lxRetried = "1";
+          const bust = src + (src.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
+          setTimeout(() => { img.src = bust; }, 600);
+        };
+        img.style.opacity = "1";
+        img.src = src;
+        img.alt = "车辆 " + (key || "");
+        img.style.objectFit = "contain";
+      };
+      put(b3); put(mini);
+      if (b3) {
+        const _im = b3.querySelector("img");
+        if (_im) _im.addEventListener("load", () => this._layoutTires(), { once: true });
+        this._layoutTires();
+      }
+    };
+    if (hit) applySrc(hit.src, hit.key);                 // ① 缓存优先
     let data = null;
-    try {
-      const resp = await fetch("/lixiang_auto/car-image.json", { cache: "no-store" });
-      if (resp.ok) data = await resp.json();
-    } catch (err) {
-      // 静默：占位图已在 DOM 里
+    for (let i = 0; i < 2 && !data; i++) {                // ② 拉 JSON（失败重试一次）
+      try {
+        const resp = await fetch("/lixiang_auto/car-image.json", { cache: "no-store" });
+        if (resp.ok) data = await resp.json();
+      } catch (err) { /* 静默：占位图已在 DOM 里 */ }
+      if (!data && i === 0) await new Promise((r) => setTimeout(r, 1500));
     }
-    if (!data || !data.ok || !data.vertical) return;
+    if (!data || !data.ok || !data.vertical) {
+      if (!hit) setTimeout(() => { if (this.isConnected) this._loadCarImage(b3, mini, fallback); }, 5000);
+      return;
+    }
     // ★ 横版优先（官方竖图逆时针旋转 90° 派生，车头朝左）—— 横容器不再"车小如邮票"
     const src = (data.horizontal && data.horizontal.static) || data.vertical.static || "";
     if (!src) return;                     // 还没缓存好 → 保持占位，下次刷新再来
-    const apply = (box) => {
-      if (!box) return;
-      const img = box.querySelector("img");
-      if (!img) return;
-      img.src = src;
-      img.alt = "车辆 " + (data.color_code || "");
-      img.style.objectFit = "contain";
-    };
-    apply(b3); apply(mini);
-    // 车图尺寸/位置确定后才能把胎压摆到轮子上
-    if (b3) {
-      const _im = b3.querySelector("img");
-      if (_im) _im.addEventListener("load", () => this._layoutTires(), { once: true });
-      this._layoutTires();
-    }
+    if (!hit || hit.src !== src) applySrc(src, data.color_code);   // ③ 只在变化时重设，避免闪
+    try { localStorage.setItem(CK, JSON.stringify({ src, key: data.color_code || "", t: Date.now() })); } catch (e) {}
   }
   _more(key) {
     const eid = (this._config.more || {})[key];

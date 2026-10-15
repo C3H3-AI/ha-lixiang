@@ -161,8 +161,46 @@ class TestCarArt:
         """接口失败不得出现破图（保持空 src）。"""
         s = _strip_comments(_src())
         i = s.find("_loadArt()")
-        seg = s[i:i + 700]
+        seg = s[i:i + 3000]
         assert "catch" in seg, "取车图无异常保护"
+
+    def test_car_image_static_path_always_registered_with_cache(self):
+        """★ 后端侧修「车图时有时无」的两处：
+
+        ① 原来 `if _car_dir.is_dir()` 才注册 `/lixiang_car` → 首次安装/清缓存后
+           目录还没建，图片 URL 会 **404 直到下次 HA 重启**；
+        ② `cache_headers=False` → 响应无缓存头，手机每次重拉 224KB 大图，
+           网络一抖就显示不出来。改为无条件注册 + 长缓存。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "__init__.py")
+        s = p.read_text(encoding="utf-8")
+        i = s.find('StaticPathConfig("/lixiang_car"')
+        assert i > 0, "未注册车模图静态路径"
+        # 第三个参数（cache_headers）必须是 True
+        seg = s[i:i + 80]
+        assert '"/lixiang_car", str(_car_dir), True' in seg.replace("\n", " "), (
+            f"车图静态路径未开启缓存头：{seg[:70]}")
+        # 注册前必须先建目录（无条件注册）
+        j = s.find("_car_dir.mkdir(parents=True, exist_ok=True)")
+        assert 0 < j < i, "未先创建车模图目录（会导致首次 404）"
+        # 不得再有 is_dir() 门控
+        assert "if _car_dir.is_dir():" not in s, "仍有 is_dir() 门控（首次会 404）"
+
+    def test_car_art_hardened_against_flaky_network(self):
+        """★ 2026-10-16 车主："车辆图片经常显示不出来，有时候显示了过会儿又没了"。
+
+        画像是网络抖动 + 后端静态路径/响应头问题。加固为：
+          ① 上次成功的 URL 存 localStorage → 秒出，JSON 失败也能显示
+          ② JSON 拉取失败重试一次（1.5s 后）
+          ③ <img> onerror 带 ?v= 重试一次（破掉可能被缓存的坏响应）
+        """
+        s = _strip_comments(_src())
+        assert "lx_car_img_v1" in s, "未做车图 URL 本地缓存"
+        assert "localStorage.getItem(CK)" in s, "未先读缓存"
+        assert "lxRetried" in s, "img 失败未重试"
+        assert "catch" in s and "for (let i = 0; i < 2" in s, "JSON 拉取未重试"
+
 
 
 class TestRuntime:

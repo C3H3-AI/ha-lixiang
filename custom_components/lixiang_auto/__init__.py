@@ -465,11 +465,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _car_dir = _Path(hass.config.config_dir) / "lixiang-car"
                 _mgr = _CIM(hass, _car_dir)
                 hass.data["lixiang_auto__car_image"] = _mgr
-                if _car_dir.is_dir():
-                    await hass.http.async_register_static_paths([
-                        StaticPathConfig("/lixiang_car", str(_car_dir), False),
-                    ])
-                    _LOGGER.debug("已注册车模图静态路径: /lixiang_car → %s", _car_dir)
+                # ★ 2026-10-16 修（车主："车辆图片经常显示不出来，有时候显示了过会儿又没了"）：
+                #   ① 原来只在目录已存在时才注册 → 首次安装/清缓存后目录还没建，
+                #      `/lixiang_car/...` 会 404 **直到下次 HA 重启**（时有时无的根因之一）。
+                #      改为先建目录、**无条件注册**。
+                #   ② `cache_headers=False` → 响应不带缓存头（实测只有 ETag/Last-Modified），
+                #      手机每次渲染都要重拉 224KB 大图，网络一抖就"显示不出来"。
+                #      改为 True：静态图按 URL（含车型+色码）长缓存，命中后秒出。
+                try:
+                    _car_dir.mkdir(parents=True, exist_ok=True)
+                except Exception:  # noqa: BLE001
+                    pass
+                await hass.http.async_register_static_paths([
+                    StaticPathConfig("/lixiang_car", str(_car_dir), True),
+                ])
+                _LOGGER.debug("已注册车模图静态路径: /lixiang_car → %s（长缓存）", _car_dir)
             except Exception as _cerr:  # noqa: BLE001
                 _LOGGER.debug("注册车模图静态路径失败（首页将无车模图）: %s", _cerr)
             # ★ 资源版本号（cache-buster）：卡片据此给静态资源加 ?v=
