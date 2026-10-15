@@ -28,6 +28,9 @@ const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallb
  *
  * 提供：
  *   · BASE_CSS      主题变量 + 通用样式（卡片/行/图标/深浅色）
+ *     ⚠️ 2026-10-14：原来变量写在 `:host` —— 但除 overview-card 外我们的卡都**不用**
+ *        Shadow DOM，`:host` 永不匹配 → 强调色变量（--lx-green/orange/red）一直为空。
+ *        改为零特异度的 `:where(.root)`：消费方自己的 .root[data-theme] 仍优先。
  *   · fontFaceCss() 字体声明（按 fontBase 生成）
  *   · iconUrl()     图标 URL（带 cache-buster）
  *   · html`/esc`    小工具
@@ -49,11 +52,11 @@ function fontFaceCss(fontBase) {
 
 /** 页面级通用样式（主题变量 + 卡片 + 行） */
 const BASE_CSS = `
-  :host { display:block;
+  :where(.root) { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-blue:#4C9AFF; --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    :where(.root) { --lx-blue:#4C9AFF; --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; }
   }
   .wrap { font-family:"Licium",system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
@@ -225,14 +228,14 @@ const __lxIconFallback = (typeof window !== "undefined" && (window.__lxIconFallb
  * App 实测结构（截图 1260×2844 @3x）：
  *   卡1（4 行）：🚗车辆昵称 理想L6 / 🚗车牌号 浙A12345 /
  *                🚗车辆型号 理想L6 / Ⓥ车架号 HLX32XXXXXXXXXXXX
- *   卡2（1 行）：ⓘ整车软件版本 V8.6.0
+ *   卡2（2 行）：ⓘ车机版本 / OTA（版本 · 状态 · 进度）
  *
  * 数据源：
  *   ✅ 车辆昵称/型号 —— HA 设备注册表
  *   ✅ 车架号 —— 设备 serial_number
  *   ✅ 配置等级 / 辅助驾驶等级 —— 车辆配置实体属性
  *   ⚠️ 车牌号 —— 接口需特殊 token（100032），暂不可用
- *   ⚠️ 整车软件版本 —— 集成未采集
+ *   ✅ 车机版本 / OTA —— head_unit_ver + ota_version/status/progress（2026-10-14 补）
  */
 
 const CARD_TAG = "lixiang-vehicle-info-page";
@@ -297,11 +300,11 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
-  :host { display:block;
+  lixiang-vehicle-info-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-vehicle-info-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
     .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
@@ -420,7 +423,10 @@ class LixiangVehicleInfoPage extends HTMLElement {
               { icon: "ic_home_dialogue.png",    k: "车架号",   id: "v-vin", mono: true },
           ]},
           { rows: [
-              { icon: "ic_home_health.webp",     k: "整车软件版本", id: "v-sw", na: "暂不可用", rowId: "r-sw", click: true },
+              // ★ 2026-10-14 修正：原来写死「暂不可用/集成未采集」，但集成确有
+              //   `车机版本`（head_unit_ver）与 `OTA 版本/状态/进度` 实体。
+              { icon: "ic_home_health.webp",     k: "整车软件版本", id: "v-sw" },
+              { icon: "ic_home_update.webp",     k: "OTA",      id: "v-ota" },
           ]},
           { rows: [
               { icon: "ic_home_control.webp",    k: "配置等级",     id: "v-cfg" },
@@ -442,8 +448,7 @@ class LixiangVehicleInfoPage extends HTMLElement {
     // 暂不可用的两项：点击说明原因
     const why = (msg) => () => this._toast(msg);
     const p1 = why("车牌号需要额外的接口令牌（当前返回 100032），集成暂无法读取");
-    const p2 = why("整车软件版本集成尚未采集，可在 App「车辆设置」或车机内查看");
-    [["#r-plate", p1, "车牌号"], ["#r-sw", p2, "整车软件版本"]].forEach(([sel, fn, label]) => {
+    [["#r-plate", p1, "车牌号"]].forEach(([sel, fn, label]) => {
       const el = this.querySelector(sel); if (!el) return;
       this._a11y(el, label, fn);
       el.addEventListener("click", fn);
@@ -513,6 +518,23 @@ class LixiangVehicleInfoPage extends HTMLElement {
       || ((this._hass && this._hass.states && this._eid("battery"))
           ? "" : "");
     q("#v-vin").textContent = vin || "—";
+
+    // ★ 2026-10-14：车机版本 / OTA（对齐官方 —— OTA 与软件版本都属车辆设置类二级页）
+    // 本卡没有 _st 助手（那是首页卡的），用局部 S() 取状态
+    const S = (id) => (id && this._hass && this._hass.states) ? this._hass.states[id] : null;
+    const swEid = this._eid("head_unit_ver") || this._eid("ota_version");
+    const swSt = swEid ? S(swEid) : null;
+    q("#v-sw").textContent = (swSt && swSt.state && !["unknown", "unavailable"].includes(swSt.state))
+      ? String(swSt.state) : "—";
+    const oV = S(this._eid("ota_version"));
+    const oS = S(this._eid("ota_status"));
+    const oP = S(this._eid("ota_progress"));
+    const ok = (x) => x && x.state && !["unknown", "unavailable"].includes(x.state);
+    const ver = ok(oV) ? String(oV.state) : "";
+    const pg = oP ? parseFloat(oP.state) : NaN;
+    q("#v-ota").textContent = ok(oS)
+      ? (String(oS.state) + (ver ? " · " + ver : "") + (pg > 0 && pg < 100 ? " " + Math.round(pg) + "%" : ""))
+      : (ver || "—");
 
     // 配置等级 / 辅助驾驶（从「车辆配置」实体属性读）
     const cfgEid = this._eid("vehicle_cfg");
@@ -639,21 +661,21 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_bold.ttf");    font-weight:600; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
 
-  :host { display:block;
+  lixiang-app-home { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-app-home { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
   /* 2026-10-12：兜底 —— 长内容不得撑破视口（车主："手机上右边溢出"）。
      真正修复是把 grid 列改成 minmax(0,1fr)；这里再加一道保险。
      ★★ 必须 clip，不能 hidden（2026-10-13 实测）：overflow-x:hidden 会把
-        overflow-y 计算成 auto → :host/.root 成为滚动容器 → 里面的
+        overflow-y 计算成 auto → lixiang-app-home/.root 成为滚动容器 → 里面的
         .head{position:sticky} 被困住，「抬头固定」直接失效（滚动后抬头消失）。
         clip 同样裁剪但【不创建滚动容器】。别再改回 hidden。 */
-  :host { display:block; max-width:100%; overflow-x:clip; }
+  lixiang-app-home { display:block; max-width:100%; overflow-x:clip; }
   .wrap > *, .row2 > *, .entries > *, .quick > * { min-width:0; }
   .root { container-type:inline-size; background:var(--lx-bg); color:var(--lx-t1); padding-bottom:14px; overflow-x:clip;
     font-family:"Licium",-apple-system,"PingFang SC",sans-serif;
@@ -686,6 +708,21 @@ const STYLE = `
   .root.stuck .head .ranges { margin-top:0; gap:10px; }
   .root.stuck .head .parked { margin-top:0; font-size:12px; }
   /* 插枪徽标（插电时显示） */
+  /* ★ 头部徽标：告警（琥珀）/ 哨兵（蓝） */
+  .badge { display:inline-flex; align-items:center; gap:3px; margin-left:6px;
+           vertical-align:middle; font-size:11px; padding:2px 7px; border-radius:8px; }
+  .badge img { width:12px; height:12px; }
+  .badge.warn { color:#8A5300; background:rgba(232,163,60,.16); }
+  .badge-sentry { color:#0A58F6; background:rgba(10,88,246,.10); }
+  /* ★ 地图卡拍照按钮（官方 HomeControlMapPhoto） */
+  .loc .map .shot { position:absolute; right:8px; top:50%; transform:translateY(-50%);
+                    width:34px; height:34px; border-radius:50%; background:#fff; border:0;
+                    display:flex; align-items:center; justify-content:center; cursor:pointer;
+                    box-shadow:0 2px 8px rgba(16,20,28,.2); padding:0; }
+  .loc .map .shot img { width:18px; height:18px; }
+  /* ★ 空调卡座椅插图（官方布局：右下角、不抢文字） */
+  .ac .seatart { position:absolute; right:-6px; bottom:-10px; width:104px; height:110px;
+                      opacity:.9; pointer-events:none; }
   .plug { display:inline-flex; align-items:center; gap:3px; margin-left:8px;
           vertical-align:middle; font-size:11px; padding:2px 7px; border-radius:8px;
           color:#0A7B3E; background:rgba(10,123,62,.10); }
@@ -723,7 +760,10 @@ const STYLE = `
   .root.expanded3d { --lx-3d-h: 260px; }
   .big3d iframe { width:100%; height:100%; border:0; display:block; }
   .big3d, .big3d iframe { touch-action:none; }
-  .big3d img { width:100%; height:100%; object-fit:contain; object-position:50% 62%; }
+  /* ★ 2026-10-14：车图缩到 84% 宽、居中 → 两侧各有约 8% 留白，
+     胎压标签放进留白里（车主："胎压还在车子上"）。 */
+  /* 必须 display:block —— 否则 img 是行内元素，margin:auto 不居中（实测左侧 0 留白） */
+  .big3d img { display:block; width:84%; margin:0 auto; height:100%; object-fit:contain; object-position:50% 62%; }
 
   /* minmax(0,1fr)：裸 1fr 的默认 min-width:auto 会让长内容撑破容器 → 手机右侧溢出 */
   .quick { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px;
@@ -743,8 +783,10 @@ const STYLE = `
   .q:active .c { transform:scale(.9); }
   .q .c img { width:28px; height:28px; pointer-events:none; }
   .q .n { font-size:12px; color:var(--lx-t2); line-height:1.1; }
-  .q.on .c { border-color:var(--lx-blue); background:rgba(10,88,246,.06); }
-  .q.on .n { color:var(--lx-blue); font-weight:500; }
+  /* ★ 2026-10-14 官方同款：激活 = 实心深色圆（配官方白色 *_on_* 图标）；
+     未激活 = 空心圆（配深色线稿图标）。原来是"蓝圈+浅蓝底"，与官方不一致。 */
+  .q.on .c { border-color:#1b1f27; background:#1b1f27; box-shadow:0 2px 10px rgba(16,20,28,.22); }
+  .q.on .n { color:#111418; font-weight:600; }
   .q.busy .c { border-color:var(--lx-blue); }
   .q .sp { position:absolute; top:16px; width:26px; height:26px; border-radius:50%;
            border:2.5px solid rgba(10,88,246,.2); border-top-color:var(--lx-blue);
@@ -775,7 +817,8 @@ const STYLE = `
      此前写死 150px → 卡片偏扁（比 App 矮约 20%）。改用 clamp 随视口缩放，
      窄屏不过高、宽屏不过矮。 */
   .ac { min-height:clamp(168px, 46vw, 200px); display:flex; flex-direction:column;
-        justify-content:space-between; }
+        justify-content:space-between; 
+             position:relative; overflow:hidden; }
   .ac .temp { font-family:"LxNum"; font-size:30px; font-weight:600; line-height:1.1; }
   .ac .temp sup { font-size:15px; font-weight:500; }
   .ac .target { font-size:11.5px; color:var(--lx-t3); margin-top:3px; }
@@ -785,6 +828,10 @@ const STYLE = `
              align-items:center; justify-content:center;
              box-shadow:0 1px 4px rgba(0,0,0,.06); }
   .ac .fan img { width:18px; height:18px; }
+  /* ★ 2026-10-14 官方同款：空调开启时风扇 **蓝底 + 白图标 + 转动**。
+     官方资源本就是配套的：ic_home_fan_off = 深灰(浅底)、ic_home_fan_on = 纯白(蓝底)。 */
+  .ac .fan.on { background:var(--lx-blue); box-shadow:0 2px 10px rgba(10,88,246,.35); }
+  .ac .fan.on img { animation:spin 1.6s linear infinite; }
   .ac .fan.spin img { animation:spin 1.6s linear infinite; }
   /* 功能 chip：单行等分，不换行 */
   .ac .acrow { display:flex; gap:5px; margin-top:10px; }
@@ -906,6 +953,18 @@ const STYLE = `
   .big3d .tp { position:absolute; transform:translate(-50%,-50%); padding:1px 5px;
                border-radius:8px; background:#0d1828cc; border:1px solid #ffffff1f;
                font-size:11px; font-weight:600; color:#eaf1fb; white-space:nowrap; }
+  /* ★ 官方同款二次确认弹框 */
+  .cfm { position:fixed; inset:0; z-index:99; background:rgba(16,20,28,.45);
+         display:flex; align-items:center; justify-content:center; padding:24px; }
+  .cfm-box { width:100%; max-width:340px; background:#fff; border-radius:20px;
+             padding:24px 20px 16px; box-shadow:0 18px 50px rgba(10,14,22,.28); }
+  .cfm-text { font-size:16px; line-height:1.55; color:#111418; text-align:center; font-weight:500; }
+  .cfm-row { display:flex; gap:12px; margin-top:22px; }
+  .cfm-row button { flex:1; height:46px; border-radius:23px; font-size:16px; font-weight:600;
+                    border:1px solid #e3e6ea; background:#fff; color:#111418; cursor:pointer; }
+  .cfm-row .cfm-yes { background:#1b1f27; border-color:#1b1f27; color:#fff; }
+  .cfm-rem { display:flex; align-items:center; justify-content:center; gap:6px;
+             margin-top:14px; font-size:13px; color:#6b7480; }
   .big3d .tp small { font-size:9px; font-weight:400; opacity:.75; margin-left:1px; }
   .big3d .tp.low { background:#4a3410cc; border-color:#e8b96b55; color:#f2c98a; }
   .big3d .ph .spin2 { width:22px; height:22px; border-radius:50%;
@@ -916,15 +975,26 @@ const STYLE = `
        ★ 2026-10-14：v1.5.7 的提交说明声称加过这段，但 diff 里只改了 11 张
          页面卡，app-home **从未真正加上** —— 断点一直不存在。
          同时 container-type 必须挂在 .root（真实元素）上：
-         light DOM 里写在 :host 上的 container-type 不生效，容器查询不会触发。 */
+         light DOM 里写在 lixiang-app-home 上的 container-type 不生效，容器查询不会触发。 */
     @container (max-width: 480px) {
+      /* ★ 2026-10-14 车主："为什么下面是一列了？"
+         官方在手机宽度：下方两张卡**并排**、入口瓦片**一行两个**、
+         快捷按钮**一行 4 个**。原来这里把 .row2/.entries 收成一列是我定错了。
+         全部移除，只在极窄（≤330px）才收。 */
+      .head { padding-left:14px; padding-right:14px; }
+      .wrap { padding-left:14px; padding-right:14px; }
+      .big3d, .root.expanded3d .big3d { height: 188px; }
+      .mini { width:118px; height:78px; }
+    }
+
+    /* ★ 2026-10-14：快捷键只在**很窄**时才收成 2 列。
+       原来写在 ≤480px 里 —— 容器查询修好后（v1.5.10）它在 460~490px 的
+       desktop 栏里也命中，车主反馈"一行只有 2 个"。App 本体在 420pt 仍是 4 列，
+       所以阈值下调到 400px（约等于手机竖屏可用宽度以下）。 */
+    @container (max-width: 330px) {
       .quick { grid-template-columns: repeat(2, minmax(0,1fr)); }
       .row2 { grid-template-columns: minmax(0,1fr); }
       .entries { grid-template-columns: minmax(0,1fr); }
-      .head { padding-left:14px; padding-right:14px; }
-      .wrap { padding-left:14px; padding-right:14px; }
-      .big3d, .root.expanded3d .big3d { height: 210px; }
-      .mini { width:118px; height:78px; }
     }
 `;
 
@@ -933,12 +1003,26 @@ const STYLE = `
 //   理由：之前不支持的车也会出现入口，点了只提示"该功能尚未接入"（体验差，
 //   而且用户会以为集成坏了）。实体存在性由**服务端能力门控**决定，不是前端猜车型。
 const QUICK = [
-  { key:"lock",   name:"车锁",       off:"ic_home_lock_off_lisa.png",           on:"ic_home_lock_open_lisa.png" },
-  { key:"window", name:"车窗",       off:"ic_home_window_off_lisa.png",         on:"ic_home_window_on_lisa.png" },
-  { key:"trunk",  name:"尾门",       off:"ic_home_tail_w_off_2025.png",         on:"ic_home_tail_w_on_2025.png" },
+  // ★ 2026-10-14 车主（两次澄清）：
+  //   1) "所有的按键变化都是这样的" → 2) "我说的是空心圆和实心圆的变化"。
+  //   即状态用**圆圈**表达：未激活 = 空心圆 + 深色线稿图标；
+  //   激活 = **实心深色圆** + 白色图标（官方图资本来就是配套的：
+  //   *_off_* 是深色线稿、*_on_* 是纯白，正好配实心圆）。
+  //   标签默认保持动作名；仅官方截图已证实的「授权驾驶 → 已授权」带 onName。
+  { key:"lock",   name:"车锁",   off:"ic_home_lock_off_lisa.png",      on:"ic_home_lock_open_lisa.png" },
+  { key:"window", name:"车窗",   off:"ic_home_window_off_lisa.png",    on:"ic_home_window_on_lisa.png" },
+  { key:"trunk",  name:"尾门",   off:"ic_home_tail_w_off_2025.png",    on:"ic_home_tail_w_on_2025.png" },
   // ★ 2026-10-09：授权驾驶是【动作】（button，cmdKey=remoteVehAuth），
   //   可执行实体与状态显示实体分开：auth=动作，stateField=授权状态。
-  { key:"auth",   name:"授权驾驶", stateField:"auth_state",
+  // ★ 2026-10-14 对照官方 App「车控」页截图修正：
+  //   官方在这里的按钮是 8 个（4×2），第 4 个在**已授权**时标签变成「已授权」+ 实心黑圆。
+  //   也就是说：状态**要**显示，但**标签必须跟着变** —— 只高亮而不改标签，
+  //   用户看到的就是"授权驾驶一直开着"（车主的疑问）。
+  // 官方 I18N（VehicleHomeControl）：authorization=授权驾驶 / alreadyAuthorization=已授权 /
+  // alreadyStart=已启动 / dismiss=不再提醒 → 授权按钮有**两态**且动作前要**二次确认**。
+  { key:"auth",   name:"授权驾驶", onName:"已授权", startedName:"已启动",
+    confirm:"请在 2 分钟内上车并踩下刹车踏板，下车后请远程上锁。",
+    remember:true, stateField:"auth_state",
     off:"ic_home_authorization_off_lisa.png",  on:"ic_home_authorization_on_lisa.png" },
   { key:"summon", name:"直线召唤", unsupported:true, note:"命令走 JOB 通道，HTTP 不可达",
     off:"ic_home_parkingout_off_lisa.png",     on:"ic_home_parkingout_on_lisa.png" },
@@ -1166,14 +1250,70 @@ class LixiangAppHome extends HTMLElement {
     const n = parseFloat(s.state); return isNaN(n) ? null : n;
   }
   _txt(id) { const s = this._st(id); return (s && !["unknown","unavailable"].includes(s.state)) ? s.state : null; }
+  /**
+   * 实体是否处于"开"状态。
+   * ★ 2026-10-14 修复（车主："授权驾驶为什么一直显示开着"）：
+   *   原实现 `["…","1"].some(x => v.includes(x))` 会把**任何含 1 的状态**判成开 ——
+   *   button 实体的状态是时间戳（如 2026-10-14T07:14:35+00:00，含 "1"），
+   *   于是「授权驾驶」永远显示为开着。
+   *   现在：先排掉明确的"关"、动作型实体（button）与时间戳状态，再做包含判断。
+   */
   _on(id) {
-    const v = this._txt(id); if (v == null) return false;
-    return ["on","open","opening","locked","已锁定","开启","已连接","true","1"].some(x => String(v).includes(x));
+    const s = this._st(id);
+    if (!s) return false;
+    const v = String(s.state == null ? "" : s.state).trim().toLowerCase();
+    if (!v) return false;
+    // 明确的"关/无效"值
+    if (["off","closed","0","false","no","none","unknown","unavailable","idle","standby"].includes(v)) return false;
+    // 动作型实体没有开/关语义（状态是"最后一次动作时间"）
+    if (String(id).split(".")[0] === "button") return false;
+    if (/^\d{4}-\d{2}-\d{2}t/.test(v)) return false;              // 时间戳状态
+    if (v === "1") return true;                                      // 精确的 1 才算开
+    // climate 域没有 "on" 状态：cool/heat/auto/dry/fan_only 都算"开着"
+    if (["cool", "heat", "heat_cool", "auto", "dry", "fan_only"].includes(v)) return true;
+    return ["on","open","opening","unlocked","locked","home","playing","true","yes","detected",
+            "开启","已开启","已锁定","已连接","已解锁","在线"].some((x) => v.includes(x));
   }
   _online() {
     const s = this._st(this._config.online); if (!s) return true;
     return !["离线","off","unavailable","unknown"].some(v => String(s.state).includes(v));
   }
+  /** 二次确认弹框（官方样式：白卡 + 取消/确定 + 不再提醒）。resolve {ok, remember} */
+  _confirm(opts) {
+    return new Promise((resolve) => {
+      const old = this.querySelector(".cfm"); if (old) old.remove();
+      const d = document.createElement("div");
+      d.className = "cfm";
+      d.innerHTML = `<div class="cfm-box" role="dialog" aria-modal="true">
+          <div class="cfm-text">${opts.text}</div>
+          <div class="cfm-row">
+            <button type="button" class="cfm-no">取消</button>
+            <button type="button" class="cfm-yes">确定</button>
+          </div>
+          ${opts.remember ? '<label class="cfm-rem"><input type="checkbox">不再提醒</label>' : ""}
+        </div>`;
+      this.appendChild(d);
+      const box = d.querySelector(".cfm-rem input");
+      const done = (ok) => {
+        const remember = !!(box && box.checked);
+        d.remove();
+        resolve({ ok, remember });
+      };
+      d.querySelector(".cfm-no").addEventListener("click", () => done(false));
+      d.querySelector(".cfm-yes").addEventListener("click", () => done(true));
+      d.addEventListener("click", (e) => { if (e.target === d) done(false); });
+      const y = d.querySelector(".cfm-yes"); if (y && y.focus) y.focus();
+    });
+  }
+
+  /** 「不再提醒」是否已勾选并记住 */
+  _noAsk(key) {
+    try { return localStorage.getItem("lx_noask_" + key) === "1"; } catch (e) { return false; }
+  }
+  _setNoAsk(key, on) {
+    try { on ? localStorage.setItem("lx_noask_" + key, "1") : localStorage.removeItem("lx_noask_" + key); } catch (e) { /* 隐私模式禁用存储 */ }
+  }
+
   _toast(msg, kind) {
     const t = this.querySelector(".toast"); if (!t) return;
     t.textContent = msg; t.className = "toast show" + (kind ? " " + kind : "");
@@ -1207,7 +1347,16 @@ class LixiangAppHome extends HTMLElement {
                  且放在头部 —— 3D 展开/收起都能看到。 -->
             <span class="plug" id="v-plug" style="display:none" role="status">
               <img src="${__iconBase}/icon_charge_lighting.webp" alt="" onerror="this.style.display='none'">
-              <b id="v-plug-t">已插枪</b>
+              <b id="v-plug-t">充电枪已插入</b>
+            </span>
+            <!-- ★ 2026-10-14 对齐官方顶部徽标（HomeControlHeaderWarning / HeaderSentry） -->
+            <span class="badge warn" id="v-badge-warn" style="display:none" role="status">
+              <img src="${__iconBase}/src_assets_images_vehicle_header_ic_home_warning.png" alt="" onerror="this.style.display='none'">
+              <b id="v-badge-warn-t">告警</b>
+            </span>
+            <span class="badge badge-sentry" id="v-badge-sentry" style="display:none" role="status">
+              <img src="${__iconBase}/src_assets_images_vehicle_header_ic_home_sentry.png" alt="" onerror="this.style.display='none'">
+              <b>哨兵</b>
             </span>
           </div>
           <div class="mini" id="mini" role="button" tabindex="0" aria-label="展开车辆 3D"></div>
@@ -1231,20 +1380,35 @@ class LixiangAppHome extends HTMLElement {
       <div class="wrap">
         <div class="row2">
           <div class="card ac" id="c-ac" role="button" tabindex="0">
+            <!-- ★ 2026-10-14 对齐官方：空调卡右下角的座椅插图（官方包内无可复用位图，自绘 SVG） -->
+            <svg class="seatart" viewBox="0 0 120 128" aria-hidden="true">
+              <defs><linearGradient id="lxseat" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e9edf3"/></linearGradient></defs>
+              <path d="M34 12h30c7 0 12 6 12 13l-3 44H37l-3-44c0-7 5-13 12-13z" fill="url(#lxseat)" stroke="#d7dde6" stroke-width="1"/>
+              <rect x="30" y="72" width="58" height="14" rx="7" fill="url(#lxseat)" stroke="#d7dde6" stroke-width="1"/>
+              <path d="M28 92h62c4 0 7 3 7 7v14c0 4-3 7-7 7H28c-4 0-7-3-7-7v-14c0-4 3-7 7-7z" fill="url(#lxseat)" stroke="#d7dde6" stroke-width="1"/>
+              <rect x="40" y="20" width="18" height="4" rx="2" fill="#dde3ea"/>
+              <rect x="40" y="30" width="18" height="4" rx="2" fill="#dde3ea"/>
+              <rect x="40" y="40" width="18" height="4" rx="2" fill="#dde3ea"/>
+            </svg>
             <div class="temp"><span id="v-room">—</span><sup>°C</sup></div>
             <div class="target">目标温度 <span id="v-target">—</span>°C</div>
             <div class="acrow" id="acrow">
-              <span class="chip" id="ch-seat"><img src="${__iconBase}/ic_home_seat_heating3.webp" alt="" onerror="this.style.visibility='hidden'"><b>座椅</b></span>
-              <span class="chip" id="ch-fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""><b>吹风</b></span>
-              <span class="chip" id="ch-defrost"><img src="${__iconBase}/ic_home_ice_cool.webp" onerror="__lxIconFallback(this)" alt=""><b>除霜</b></span>
+              <span class="chip" id="ch-seat"><img src="${__iconBase}/ic_home_seat_heating3.webp" alt="" onerror="this.style.visibility='hidden'"><b id="ch-seat-t">座椅加热</b></span>
+              <span class="chip" id="ch-fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""><b id="ch-fan-t">吹风</b></span>
+              <span class="chip" id="ch-defrost"><img src="${__iconBase}/ic_home_ice_cool.webp" onerror="__lxIconFallback(this)" alt=""><b id="ch-defrost-t">除雪除霜</b></span>
             </div>
-            <div class="fan" id="fan"><img src="${__iconBase}/ic_home_fan_on.webp" onerror="__lxIconFallback(this)" alt=""></div>
+            <div class="fan" id="fan"><img src="${__iconBase}/ic_home_fan_off.webp" onerror="__lxIconFallback(this)" alt=""></div>
           </div>
           <div class="card loc" id="c-loc" role="button" tabindex="0">
             <div class="map" id="map">
               <div class="tiles" id="hm-tiles"></div>
               <div class="puck" id="hm-puck" style="display:none">
                 <img src="${__iconBase}/icon_car_loc.webp" onerror="__lxIconFallback(this)" alt="车辆位置"></div>
+              <!-- ★ 2026-10-14 对齐官方 HomeControlMapPhoto：地图卡上的拍照按钮 -->
+              <button type="button" class="shot" id="hm-shot" aria-label="远程拍照" style="display:none">
+                <img src="${__iconBase}/ic_home_photo.png" onerror="__lxIconFallback(this)" alt="">
+              </button>
             </div>
             <div class="addr"><img src="${__iconBase}/icon_vehicle_my_location.webp" alt="" onerror="this.style.display='none'">
               <span id="v-addr">定位获取中…</span></div>
@@ -1514,6 +1678,22 @@ class LixiangAppHome extends HTMLElement {
     // → 点击完全没反应。与其他入口一致，补上默认路径。
     wire("#e-health", nav.health || "/lixiang/health");
     wire("#e-setting", nav.setting || "/lixiang/setting");
+    // ★ 地图卡拍照按钮（官方 HomeControlMapPhoto）
+    const shotEl = this.querySelector("#hm-shot");
+    if (shotEl) {
+      const shoot = async () => {
+        const pe = this._eid("btn_photo");
+        if (!pe) { this._toast("远程拍照未接入", "err"); return; }
+        if (!this._online()) { this._toast("车辆离线，操作不可用", "err"); return; }
+        try {
+          await this._hass.callService("button", "press", { entity_id: pe });
+          this._toast("已发送拍照", "ok");
+        } catch (e) { this._toast("拍照失败：" + ((e && e.message) || "未知"), "err"); }
+      };
+      this._a11y(shotEl, "远程拍照", shoot);
+      shotEl.addEventListener("click", shoot);
+    }
+
     // 哨兵卡：点击直接切换（可控制），键盘同样支持
     const senEl = this.querySelector("#c-sentry");
     if (senEl) {
@@ -1585,55 +1765,91 @@ class LixiangAppHome extends HTMLElement {
     const box = this.querySelector("#big3d");
     const layer = box && box.querySelector(".tires");
     if (!box || !layer) return;
+    const bw = box.clientWidth, bh = box.clientHeight;
+    // 车图（object-fit:contain + object-position:50% 62%）的实际渲染区域
+    let ox = 0, oy = 0, cW = bw, cH = bh;
     const img = box.querySelector("img");
-    let w = box.clientWidth, h = box.clientHeight, ox = 0, oy = 0;
-    if (img && img.naturalWidth && box.clientWidth) {
+    if (img && img.naturalWidth) {
+      const r = img.getBoundingClientRect(), br = box.getBoundingClientRect();
       const ar = img.naturalHeight / img.naturalWidth;
-      h = Math.min(box.clientHeight, box.clientWidth * ar);
-      w = h / ar;
-      ox = (box.clientWidth - w) / 2;          // object-position: 50%
-      oy = (box.clientHeight - h) * 0.62;      // object-position: 62%
+      cH = Math.min(r.height, r.width * ar); cW = cH / ar;
+      ox = r.left - br.left + (r.width - cW) / 2;
+      oy = r.top - br.top + (r.height - cH) * 0.62;
     }
-    // 实测轮心（占整幅车图）：x≈28.4%/71.4%，y≈29%/71%。
-    // ★ 2026-10-14 车主反馈"显示在车上" → 往**两端 + 外侧**挪：
-    //   标签放到车身轮廓之外、轮子斜外侧，既贴着轮子又不压住车身。
-    // 轮心 x≈28.4%/71.4% y≈29%/71%；外移到 20%/80% 与 78%/22% ——
-    //   既离开车身主体（车主："显示在车上"），又不至于脱离开轮子看不出对应关系。
-    const POS = { lf: [0.20, 0.78], rf: [0.20, 0.22], lr: [0.80, 0.78], rr: [0.80, 0.22] };
+    // ★ 2026-10-14 车主纠正：车是**横放**的，四个轮子在车的**上下两条边**上，
+    //   标签要贴在各自车轮的上/下侧 —— 不是放在卡片左右两端（车头/车尾）。
+    //   实测轮心：纵向 x≈28.4% / 71.4%（前/后），横向 y≈29% / 71%（车的右侧在上、左侧在下）。
+    //   车体轮廓占图高的 8%~92%，所以上排标签放车顶边之上、下排放车底边之下。
+    const xF = ox + cW * 0.284;      // 前轮
+    const xR = ox + cW * 0.714;      // 后轮
+    const yT = oy + cH * 0.08 - 15;  // 车顶边之上（标签半高 + 间隙）
+    const yB = oy + cH * 0.92 + 15;  // 车底边之下
+    const POS = {
+      rf: [xF, yT], rr: [xR, yT],    // 上排 = 车的右侧（右前 / 右后）
+      lf: [xF, yB], lr: [xR, yB],    // 下排 = 车的左侧（左前 / 左后）
+    };
     for (const [k, [px, py]] of Object.entries(POS)) {
       const el = layer.querySelector(`.tp[data-k="${k}"]`);
-      if (el) { el.style.left = (ox + px * w) + "px"; el.style.top = (oy + py * h) + "px"; }
+      if (!el) continue;
+      el.style.left = Math.round(px) + "px";
+      el.style.top = Math.round(py) + "px";
+      el.style.right = "auto";
     }
   }
 
   /// 失败时保留占位图（不显示破图）。
   async _loadCarImage(b3, mini, fallback) {
+    // ★ 2026-10-16 修「车图时有时无」：
+    //   ① 先用**上次成功的 URL**（localStorage）→ 秒出；JSON 拿不到时也不至于退回 20×20 占位图标
+    //   ② JSON 失败**重试一次**（1.5s 后），仍失败且无缓存 → 5s 后再试一轮（网络恢复自动出图）
+    //   ③ <img> onerror **带 ?v= 重试一次**（破掉浏览器可能缓存的坏响应）
+    const CK = "lx_car_img_v1";
+    const hit = (() => { try { const o = JSON.parse(localStorage.getItem(CK) || "{}"); return o && o.src ? o : null; } catch (e) { return null; } })();
+    const applySrc = (src, key) => {
+      const put = (box) => {
+        if (!box) return;
+        const img = box.querySelector("img");
+        if (!img) return;
+        if (img.dataset.lxReal === "1" && img.getAttribute("src") === src) return;
+        img.dataset.lxReal = "1";
+        delete img.dataset.lxRetried;
+        img.onload = () => { img.style.opacity = "1"; delete img.dataset.lxRetried; };
+        img.onerror = () => {
+          if (img.dataset.lxRetried === "1") { img.style.opacity = "0"; return; }   // 两次都失败 → 先藏，下轮再试
+          img.dataset.lxRetried = "1";
+          const bust = src + (src.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
+          setTimeout(() => { img.src = bust; }, 600);
+        };
+        img.style.opacity = "1";
+        img.src = src;
+        img.alt = "车辆 " + (key || "");
+        img.style.objectFit = "contain";
+      };
+      put(b3); put(mini);
+      if (b3) {
+        const _im = b3.querySelector("img");
+        if (_im) _im.addEventListener("load", () => this._layoutTires(), { once: true });
+        this._layoutTires();
+      }
+    };
+    if (hit) applySrc(hit.src, hit.key);                 // ① 缓存优先
     let data = null;
-    try {
-      const resp = await fetch("/lixiang_auto/car-image.json", { cache: "no-store" });
-      if (resp.ok) data = await resp.json();
-    } catch (err) {
-      // 静默：占位图已在 DOM 里
+    for (let i = 0; i < 2 && !data; i++) {                // ② 拉 JSON（失败重试一次）
+      try {
+        const resp = await fetch("/lixiang_auto/car-image.json", { cache: "no-store" });
+        if (resp.ok) data = await resp.json();
+      } catch (err) { /* 静默：占位图已在 DOM 里 */ }
+      if (!data && i === 0) await new Promise((r) => setTimeout(r, 1500));
     }
-    if (!data || !data.ok || !data.vertical) return;
+    if (!data || !data.ok || !data.vertical) {
+      if (!hit) setTimeout(() => { if (this.isConnected) this._loadCarImage(b3, mini, fallback); }, 5000);
+      return;
+    }
     // ★ 横版优先（官方竖图逆时针旋转 90° 派生，车头朝左）—— 横容器不再"车小如邮票"
     const src = (data.horizontal && data.horizontal.static) || data.vertical.static || "";
     if (!src) return;                     // 还没缓存好 → 保持占位，下次刷新再来
-    const apply = (box) => {
-      if (!box) return;
-      const img = box.querySelector("img");
-      if (!img) return;
-      img.src = src;
-      img.alt = "车辆 " + (data.color_code || "");
-      img.style.objectFit = "contain";
-    };
-    apply(b3); apply(mini);
-    // 车图尺寸/位置确定后才能把胎压摆到轮子上
-    if (b3) {
-      const _im = b3.querySelector("img");
-      if (_im) _im.addEventListener("load", () => this._layoutTires(), { once: true });
-      this._layoutTires();
-    }
+    if (!hit || hit.src !== src) applySrc(src, data.color_code);   // ③ 只在变化时重设，避免闪
+    try { localStorage.setItem(CK, JSON.stringify({ src, key: data.color_code || "", t: Date.now() })); } catch (e) {}
   }
   _more(key) {
     const eid = (this._config.more || {})[key];
@@ -1654,6 +1870,12 @@ class LixiangAppHome extends HTMLElement {
       return;
     }
     if (!this._online()) { this._toast("车辆离线，操作不可用", "err"); return; }
+    // ★ 官方同款：这类动作执行前要二次确认（可勾选"不再提醒"）
+    if (def.confirm && !this._noAsk(key)) {
+      const r = await this._confirm({ text: def.confirm, remember: def.remember });
+      if (!r.ok) return;
+      if (r.remember) this._setNoAsk(key, true);
+    }
     const s = this._hass.states[eid];
     if (!s) { this._toast("实体不存在", "err"); return; }
 
@@ -1713,8 +1935,10 @@ class LixiangAppHome extends HTMLElement {
       const el = this.querySelector(`.q[data-key="${it.key}"]`);
       if (!el) return;
       const eid = this._eidIn("quick", it.key);
-      // stateField：动作类按钮（如授权驾驶 = button）用另一个实体显示状态
-      const stateEid = (it.stateField && this._eid(it.stateField)) || eid;
+      // stateField：动作类按钮（如授权驾驶 = button）用另一个实体显示状态。
+      // ★ 配了 stateField 但解析不到（该车没有这个实体）时必须返回 null ——
+      //   回退到动作实体本身会让 button 的时间戳状态被当成"开着"（真实踩过的坑）。
+      const stateEid = it.stateField ? (this._eid(it.stateField) || null) : eid;
       let active = false; const missing = !eid || !this._st(eid);
       if (stateEid && this._st(stateEid)) {
         if (it.key in this._optim) active = this._optim[it.key];
@@ -1725,6 +1949,19 @@ class LixiangAppHome extends HTMLElement {
       }
       el.className = "q" + (active ? " on" : "") + ((missing || offline) ? " dim" : "")
                    + (this._busy[it.key] ? " busy" : "");
+      // ★ 2026-10-14 官方逻辑：授权按钮有**两态** ——
+      //   车辆已启动（非驻车）→ 已启动；已授权 → 已授权；否则 授权驾驶。
+      //   （官方 I18N：alreadyAuthorization='已授权' / alreadyStart='已启动'）
+      const nameEl = el.querySelector(".n");
+      if (nameEl && it.onName) {
+        let want = active ? it.onName : it.name;
+        if (it.startedName) {
+          const stTxt = String(this._txt(this._eid("status")) || "");
+          const started = !!stTxt && !/驻车|P\s*档|park/i.test(stTxt);
+          if (started) { want = it.startedName; active = true; }
+        }
+        if (nameEl.textContent !== want) nameEl.textContent = want;
+      }
       el.setAttribute("aria-pressed", active ? "true" : "false");
       // 未接入的按钮：把原因写在下面（例如"集成暂未支持"），避免用户反复点
       const sub = el.querySelector(".sub");
@@ -1829,8 +2066,20 @@ class LixiangAppHome extends HTMLElement {
     const room = this._num(this._eid("room_temp")), tgt = this._num(this._eid("target_temp"));
     q("#v-room").textContent = room == null ? "—" : room.toFixed(1);
     q("#v-target").textContent = tgt == null ? "—" : tgt;
-    const acOn = this._eid("ac") ? this._on(this._eid("ac")) : false;
-    const fan = q("#fan"); if (fan) fan.className = "fan" + (acOn ? " spin" : "");
+    // ★ 2026-10-14：空调是 climate 域，状态是 cool/heat/auto/fan_only…（**不是 on**），
+    //   原来用 _on() 判 → 永远 false → 风扇不转；且图标固定用白色版（浅底上几乎看不见）。
+    const acEid = this._eid("ac");
+    const acSt = this._st(acEid);
+    const acRaw = acSt ? String(acSt.state).toLowerCase() : "";
+    const acOn = ["cool", "heat", "heat_cool", "auto", "dry", "fan_only", "on", "开启"]
+      .some((x) => acRaw.includes(x));
+    const fan = q("#fan");
+    if (fan) {
+      fan.className = "fan" + (acOn ? " on" : "");
+      const fi = fan.querySelector("img");
+      const want = this._img(acOn ? "ic_home_fan_on.webp" : "ic_home_fan_off.webp");
+      if (fi && fi.getAttribute("src") !== want) { delete fi.dataset.lxFb; fi.src = want; }
+    }
     // 功能状态 chip（有实体且开启时点亮；无实体则隐藏）
     const _chip = (sel, eid) => {
       const el = q(sel); if (!el) return;
@@ -1838,9 +2087,17 @@ class LixiangAppHome extends HTMLElement {
       el.style.display = "";
       el.className = "chip" + (this._on(eid) ? " on" : "");
     };
-    _chip("#ch-seat", this._eid("steer_heat") || this._eid("ac_fast_hot"));
+    // ★ 2026-10-14 对齐官方空调页文案（从 index.vehicle.bundle 反汇编提取，共 23 项）：
+    //   deicing:'除雪除霜' · rapidCool:'极速制冷' · rapidHeat:'极速制热' · steeringWheelHeat:'方向盘加热'
+    //   我们原来写的是 座椅 / 吹风 / 除霜 —— 与官方措辞不一致。
+    const seatEid = this._eid("steer_heat");
+    _chip("#ch-seat", seatEid || this._eid("ac_fast_hot"));
+    const seatT = q("#ch-seat-t");
+    if (seatT) seatT.textContent = seatEid ? "方向盘加热" : "极速制热";
     _chip("#ch-fan", this._eid("ac_fast_cold"));
+    const fanT = q("#ch-fan-t"); if (fanT) fanT.textContent = "极速制冷";
     _chip("#ch-defrost", this._eid("ac_defrost"));
+    const defT = q("#ch-defrost-t"); if (defT) defT.textContent = "除雪除霜";
 
     // 地址：device_tracker 的 attributes 里可能有 address / 也支持坐标回退
     let addr = null;
@@ -1895,7 +2152,7 @@ class LixiangAppHome extends HTMLElement {
       if (acGun || dcGun) {
         plugEl.style.display = "";
         const pt = q("#v-plug-t");
-        if (pt) pt.textContent = dcGun ? "直流快充已插枪" : "交流慢充已插枪";
+        if (pt) pt.textContent = (dcGun ? "直流快充" : "交流慢充") + " · 充电枪已插入";
       } else {
         plugEl.style.display = "none";
       }
@@ -1912,6 +2169,23 @@ class LixiangAppHome extends HTMLElement {
     if (!this.querySelector("#quick .q")) this._renderQuick(false);
     this._applyQuick(); this._spark();
     this._applyTires();
+    // ★ 2026-10-14 对齐官方顶部徽标：告警（胎压告警任一）/ 哨兵（开启时）
+    const wEl = this.querySelector("#v-badge-warn");
+    if (wEl) {
+      const wids = ["warn_lf", "warn_rf", "warn_lr", "warn_rr"]
+        .map((k) => this._eid(k)).filter(Boolean);
+      const won = wids.filter((id) => this._on(id)).length;
+      wEl.style.display = won ? "" : "none";
+      const wt = this.querySelector("#v-badge-warn-t");
+      if (wt) wt.textContent = won > 1 ? `告警 ${won}` : "胎压告警";
+    }
+    const sBEl = this.querySelector("#v-badge-sentry");
+    if (sBEl) {
+      const se = this._eid("sentry");
+      sBEl.style.display = (se && this._on(se)) ? "" : "none";
+    }
+    const shotBEl = this.querySelector("#hm-shot");
+    if (shotBEl) shotBEl.style.display = this._eid("btn_photo") ? "" : "none";
     if (!this._tireResize) {
       this._tireResize = () => this._layoutTires();
       window.addEventListener("resize", this._tireResize);
@@ -2128,19 +2402,28 @@ let __fontBase = DEFAULT_FONT_BASE;   // setConfig 可覆盖
 const __fontFallback = BUILTIN_FONT_BASE;
 
 const I18N = {
-  title: "充电",
+  title: "充电管理",          // ★ 官方标题（不是"充电"）
   status: "充电状态",
-  notCharging: "未充电",
+  notCharging: "等待充电",   // ★ 官方文案（不是"未充电"）
   charging: "充电中",
-  done: "已充满",
-  power: "充电功率",
+  done: "充电完成",        // ★ 官方文案（不是"已充满"）
+  power: "充电效率",
+  powerKw: "充电功率",
+  volt: "输入电压",     // ★ 官方 4 项指标之三
+  amp: "输入电流",      // ★ 官方 4 项指标之四  // ★ 官方 4 项指标之二（引擎键名 av = A×V）   // ★ 2026-10-14 官方文案（不是"充电功率"）
   remain: "剩余时间",
+  records: "充电记录",        // ★ 官方右上角入口
+  remainPrefix: "剩余",       // ★ 官方「剩余2小时7分钟」
+  hour: "小时",
+  apptEnd: "按时结束",        // ★ 官方文案
+  hint: "日常快充建议最高设置为95%，95%以上充电功率较低。",
+  footer: "适用于交流充电桩和理想20kW直流充电桩",
   limit: "充电上限",
   mode: "充电模式",
   appt: "预约充电",
-  apptTime: "预约时段",
-  acGun: "交流枪",
-  dcGun: "直流枪",
+  apptTime: "预约时间段",
+  acGun: "交流慢充",
+  dcGun: "直流快充",
   portCover: "充电口盖",
   coverOpen: "开",
   coverClose: "关",
@@ -2182,12 +2465,12 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_bold.ttf");    font-weight:600; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
-  :host { display:block;
+  lixiang-charge-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-charge-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
   .root { container-type:inline-size; position:relative; background:var(--lx-bg); color:var(--lx-t1); padding-bottom:16px;
@@ -2206,13 +2489,61 @@ const STYLE = `
   .hero { margin:6px 20px 0; border-radius:18px; padding:16px;
           background:linear-gradient(150deg,var(--lx-card) 0%,var(--lx-bg) 100%); }
   .hero .row1 { display:flex; align-items:center; gap:9px; }
+    /* ★ 2026-10-14 官方充电管理页：环形电量表 */
+    .ringwrap { position:relative; width:150px; height:150px; margin:14px auto 4px; }
+    .ring { width:100%; height:100%; display:block; }
+    .ring .rbg { fill:none; stroke:#e8eaee; stroke-width:9; }
+    .ring .rfg { fill:none; stroke:var(--lx-green); stroke-width:9; stroke-linecap:round;
+                 transform:rotate(-90deg); transform-origin:50% 50%;
+                 transition:stroke-dashoffset .5s ease; }
+    .ringwrap .bolt { position:absolute; left:50%; top:-13px; width:34px; margin-left:-17px; }
+    .ringwrap .rtx { position:absolute; inset:0; display:flex; align-items:center;
+                     justify-content:center; font-weight:600; }
+    .ringwrap .rtx span { font-size:42px; letter-spacing:-1px; }
+    .ringwrap .rtx small { font-size:15px; margin:12px 0 0 3px; }
+    .remline { text-align:center; font-size:15px; color:var(--lx-t2); margin:2px 0 12px; }
+    /* 上限滑杆块（官方） */
+    .limitbox { margin:12px 20px 0; background:var(--lx-card); border-radius:18px; padding:16px; }
+    .limitbox .lbrow1 { display:flex; align-items:baseline; justify-content:space-between;
+                        font-size:16px; font-weight:500; }
+    .limitbox .lbrow1 b { font-size:16px; font-weight:600; }
+    .limitbox .rng { -webkit-appearance:none; appearance:none; width:100%; height:6px;
+                     margin:16px 0 6px; border-radius:3px; background:linear-gradient(
+                       to right, var(--lx-green) 0%, var(--lx-green) var(--fill,100%),
+                       #e8eaee var(--fill,100%), #e8eaee 100%); outline:none; }
+    .limitbox .rng::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px;
+                      border-radius:50%; background:#fff; box-shadow:0 1px 4px rgba(0,0,0,.25); }
+    .limitbox .rng::-moz-range-thumb { width:18px; height:18px; border:0; border-radius:50%;
+                      background:#fff; box-shadow:0 1px 4px rgba(0,0,0,.25); }
+    .limitbox .lbrow2 { display:flex; justify-content:space-between; font-size:12px; color:var(--lx-t3); }
+    .limitbox .hint { margin-top:12px; font-size:12px; line-height:1.6; color:var(--lx-t3); }
+    /* 设置行（预约充电 / 按时结束） */
+    .setcard { margin:12px 20px 0; background:var(--lx-card); border-radius:18px; padding:0 16px; }
+    .setcard .setrow { display:flex; align-items:center; justify-content:space-between;
+                       min-height:56px; border-bottom:1px solid rgba(0,0,0,.05); }
+    .setcard .setrow:last-child { border-bottom:0; }
+    .setcard .sl { font-size:16px; }
+    .setcard .tg { position:relative; width:50px; height:30px; border-radius:15px;
+                   background:#dfe3e9; transition:background .2s; cursor:pointer; flex:0 0 auto; }
+    .setcard .tg i { position:absolute; top:3px; left:3px; width:24px; height:24px; border-radius:50%;
+                     background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.2); transition:left .2s; }
+    .setcard .tg.on { background:var(--lx-blue); }
+    .setcard .tg.on i { left:23px; }
+    .setcard .tmin { border:0; background:transparent; font-size:16px; color:var(--lx-t2);
+                     text-align:right; font-family:inherit; }
+    .pfoot { margin:14px 20px 26px; text-align:center; font-size:12px; color:var(--lx-t3); }
+    .topbar .reclink { margin-left:auto; margin-right:10px; border:0; background:transparent;
+                       font-size:15px; color:var(--lx-t1); font-family:inherit; cursor:pointer; }
   .hero .dot { width:9px; height:9px; border-radius:50%; background:var(--lx-t3); }
   .hero .dot.on { background:var(--lx-green); box-shadow:0 0 0 4px rgba(52,199,89,.16); }
   .hero .dot.err { background:var(--lx-red); }
   .hero .st { font-size:16px; font-weight:500; }
   .hero .sub { margin-left:auto; font-size:12px; color:var(--lx-t3); }
   /* 三栏：前两个数值等宽，第三个（模式·文字）给更多空间 */
-  .hero .metrics { display:grid; grid-template-columns:1fr 1fr 1.5fr; gap:8px; margin-top:14px; }
+  /* ★ 2026-10-14 车主："剩余时间下面，一行直接显示四个，跟 app 保持一致"
+     官方充电管理页 4 项指标就是【一行四列】（44km/hr · 8.8kW · 24A · 373V）。 */
+  .hero .metrics { display:grid; grid-template-columns:repeat(4, minmax(0,1fr));
+                   gap:6px; margin-top:14px; }
   .hero .m .v { font-family:"LxNum","Licium"; font-size:21px; font-weight:600;
                 white-space:nowrap; }
   .hero .m .v.txt { font-family:"Licium"; font-size:14px; font-weight:500;
@@ -2387,7 +2718,11 @@ const STYLE = `
 
     /* ── 手机断点（≤480px）── */
     @container (max-width: 480px) {
-      .hero .metrics { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
+      /* 官方在手机宽度也是【一行四列】，不压成两行 */
+      .hero .metrics { grid-template-columns: repeat(4, minmax(0,1fr)); gap:4px; }
+      .hero .m .v { font-size:19px; }
+      .hero .m .v small { font-size:10px; margin-left:1px; }
+      .hero .m .l { font-size:10.5px; }
       .stat3 { grid-template-columns: minmax(0,1fr) minmax(0,1fr); }
       .grid, .row3 { grid-template-columns: minmax(0,1fr); }
     }
@@ -2495,6 +2830,7 @@ class LixiangChargePage extends HTMLElement {
       <div class="topbar">
         <img class="back" id="back" src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="返回">
         <h1>${I18N.title}</h1>
+        <button class="reclink" id="go-records" type="button">${I18N.records}</button>
         <div class="refresh" id="refresh" role="button" tabindex="0" aria-label="刷新数据">
           <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="" style="transform:rotate(-90deg)">
         </div>
@@ -2505,21 +2841,45 @@ class LixiangChargePage extends HTMLElement {
           <span class="st" id="st">—</span>
           <span class="sub" id="sub"></span>
         </div>
-        <div class="barrow">
-          <span class="lb">${I18N.limit}</span>
-          <div class="bar"><i id="bar" style="width:0%"></i></div>
-          <span class="p" id="limitp">—</span>
+        <!-- ★ 2026-10-14 对齐官方「充电管理」页：环形电量表（SOC + 绿弧 + 闪电） -->
+        <div class="ringwrap">
+          <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+            <circle class="rbg" cx="60" cy="60" r="52"></circle>
+            <circle class="rfg" id="ring-arc" cx="60" cy="60" r="52"></circle>
+          </svg>
+          <img class="bolt" src="${__iconBase}/ic_home_lightning.png" onerror="__lxIconFallback(this)" alt="">
+          <div class="rtx"><span id="ring-soc">—</span><small>%</small></div>
         </div>
+        <div class="remline" id="rem-text">—</div>
         <div class="metrics">
-          <div class="m"><div class="v"><span id="m-power">—</span><small>kW</small></div>
+          <div class="m"><div class="v"><span id="m-power">—</span><small id="u-power">km/hr</small></div>
             <div class="l">${I18N.power}</div></div>
-          <div class="m"><div class="v"><span id="m-remain">—</span><small>min</small></div>
-            <div class="l">${I18N.remain}</div></div>
-          <div class="m"><div class="v"><span id="m-mode">—</span></div>
-            <div class="l">${I18N.mode}</div></div>
+        <div class="m"><div class="v"><span id="m-pw">—</span><small>kW</small></div>
+          <div class="l">${I18N.powerKw}</div></div>
+        <div class="m"><div class="v"><span id="m-amp">—</span><small id="u-amp">A</small></div>
+          <div class="l">${I18N.amp}</div></div>
+        <div class="m"><div class="v"><span id="m-volt">—</span><small id="u-volt">V</small></div>
+          <div class="l">${I18N.volt}</div></div>
         </div>
       </div>
+      <!-- ★ 2026-10-14 对齐官方：充电上限可拖滑杆 + 提示原文 -->
+      <div class="limitbox">
+        <div class="lbrow1"><span>${I18N.limit}</span><b id="limitp">—</b></div>
+        <input class="rng" type="range" id="limit-range" min="50" max="100" step="1" value="100"
+               aria-label="${I18N.limit}">
+        <div class="lbrow2"><span id="limit-min">50%</span><span id="limit-max">100%</span></div>
+        <div class="hint">${I18N.hint}</div>
+      </div>
+      <div class="setcard">
+        <div class="setrow"><span class="sl">${I18N.appt}</span>
+          <span class="tg" id="tg-appt" role="switch" tabindex="0" aria-checked="false"><i></i></span></div>
+        <div class="setrow"><span class="sl">${I18N.apptEnd}</span>
+          <input class="tmin" type="time" id="end-time" aria-label="${I18N.apptEnd}"></div>
+      </div>
+      <div class="pfoot">${I18N.footer}</div>
       <div class="stat3">
+        <div class="st"><div class="v"><span id="m-mode">—</span></div>
+            <div class="l">${I18N.mode}</div></div>
         <div class="st"><div class="v"><span id="s-month">—</span><small>kWh</small></div>
           <div class="l">${I18N.monthKwh}</div></div>
         <div class="st"><div class="v"><span id="s-times">—</span><small>${I18N.times}</small></div>
@@ -2555,6 +2915,56 @@ class LixiangChargePage extends HTMLElement {
       const p = (this._config.nav || {}).back || "/lixiang/app";
       lxNavigate(this, p);
     });
+    // ★ 2026-10-14 官方充电管理页：上限滑杆 / 预约开关 / 按时结束 / 记录入口
+    const rng = this.querySelector("#limit-range");
+    if (rng) {
+      rng.addEventListener("change", async () => {
+        const eid = this._eid("limit_num");
+        if (!eid) { this._toast("充电上限不可设置", "err"); return; }
+        const v = Number(rng.value);
+        try {
+          await this._hass.callService("number", "set_value", { entity_id: eid, value: v });
+          this._toast("充电上限已设为 " + v + "%", "ok");
+        } catch (err) { this._toast("设置失败：" + ((err && err.message) || "未知"), "err"); }
+      });
+    }
+    const tgEl = this.querySelector("#tg-appt");
+    if (tgEl) {
+      const flip = async () => {
+        const eid = this._eid("appt_sw");
+        if (!eid) { this._toast("预约充电不可用", "err"); return; }
+        const st = this._hass && this._hass.states ? this._hass.states[eid] : null;
+        const on = !!(st && st.state === "on");
+        try {
+          await this._hass.callService("switch", on ? "turn_off" : "turn_on", { entity_id: eid });
+          tgEl.classList.toggle("on", !on);
+          tgEl.setAttribute("aria-checked", !on ? "true" : "false");
+          this._toast(I18N.appt + (on ? "已关闭" : "已开启"), "ok");
+        } catch (err) { this._toast("操作失败：" + ((err && err.message) || "未知"), "err"); }
+      };
+      this._a11y(tgEl, I18N.appt, flip);
+      tgEl.addEventListener("click", flip);
+    }
+    const teEl = this.querySelector("#end-time");
+    if (teEl) {
+      teEl.addEventListener("change", async () => {
+        const eid = this._eid("end_time");
+        if (!eid || !teEl.value) { this._toast("按时结束不可设置", "err"); return; }
+        try {
+          await this._hass.callService("time", "set_value", { entity_id: eid, time: teEl.value + ":00" });
+          this._toast(I18N.apptEnd + " " + teEl.value, "ok");
+        } catch (err) { this._toast("设置失败：" + ((err && err.message) || "未知"), "err"); }
+      });
+    }
+    const rec = this.querySelector("#go-records");
+    if (rec) {
+      const go = () => {
+        const t = this.querySelector("#ctabs") || this.querySelector("#years");
+        if (t && t.scrollIntoView) t.scrollIntoView({ behavior: "smooth", block: "start" });
+      };
+      this._a11y(rec, I18N.records, go);
+      rec.addEventListener("click", go);
+    }
     // ★ 2026-10-11：充电类型筛选绑定（漏了这行就只是"画了不响应"）
     this._bindCTypes();
     const rf2 = this.querySelector("#refresh");
@@ -2609,6 +3019,33 @@ class LixiangChargePage extends HTMLElement {
     })();
 
     this._built = true;
+  }
+
+  /** ★ 2026-10-14 时长格式化：官方「剩余2小时7分钟」（不是 185 min）。 */
+  _fmtDur(minutes) {
+    const t = Math.max(0, Math.round(Number(minutes) || 0));
+    const h = Math.floor(t / 60), m = t % 60;
+    if (h <= 0) return m + I18N.min;
+    if (m === 0) return h + I18N.hour;
+    return h + I18N.hour + m + I18N.min;
+  }
+
+  /** ★ 2026-10-14 上限滑杆：范围取 number 实体的 min/max（官方页显示 80%–100%）。 */
+  _syncLimitSlider(lim) {
+    const r = this.querySelector("#limit-range");
+    if (!r) return;
+    const st = this._hass && this._hass.states ? this._hass.states[this._eid("limit_num")] : null;
+    const a = (st && st.attributes) || {};
+    const mn = Number.isFinite(Number(a.min)) ? Number(a.min) : 50;
+    const mx = Number.isFinite(Number(a.max)) ? Number(a.max) : 100;
+    r.min = String(mn); r.max = String(mx);
+    const v = lim == null ? mx : Math.max(mn, Math.min(mx, lim));
+    if (document.activeElement !== r) r.value = String(Math.round(v));
+    const pct = mx > mn ? ((v - mn) / (mx - mn)) * 100 : 100;
+    r.style.setProperty("--fill", pct + "%");
+    const la = this.querySelector("#limit-min"), lb = this.querySelector("#limit-max");
+    if (la) la.textContent = mn + "%";
+    if (lb) lb.textContent = mx + "%";
   }
 
   /** 轻提示（★ 2026-10-09 新增：充电口盖开合需要"已下发/失败原因"的明确反馈） */
@@ -2968,20 +3405,60 @@ class LixiangChargePage extends HTMLElement {
     if (fault && String(fault) !== "off" && String(fault) !== "正常") {
       q("#dot").className = "dot err";
     }
-    q("#sub").textContent = isCharging ? "⚡ 充电中" : "";
+    // ★ 2026-10-14：状态行已显示「充电中」，这里不再重复一遍（官方页状态由环形表表达）
+    q("#sub").textContent = fault && String(fault) !== "off" && String(fault) !== "正常" ? "充电故障" : "";
 
-    // 上限 + 电量
-    const lim = this._num(this._eid("limit"));
+    // ★ 2026-10-14 对齐官方：环形电量表（SOC）+ 上限滑杆
+    const lim = this._num(this._eid("limit") || this._eid("limit_sensor"));
     const soc = this._num(this._eid("soc"));
+    const arc = q("#ring-arc");
+    if (arc) {
+      const C = 2 * Math.PI * 52;
+      const frac = soc == null ? 0 : Math.max(0, Math.min(100, soc)) / 100;
+      arc.style.strokeDasharray = C + " " + C;
+      arc.style.strokeDashoffset = String(C * (1 - frac));
+    }
+    const rs = q("#ring-soc");
+    if (rs) rs.textContent = soc == null ? "—" : String(Math.round(soc));
     q("#limitp").textContent = lim == null ? "—" : lim + "%";
-    const bar = q("#bar");
-    if (soc != null) { bar.style.width = Math.max(0, Math.min(100, soc)) + "%"; }
-    else if (lim != null) { bar.style.width = lim + "%"; }
+    this._syncLimitSlider(lim);
+    // 预约充电开关 / 按时结束
+    const apptEid = this._eid("appt_sw");
+    const apptSt = apptEid && this._hass && this._hass.states ? this._hass.states[apptEid] : null;
+    const tg0 = q("#tg-appt");
+    if (tg0) {
+      const on = !!(apptSt && apptSt.state === "on");
+      tg0.classList.toggle("on", on);
+      tg0.setAttribute("aria-checked", on ? "true" : "false");
+      tg0.setAttribute("aria-label", I18N.appt + (on ? "（已开启）" : "（已关闭）"));
+    }
+    const te0 = q("#end-time");
+    if (te0 && document.activeElement !== te0) {
+      const tSt = this._hass && this._hass.states[this._eid("end_time")];
+      const tv = tSt && tSt.state && /^\d{1,2}:\d{2}/.test(tSt.state) ? tSt.state.slice(0, 5) : "";
+      te0.value = tv;
+    }
 
     // 三项
     const p = this._num(this._eid("power")), rm = this._num(this._eid("remain")), md = this._txt(this._eid("mode"));
     q("#m-power").textContent = p == null ? "—" : p;
-    q("#m-remain").textContent = rm == null ? "—" : rm;
+      // ★ 2026-10-14 单位跟随实体（官方是 km/hr；原来写死 kW 是错的）
+      const pSt = this._hass && this._hass.states[this._eid("power")];
+      const pU = (pSt && pSt.attributes && pSt.attributes.unit_of_measurement) || "km/hr";
+      const uEl = q("#u-power"); if (uEl) uEl.textContent = pU;
+    // ★ 2026-10-14 官方格式：「剩余2小时7分钟」（原来显示 185 min）
+    const rEl = q("#rem-text");
+    if (rEl) rEl.textContent = rm == null ? I18N.remainPrefix + " —" : I18N.remainPrefix + this._fmtDur(rm);
+      // ★ 官方 4 项指标之三/四：输入电压 / 输入电流（单位跟随实体）
+      const Sx = (id) => (id && this._hass && this._hass.states) ? this._hass.states[id] : null;
+      const vSt = Sx(this._eid("charge_voltage")), aSt = Sx(this._eid("charge_current"));
+      const okv = (x) => x && x.state && !["unknown", "unavailable"].includes(x.state);
+      q("#m-volt").textContent = okv(vSt) ? vSt.state : "—";
+      q("#m-amp").textContent = okv(aSt) ? aSt.state : "—";
+      const uv = q("#u-volt"), ua = q("#u-amp");
+      if (uv && vSt && vSt.attributes && vSt.attributes.unit_of_measurement) uv.textContent = vSt.attributes.unit_of_measurement;
+      if (ua && aSt && aSt.attributes && aSt.attributes.unit_of_measurement) ua.textContent = aSt.attributes.unit_of_measurement;
+      q("#m-pw").textContent = this._num(this._eid("charge_power")) == null ? "—" : this._num(this._eid("charge_power"));
     q("#m-mode").textContent = md || "—";
     q("#m-mode").className = "v" + ((md && isNaN(parseFloat(md))) ? " txt" : "");
 
@@ -3143,12 +3620,12 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
-  :host { display:block;
+  lixiang-energy-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-energy-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
     .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
@@ -3811,12 +4288,12 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
-  :host { display:block;
+  lixiang-health-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; --lx-tire:#D8D8DC; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-health-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-tire:#3A3A3E; }
   }
     .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
@@ -4147,12 +4624,12 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
-  :host { display:block;
+  lixiang-setting-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-red:#FF3B30;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-setting-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
   .root { container-type:inline-size; position:relative; background:var(--lx-bg); color:var(--lx-t1); padding-bottom:20px;
@@ -4755,11 +5232,11 @@ const MODES = [
 const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
-  :host { display:block;
+  lixiang-scene-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-scene-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
     .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
@@ -5099,12 +5576,12 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf"); font-weight:500; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
-  :host { display:block;
+  lixiang-climate-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-climate-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
     .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
@@ -5320,13 +5797,13 @@ class LixiangClimatePage extends HTMLElement {
       <div class="modes" id="modes"></div>
 
       <div class="sect">
-        <h2>定时出发</h2>
+        <h2>按时出发</h2>
         <div id="scheds"></div>
       </div>
 
       <div class="notice">
         <img src="${__iconBase}/ic_home_control.webp" onerror="__lxIconFallback(this)" alt="" style="width:17px;height:17px;flex:0 0 auto;margin-top:1px">
-        <div><b>定时出发暂不可用。</b>该功能的控制指令走 LiNdn（JOB）通道，集成尚未打通，
+        <div><b>按时出发暂不可用。</b>该功能的控制指令走 LiNdn（JOB）通道，集成尚未打通，
           因此仅能展示、不能新增或修改。请在理想 App 内设置。</div>
       </div>
 
@@ -5370,7 +5847,7 @@ class LixiangClimatePage extends HTMLElement {
     }
 
     // 添加按钮（只读）
-    const add = () => this._toast("定时出发需在理想 App 内设置（JOB 通道未打通）");
+    const add = () => this._toast("按时出发需在理想 App 内设置（JOB 通道未打通）");
     this._a11y(this.querySelector("#add"), "添加定时", add);
     this.querySelector("#add").addEventListener("click", add);
 
@@ -5436,7 +5913,7 @@ class LixiangClimatePage extends HTMLElement {
     // 空气质量（数值越小越好；App 显示"2 优"）
     const aqi = this._num(this._eid("aqi"));
     const aqiEl = q("#v-aqi");
-    if (aqi == null) { aqiEl.textContent = "—"; aqiEl.className = "v"; q("#l-aqi").textContent = "空气"; }
+    if (aqi == null) { aqiEl.textContent = "—"; aqiEl.className = "v"; q("#l-aqi").textContent = "空气质量"; }
     else {
       aqiEl.textContent = aqi <= 50 ? "优" : (aqi <= 100 ? "良" : "差");
       aqiEl.className = "v" + (aqi <= 50 ? " good" : "");
@@ -5591,12 +6068,12 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
-  :host { display:block;
+  lixiang-seat-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; --lx-seat:#F2F2F5; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-seat-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E;
             --lx-blue:#4C9AFF; --lx-seat:#2C2C2E; }
   }
@@ -6113,12 +6590,12 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
-  :host { display:block;
+  lixiang-location-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-location-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
     .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
@@ -6975,12 +7452,12 @@ const PRESET_DEFS = [
 const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
-  :host { display:block;
+  lixiang-task-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-task-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
     .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
@@ -7828,12 +8305,12 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf");  font-weight:500; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
-  :host { display:block;
+  lixiang-ad-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-purple:#7B61FF;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-ad-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
   .root { container-type:inline-size; position:relative; background:var(--lx-bg); color:var(--lx-t1); padding-bottom:18px;
@@ -8242,12 +8719,12 @@ let __fontBase = DEFAULT_FONT_BASE;
 const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf"); font-weight:500; font-display:swap; }
-  :host { display:block;
+  lixiang-bindings-card { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-bindings-card { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
     .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
@@ -8652,7 +9129,10 @@ const STYLE = `
     .top-car { width:84px; height:158px; }
     .title { font-size:26px; }
     .art { height:150px; }
-    .detail-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+    /* ★ 2026-10-14 车主："剩余时间下面，一行直接显示四个" ——
+         统计区固定【一行四个】，不再随宽度降到 3/2 列（那样"剩余充电时间"下面
+         的 4 项会掉成两行）。 */
+    .detail-grid { grid-template-columns:repeat(4,minmax(0,1fr)); }
   }
   @container (max-width: 480px) {
     .main { grid-template-columns:1fr; padding:20px 18px 14px; gap:18px; }
@@ -8663,7 +9143,7 @@ const STYLE = `
     .tire-grid { grid-template-columns:1fr 88px 1fr; height:164px; }
     .top-car { width:88px; height:156px; }
     .footer { padding:12px 18px; gap:5px; }
-    .detail-grid { grid-template-columns:repeat(2,minmax(0,1fr)); padding:4px 18px 16px; }
+    .detail-grid { grid-template-columns:repeat(4,minmax(0,1fr)); padding:4px 14px 16px; gap:10px; }
     .details summary { padding:12px 18px; }
     .note { padding:0 18px 14px; }
   }
@@ -8959,21 +9439,50 @@ class LixiangOverviewCard extends __Base {
 
   /* 车图：config.image > 侧视 > 横版 > 竖版（后端 /lixiang_auto/car-image.json） */
   async _loadArt() {
+    // ★ 2026-10-16 修「车图时有时无」：缓存优先 + JSON 重试 + img 带 ?v= 重试
+    //   （与 app-home 的 _loadCarImage 同一套策略，共用缓存键 lx_car_img_v1）
     if (this._config.image) return;             // 用户显式指定 → 不覆盖
     if (this._artLoading) return;
     this._artLoading = true;
+    const CK = "lx_car_img_v1";
+    const put = (src, key) => {
+      const img = this._body && this._body.querySelector(".art img");
+      if (!img) return;
+      if (img.dataset.lxReal === "1" && img.getAttribute("src") === src) return;
+      img.dataset.lxReal = "1";
+      delete img.dataset.lxRetried;
+      img.onload = () => { img.style.opacity = "1"; };
+      img.onerror = () => {
+        if (img.dataset.lxRetried === "1") { img.style.opacity = "0"; return; }
+        img.dataset.lxRetried = "1";
+        const bust = src + (src.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
+        setTimeout(() => { img.src = bust; }, 600);
+      };
+      img.style.opacity = "1";
+      img.src = src;
+      img.alt = "爱车车型示意图" + (key ? " · " + key : "");
+    };
+    let hit = null;
+    try { const o = JSON.parse(localStorage.getItem(CK) || "{}"); if (o && o.src) hit = o; } catch (e) {}
+    if (hit) put(hit.src, hit.key);              // ① 缓存优先 → 秒出
     let data = null;
-    try {
-      const r = await fetch("/lixiang_auto/car-image.json", { cache: "no-store" });
-      if (r.ok) data = await r.json();
-    } catch (e) { /* 保持空图，不显示破图 */ }
+    for (let i = 0; i < 2 && !data; i++) {       // ② 失败重试一次
+      try {
+        const r = await fetch("/lixiang_auto/car-image.json", { cache: "no-store" });
+        if (r.ok) data = await r.json();
+      } catch (e) { /* 保持空图，不显示破图 */ }
+      if (!data && i === 0) await new Promise((res) => setTimeout(res, 1500));
+    }
     this._artLoading = false;
-    if (!data || !data.ok) return;
+    if (!data || !data.ok) {
+      if (!hit) setTimeout(() => { if (this.isConnected) this._loadArt(); }, 5000);
+      return;
+    }
     const d = data.side || data.horizontal || data.vertical || null;
     const src = d && d.static ? d.static : "";
     if (!src) return;
-    const img = this._body && this._body.querySelector(".art img");
-    if (img) { img.src = src; img.alt = "爱车车型示意图" + (data.color_code ? " · " + data.color_code : ""); }
+    if (!hit || hit.src !== src) put(src, data.color_code);
+    try { localStorage.setItem(CK, JSON.stringify({ src, key: data.color_code || "", t: Date.now() })); } catch (e) {}
   }
 
   static getConfigElement() { return null; }
@@ -9572,8 +10081,17 @@ const AUTO_BIND = {
     charge_status:  ["充电状态"],
     charge_complete:["充电完成状态"],
     charge_limit:   ["充电上限"],
+    // ★ 2026-10-14 官方充电管理页：上限要能"拖"→ 必须拿到 number 实体
+    limit_num:      { name: "充电上限", domain: "number" },
+    limit_sensor:   { name: "充电上限", domain: "sensor" },
+    appt_sw:        { name: "预约充电", domain: "switch" },
+    end_time:       { name: "充电结束时间", domain: "time" },
+    start_time:     { name: "充电开始时间", domain: "time" },
     charge_mode:    ["充电模式"],
-    charge_power:   ["充电功率(CLTC)", "充电功率(WLTC)"],
+    // ★ 2026-10-14：总览卡的「充电功率」用它（派生实体，kW，V×A）
+    charge_power:   { name: "充电功率", domain: "sensor" },
+    // 充电效率（CLTC/WLTC，km/h）—— 充电页顶部指标用 power 字段
+    charge_eff:     ["充电效率(CLTC)", "充电效率(WLTC)"],
     charge_remain:  ["剩余充电时间"],
     ac_gun:         ["交流充电枪"],
     dc_gun:         ["直流充电枪"],
@@ -9614,6 +10132,12 @@ const AUTO_BIND = {
     seat_rr_heat:   { name: "二排右座椅加热", domain: "fan" },
     seat_rr_vent:   { name: "二排右座椅通风", domain: "fan" },
     /* 位置页 */
+    /* ★ 2026-10-14：车辆信息页（二级）用 —— 车机版本 / OTA（官方 VehicleSetting / VehicleOtaPage 的落点） */
+    head_unit_ver:  { name: "整车软件版本", domain: "sensor" },
+    head_unit_ver_old: { name: "车机版本", domain: "sensor" },
+    ota_version:    { name: "OTA 版本(简)", domain: "sensor" },
+    ota_status:     { name: "OTA 状态", domain: "sensor" },
+    ota_progress:   { name: "OTA 进度", domain: "sensor" },
     photo_info:     { any: ["360", "拍照", "信息"], domain: "sensor" },
     photo_status:   { any: ["360", "拍照", "状态"], domain: "sensor" },
     vehicle_cfg:    ["车辆配置"],
@@ -9632,7 +10156,7 @@ const AUTO_BIND = {
     complete:       ["充电完成状态"],
     limit:          ["充电上限"],
     mode:           ["充电模式", "预约充电模式"],
-    power:          ["充电功率(CLTC)", "充电功率(WLTC)"],
+    power:          ["充电效率(CLTC)", "充电效率(WLTC)"],
     remain:         ["剩余充电时间"],
     soc:            ["电池电量"],
     // ★ 2026-10-11：App 首页充电卡显示「剩余2小时25分钟」——

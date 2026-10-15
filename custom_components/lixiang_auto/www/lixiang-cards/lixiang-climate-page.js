@@ -88,12 +88,12 @@ const STYLE = `
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_regular.ttf"); font-weight:400; font-display:swap; }
   @font-face { font-family:"Licium"; src:url("/local/lixiang-fonts/licium_medium.ttf"); font-weight:500; font-display:swap; }
   @font-face { font-family:"LxNum";  src:url("/lixiang_auto/lixiang-fonts/roboto_medium_numbers.ttf"); font-display:swap; }
-  :host { display:block;
+  lixiang-climate-page { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
     --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
   @media (prefers-color-scheme: dark) {
-    :host { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
+    lixiang-climate-page { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
             --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
   }
     .root[data-theme="dark"] { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
@@ -309,13 +309,13 @@ class LixiangClimatePage extends HTMLElement {
       <div class="modes" id="modes"></div>
 
       <div class="sect">
-        <h2>定时出发</h2>
+        <h2>按时出发</h2>
         <div id="scheds"></div>
       </div>
 
       <div class="notice">
         <img src="${__iconBase}/ic_home_control.webp" onerror="__lxIconFallback(this)" alt="" style="width:17px;height:17px;flex:0 0 auto;margin-top:1px">
-        <div><b>定时出发暂不可用。</b>该功能的控制指令走 LiNdn（JOB）通道，集成尚未打通，
+        <div><b>按时出发暂不可用。</b>该功能的控制指令走 LiNdn（JOB）通道，集成尚未打通，
           因此仅能展示、不能新增或修改。请在理想 App 内设置。</div>
       </div>
 
@@ -359,7 +359,7 @@ class LixiangClimatePage extends HTMLElement {
     }
 
     // 添加按钮（只读）
-    const add = () => this._toast("定时出发需在理想 App 内设置（JOB 通道未打通）");
+    const add = () => this._toast("按时出发需在理想 App 内设置（JOB 通道未打通）");
     this._a11y(this.querySelector("#add"), "添加定时", add);
     this.querySelector("#add").addEventListener("click", add);
 
@@ -425,7 +425,7 @@ class LixiangClimatePage extends HTMLElement {
     // 空气质量（数值越小越好；App 显示"2 优"）
     const aqi = this._num(this._eid("aqi"));
     const aqiEl = q("#v-aqi");
-    if (aqi == null) { aqiEl.textContent = "—"; aqiEl.className = "v"; q("#l-aqi").textContent = "空气"; }
+    if (aqi == null) { aqiEl.textContent = "—"; aqiEl.className = "v"; q("#l-aqi").textContent = "空气质量"; }
     else {
       aqiEl.textContent = aqi <= 50 ? "优" : (aqi <= 100 ? "良" : "差");
       aqiEl.className = "v" + (aqi <= 50 ? " good" : "");

@@ -42,6 +42,8 @@ ALLOWED_SERVICES = {
     "button": {"press"},
     "select": {"select_option"},
     "number": {"set_value"},
+    # ★ 2026-10-14：官方充电管理页的「按时结束」→ time.set_value（HA 真实服务）
+    "time": {"set_value"},
     "fan": {"set_percentage", "turn_on", "turn_off", "toggle"},
     "climate": {"turn_on", "turn_off"},
     "automation": {"turn_on", "turn_off", "trigger"},

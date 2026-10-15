@@ -42,6 +42,45 @@ def _sum_range(vss: dict, std: str) -> float | None:
         return None
     return (elec or 0.0) + (fuel or 0.0)
 
+def _charge_power(vss: dict) -> float | None:
+    """充电功率（kW）= 输入电压 × 输入电流 / 1000。
+
+    ★ 2026-10-14 车主："充电功率实体没有"；2026-10-15 日检用**实车充电数据**修好。
+    依据（官方 App 逆向）：
+      · 官方充电页 4 项指标 = 充电效率 / 充电功率 / 输入电流 / 输入电压；
+        其 i18n 键名就是 `power`（充电效率）与 **`av`**（充电功率）——
+        **av = A × V**，即"充电功率 = 电流 × 电压"，App 自己算的。
+      · 车辆侧**没有**独立的充电功率信号（只有 CLTC/WLTC 充电效率 km/hr
+        和 AC/OGC 两套电压电流），所以我们也按电学定义算。
+
+    ⚠️ 2026-10-15 日检修的两处错误（原本恒为 unknown）：
+      ① 键名用错：`vss` 的键是**信号 key**（`charge_voltage_ac`），不是 VSS 路径
+         （`Vehicle.Powertrain.Battery.ACChargeVoltage`）—— 对照 _sum_range 的取值方式。
+      ② 取值形式用错：`vss[key]` 是 `{"value": raw, ...}` 字典，要先取 `["value"]`
+         （原来直接 float(dict) → TypeError → None）。
+      实测证据（2026-10-15 00:04 实车交流充电中）：
+        交流充电电压 219 V × 交流充电电流 30 A = 6.57 kW（修后应显示此值）
+    """
+    def _val(k: str):
+        sig = vss.get(k) or {}
+        raw = sig.get("value") if isinstance(sig, dict) else sig
+        try:
+            return float(raw) if raw is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    # 交流慢充优先；直流/桩侧走 OGC 一对
+    for vk, ak in (("charge_voltage_ac", "charge_current_ac"),
+                   ("ogc_charge_voltage", "ogc_charge_current")):
+        v, a = _val(vk), _val(ak)
+        # 只要这一对里有任一项有数（哪怕 0）就算 —— 停车未充电时显示 0 kW 更符合直觉；
+        # 两项全无数据才返回 None（实体显示 unknown）。
+        if v is None and a is None:
+            continue
+        return round(((v or 0.0) * (a or 0.0)) / 1000.0, 2)
+    return None
+
+
 
 class Freq(StrEnum):
     """轮询频率档位。"""
@@ -507,8 +546,10 @@ SIGNALS: dict[str, SignalSpec] = {
     "charge_power_cltc": SignalSpec(
         key="charge_power_cltc",
         path="Vehicle.Powertrain.Battery.CLTCChargePower",
-        name="充电功率(CLTC)",
-        unit="kW",
+        # ★ 2026-10-14 按官方语义：官方充电页把该项显示为「充电效率」，
+        #   单位是官方的速率写法 **km/hr**（每小时充入续航），不是 kW。车主实测确认。
+          name="充电效率(CLTC)",
+        unit="km/hr",
         freq=Freq.HIGH,
         icon="mdi:lightning-bolt",
         category="充电",
@@ -517,12 +558,28 @@ SIGNALS: dict[str, SignalSpec] = {
     "charge_power_wltc": SignalSpec(
         key="charge_power_wltc",
         path="Vehicle.Powertrain.Battery.WLTCChargePower",
-        name="充电功率(WLTC)",
-        unit="kW",
+        # ★ 2026-10-14 按官方语义：官方充电页把该项显示为「充电效率」，
+        #   单位是官方的速率写法 **km/hr**（每小时充入续航），不是 kW。车主实测确认。
+          name="充电效率(WLTC)",
+        unit="km/hr",
         freq=Freq.HIGH,
         icon="mdi:lightning-bolt",
         category="充电",
         universal=True,
+    ),
+    # ★ 2026-10-14 新增：充电功率（官方充电页 4 项之一，键名 av = A×V）
+    "charge_power": SignalSpec(
+        key="charge_power",
+        path="",           # 不请求 VSS —— compute 算
+        name="充电功率",
+        device_class="POWER",
+        unit="kW",
+        state_class="MEASUREMENT",
+        freq=Freq.HIGH,
+        icon="mdi:flash",
+        category="充电",
+        universal=True,
+        compute="lambda vss: _charge_power(vss)",
     ),
     "charge_remain_time": SignalSpec(
         key="charge_remain_time",
@@ -1101,7 +1158,7 @@ SIGNALS: dict[str, SignalSpec] = {
     "ota_version": SignalSpec(
         key="ota_version",
         path="Vehicle.Version.OTA.Baseline",
-        name="车机版本",
+        name="整车软件版本",  # ★ 官方措辞（原"车机版本"）,
         freq=Freq.LOW,
         icon="mdi:car-info",
         category="OTA",
@@ -2305,8 +2362,11 @@ def to_sensor_description(spec: SignalSpec):
         kw["icon"] = spec.icon
     if spec.device_class and spec.device_class in _DCLASS:
         kw["device_class"] = _DCLASS[spec.device_class]
-    if spec.unit and spec.unit in _UNITS:
-        kw["native_unit_of_measurement"] = _UNITS[spec.unit]
+    # ★ 2026-10-14：_UNITS 里没有的单位**原样透传**。
+    #   用例：充电效率的官方单位是 km/hr（车主实测确认），HA 的 UnitOfSpeed 只有 km/h；
+    #   原来会被静默丢掉 → 实体没有单位。
+    if spec.unit:
+        kw["native_unit_of_measurement"] = _UNITS.get(spec.unit, spec.unit)
     if spec.state_class and spec.state_class in _SCLASS:
         kw["state_class"] = _SCLASS[spec.state_class]
     # ★ 2026-10-02：保养项例外 —— 归诊断类（设备页折叠）但【默认启用】。

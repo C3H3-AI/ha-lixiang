@@ -78,8 +78,17 @@ const AUTO_BIND = {
     charge_status:  ["充电状态"],
     charge_complete:["充电完成状态"],
     charge_limit:   ["充电上限"],
+    // ★ 2026-10-14 官方充电管理页：上限要能"拖"→ 必须拿到 number 实体
+    limit_num:      { name: "充电上限", domain: "number" },
+    limit_sensor:   { name: "充电上限", domain: "sensor" },
+    appt_sw:        { name: "预约充电", domain: "switch" },
+    end_time:       { name: "充电结束时间", domain: "time" },
+    start_time:     { name: "充电开始时间", domain: "time" },
     charge_mode:    ["充电模式"],
-    charge_power:   ["充电功率(CLTC)", "充电功率(WLTC)"],
+    // ★ 2026-10-14：总览卡的「充电功率」用它（派生实体，kW，V×A）
+    charge_power:   { name: "充电功率", domain: "sensor" },
+    // 充电效率（CLTC/WLTC，km/h）—— 充电页顶部指标用 power 字段
+    charge_eff:     ["充电效率(CLTC)", "充电效率(WLTC)"],
     charge_remain:  ["剩余充电时间"],
     ac_gun:         ["交流充电枪"],
     dc_gun:         ["直流充电枪"],
@@ -120,6 +129,12 @@ const AUTO_BIND = {
     seat_rr_heat:   { name: "二排右座椅加热", domain: "fan" },
     seat_rr_vent:   { name: "二排右座椅通风", domain: "fan" },
     /* 位置页 */
+    /* ★ 2026-10-14：车辆信息页（二级）用 —— 车机版本 / OTA（官方 VehicleSetting / VehicleOtaPage 的落点） */
+    head_unit_ver:  { name: "整车软件版本", domain: "sensor" },
+    head_unit_ver_old: { name: "车机版本", domain: "sensor" },
+    ota_version:    { name: "OTA 版本(简)", domain: "sensor" },
+    ota_status:     { name: "OTA 状态", domain: "sensor" },
+    ota_progress:   { name: "OTA 进度", domain: "sensor" },
     photo_info:     { any: ["360", "拍照", "信息"], domain: "sensor" },
     photo_status:   { any: ["360", "拍照", "状态"], domain: "sensor" },
     vehicle_cfg:    ["车辆配置"],
@@ -138,7 +153,7 @@ const AUTO_BIND = {
     complete:       ["充电完成状态"],
     limit:          ["充电上限"],
     mode:           ["充电模式", "预约充电模式"],
-    power:          ["充电功率(CLTC)", "充电功率(WLTC)"],
+    power:          ["充电效率(CLTC)", "充电效率(WLTC)"],
     remain:         ["剩余充电时间"],
     soc:            ["电池电量"],
     // ★ 2026-10-11：App 首页充电卡显示「剩余2小时25分钟」——

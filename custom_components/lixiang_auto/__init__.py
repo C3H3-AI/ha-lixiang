@@ -435,11 +435,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     #   —— 1 个资源即含全部卡片，没有相对路径依赖（车主："不能合成一个？"）。
                     #   单文件不存在时（老部署）回退为逐个模块注入。
                     _bundle = _cards_dir / "lixiang-cards" / "lixiang-all.js"
-                    _urls = (
-                        [f"/lixiang_auto/lixiang-cards/{_bundle.name}"]
-                        if _bundle.is_file()
-                        else [f"/lixiang_auto/lixiang-cards/{n}" for n in _CARD_MODULES]
+                    # ★ 2026-10-14：必须带 cache-buster。
+                    #   HA 的静态文件只给 Etag/Last-Modified、**没有 Cache-Control**，
+                    #   浏览器会走启发式缓存（甚至不校验），升级后用户仍拿到旧模块 ——
+                    #   车主的"我看到的没变化"就是这个原因（服务端已经是新文件）。
+                    #   用文件 mtime 当令牌：每次部署 URL 都变 → 必然重新拉取。
+                    try:
+                        _tok = str(int(_bundle.stat().st_mtime))
+                    except OSError:
+                        _tok = "0"
+                    _names = (
+                        [_bundle.name] if _bundle.is_file() else list(_CARD_MODULES)
                     )
+                    _urls = [
+                        f"/lixiang_auto/lixiang-cards/{n}?v={_tok}" for n in _names
+                    ]
                     for _url in _urls:
                         add_extra_js_url(hass, _url)
                     _LOGGER.debug("已自动注入前端卡片资源 %d 个（%s）",
@@ -455,11 +465,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _car_dir = _Path(hass.config.config_dir) / "lixiang-car"
                 _mgr = _CIM(hass, _car_dir)
                 hass.data["lixiang_auto__car_image"] = _mgr
-                if _car_dir.is_dir():
-                    await hass.http.async_register_static_paths([
-                        StaticPathConfig("/lixiang_car", str(_car_dir), False),
-                    ])
-                    _LOGGER.debug("已注册车模图静态路径: /lixiang_car → %s", _car_dir)
+                # ★ 2026-10-16 修（车主："车辆图片经常显示不出来，有时候显示了过会儿又没了"）：
+                #   ① 原来只在目录已存在时才注册 → 首次安装/清缓存后目录还没建，
+                #      `/lixiang_car/...` 会 404 **直到下次 HA 重启**（时有时无的根因之一）。
+                #      改为先建目录、**无条件注册**。
+                #   ② `cache_headers=False` → 响应不带缓存头（实测只有 ETag/Last-Modified），
+                #      手机每次渲染都要重拉 224KB 大图，网络一抖就"显示不出来"。
+                #      改为 True：静态图按 URL（含车型+色码）长缓存，命中后秒出。
+                try:
+                    _car_dir.mkdir(parents=True, exist_ok=True)
+                except Exception:  # noqa: BLE001
+                    pass
+                await hass.http.async_register_static_paths([
+                    StaticPathConfig("/lixiang_car", str(_car_dir), True),
+                ])
+                _LOGGER.debug("已注册车模图静态路径: /lixiang_car → %s（长缓存）", _car_dir)
             except Exception as _cerr:  # noqa: BLE001
                 _LOGGER.debug("注册车模图静态路径失败（首页将无车模图）: %s", _cerr)
             # ★ 资源版本号（cache-buster）：卡片据此给静态资源加 ?v=
