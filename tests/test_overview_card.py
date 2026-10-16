@@ -669,8 +669,12 @@ class TestQuickActiveState:
         # ① 指标行随充电状态显隐
         assert 'mBox.style.display = isCharging ? "" : "none"' in s, (
             "指标行没有随充电状态显隐")
-        # ② 剩余时间：不充电且无有效时长时收起（避免「剩余0分钟」）
-        assert "rEl.hidden = !(isCharging || hasDur)" in s, "剩余时间行没有收起逻辑"
+        # ② 剩余时间：**只在真有时长时显示**（0 / 空都收起）
+        #   ★ 2026-10-17 修正：原来写 `!(isCharging || hasDur)` —— 充电中但车给 0 时
+        #     仍会显示「剩余0分钟」这种假信息（车主："剩余充电时间没显示"）。
+        #     官方 Hermes 包证据：App 取的是同一个路径
+        #     'Vehicle.Powertrain.Battery.ChargeSurplusTime'，车此刻就是没给估值。
+        assert "rEl.hidden = !hasDur" in s, "剩余时间行没有按「有值才显示」处理"
         # ③ 必须有 CSS 兜底：.metrics 是 display:grid，会盖掉 hidden 属性的 display:none
         assert ".hero .metrics[hidden], .remline[hidden] { display:none; }" in s, (
             "缺 [hidden] 的 CSS 兜底（display:grid 会盖掉 hidden）")

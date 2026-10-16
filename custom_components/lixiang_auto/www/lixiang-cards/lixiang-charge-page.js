@@ -1143,9 +1143,14 @@ class LixiangChargePage extends HTMLElement {
     const rEl = q("#rem-text");
     if (rEl) {
       rEl.textContent = rm == null ? I18N.remainPrefix + " —" : I18N.remainPrefix + this._fmtDur(rm);
-      // ★ 2026-10-16 同上：不充电时「剩余0分钟」是空信息 → 一并收起（充电中或有时长才显示）
+      // ★ 2026-10-17 车主：「剩余充电时间没显示」
+      //   实测：正在充电（6.54 kW）但 `剩余充电时间` 实体是 **0**（连续 40 次轮询都是 0）。
+      //   官方 Hermes 包证据：App 取的也是
+      //     'Vehicle.Powertrain.Battery.ChargeSurplusTime'（还有 remainTime / remainTimeMintueTip）
+      //   —— 与我们同一路径，所以 **车此刻就是没给估值**，App 也拿不到。
+      //   那就不能显示「剩余0分钟」这种假信息：只在真有时长时才显示。
       const hasDur = rm != null && Number(rm) > 0;
-      rEl.hidden = !(isCharging || hasDur);
+      rEl.hidden = !hasDur;
     }
       // ★ 官方 4 项指标之三/四：输入电压 / 输入电流（单位跟随实体）
       const Sx = (id) => (id && this._hass && this._hass.states) ? this._hass.states[id] : null;
