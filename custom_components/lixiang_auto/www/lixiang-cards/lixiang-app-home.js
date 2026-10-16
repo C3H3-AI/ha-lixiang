@@ -234,6 +234,13 @@ const STYLE = `
   .chev { display:flex; justify-content:center; padding:10px 0 2px; cursor:pointer; }
   .chev img { width:22px; height:22px; opacity:.55; transition:transform .25s; }
   .root.collapsed3d .chev img { transform:rotate(180deg); }
+  /* ★ 2026-10-16 车主：「是快捷下面的小三角箭头。这个键应该是快捷按键更多显示，
+     不是隐藏和展示车模的地方。」
+     → #chev 改管快捷区：默认显示全部可用项（跟现在一样），
+       按下收成「第一行 4 个」，再按恢复。车模显隐只由 #mini（右上小车图）和
+       滚动自动收起控制。 */
+  .root.quick-compact .quick > .q:nth-child(n+5) { display:none; }
+  .root.quick-compact .chev img { transform:rotate(180deg); }
 
   .wrap { padding:12px 20px 0; display:grid; gap:12px; }
   .row2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
@@ -414,7 +421,11 @@ const STYLE = `
          全部移除，只在极窄（≤330px）才收。 */
       .head { padding-left:14px; padding-right:14px; }
       .wrap { padding-left:14px; padding-right:14px; }
-      .big3d, .root.expanded3d .big3d { height: 188px; }
+      /* ★ 2026-10-16 车主（截图）：「车模都右上角了，中间车模地方空着了，没收起来」
+         原来是 ".big3d, .root.expanded3d .big3d { height:188px }" —— 裸 .big3d
+         把收起态的 height:0 盖掉了，于是收起后仍占 188px 空白。
+         收起态就该完全塌陷，所以这里只留展开态选择器。 */
+      .root.expanded3d .big3d { height: 188px; }
       .mini { width:118px; height:78px; }
     }
 
@@ -805,7 +816,7 @@ class LixiangAppHome extends HTMLElement {
         </div>
       </div>
       <div class="quick" id="quick" role="group" aria-label="快捷操作"></div>
-      <div class="chev" id="chev" role="button" tabindex="0" aria-label="收起车辆视图">
+      <div class="chev" id="chev" role="button" tabindex="0" aria-label="收起快捷按键">
         <img src="${__iconBase}/ic_home_pulldown.png" onerror="__lxIconFallback(this)" alt="">
       </div>
       <div class="wrap">
@@ -985,20 +996,33 @@ class LixiangAppHome extends HTMLElement {
   ///
   /// 后端返回 {model_id, color_code, vertical:{static, cached, key}}，
   /// 车型与车漆色都由服务器给，**用户无需任何配置**。
-    const toggle = () => {
+    // ★ 2026-10-16 车主：「是快捷下面的小三角箭头。这个键应该是快捷按键更多显示，
+    //   不是隐藏和展示车模的地方。」
+    //   → 拆成两个互不相干的开关：
+    //     · #chev  = 快捷按键更多/收起（quick-compact：只留第一行 4 个）
+    //     · #mini  = 车模 3D 的收起/展开（右上角小车图，它才是车模自己的开关）
+    const toggle3d = () => {
       this._userToggled = true;    // 用户手动操作后，停止自动跟随
       const collapsed = !root.classList.contains("collapsed3d");
       root.classList.toggle("collapsed3d", collapsed);
       root.classList.toggle("expanded3d", !collapsed);
       try { localStorage.setItem("lx_3d_collapsed", collapsed ? "1" : "0"); } catch (e) {}
     };
-    [this.querySelector("#chev"), this.querySelector("#mini")].forEach(el => {
+    const toggleQuick = () => {
+      const compact = !root.classList.contains("quick-compact");
+      root.classList.toggle("quick-compact", compact);
+      const chev = this.querySelector("#chev");
+      if (chev) chev.setAttribute("aria-label", compact ? "展开更多快捷按键" : "收起快捷按键");
+    };
+    const bind = (el, fn) => {
       if (!el) return;
-      el.addEventListener("click", e => { e.stopPropagation(); toggle(); });
+      el.addEventListener("click", e => { e.stopPropagation(); fn(); });
       el.addEventListener("keydown", e => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggle(); }
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); fn(); }
       });
-    });
+    };
+    bind(this.querySelector("#chev"), toggleQuick);   // 小三角 → 快捷按键更多/收起
+    bind(this.querySelector("#mini"), toggle3d);      // 右上小车图 → 车模收起/展开
 
     // ★ 上拉自动收起 3D（对齐 App 交互）
     //   App 用滚动驱动：页面下滑 → 3D 收起；回到顶部 → 3D 展开
