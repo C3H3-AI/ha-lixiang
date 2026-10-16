@@ -615,6 +615,27 @@ class TestQuickActiveState:
         assert ".detail-grid { grid-template-columns:repeat(3,minmax(0,1fr))" not in s, (
             "还有把统计区压成三列的规则")
 
+
+    def test_charge_idle_hides_empty_metrics(self):
+        """★ 2026-10-16 车主截图标注：「这个信息可否在不充电时自动隐藏起来?」
+
+        未充电时 4 项指标恒为「—」（截图：已预约 · 20% · 剩余0分钟 ·
+        — km/hr — kW — A — V），一片空值既占版面又像坏掉 → 只在充电中显示。
+        判定复用 isCharging（充电状态含「充电中」），与环形表/闪电同一口径。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-charge-page.js")
+        s = p.read_text(encoding="utf-8")
+        # ① 指标行随充电状态显隐
+        assert 'mBox.style.display = isCharging ? "" : "none"' in s, (
+            "指标行没有随充电状态显隐")
+        # ② 剩余时间：不充电且无有效时长时收起（避免「剩余0分钟」）
+        assert "rEl.hidden = !(isCharging || hasDur)" in s, "剩余时间行没有收起逻辑"
+        # ③ 必须有 CSS 兜底：.metrics 是 display:grid，会盖掉 hidden 属性的 display:none
+        assert ".hero .metrics[hidden], .remline[hidden] { display:none; }" in s, (
+            "缺 [hidden] 的 CSS 兜底（display:grid 会盖掉 hidden）")
+
+
     def test_charge_metrics_single_row_four_columns(self):
         """★ 车主："剩余时间下面，一行直接显示四个，跟 app 保持一致。我们这样两行不美观"
 

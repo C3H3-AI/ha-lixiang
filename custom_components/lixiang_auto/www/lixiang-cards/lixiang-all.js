@@ -2502,6 +2502,9 @@ const STYLE = `
     .ringwrap .rtx span { font-size:42px; letter-spacing:-1px; }
     .ringwrap .rtx small { font-size:15px; margin:12px 0 0 3px; }
     .remline { text-align:center; font-size:15px; color:var(--lx-t2); margin:2px 0 12px; }
+    /* ★ 2026-10-16：未充电时把空信息收起（见 _update 里的「不充电自动隐藏」）。
+       注意 .metrics 是 display:grid，会盖掉 hidden 属性的 display:none，所以显式写一条。 */
+    .hero .metrics[hidden], .remline[hidden] { display:none; }
     /* 上限滑杆块（官方） */
     .limitbox { margin:12px 20px 0; background:var(--lx-card); border-radius:18px; padding:16px; }
     .limitbox .lbrow1 { display:flex; align-items:baseline; justify-content:space-between;
@@ -3408,6 +3411,15 @@ class LixiangChargePage extends HTMLElement {
     // ★ 2026-10-14：状态行已显示「充电中」，这里不再重复一遍（官方页状态由环形表表达）
     q("#sub").textContent = fault && String(fault) !== "off" && String(fault) !== "正常" ? "充电故障" : "";
 
+    // ★ 2026-10-16 车主（截图标注）：「这个信息可否在不充电时自动隐藏起来?」
+    //   未充电时 4 项指标恒为「—」（截图：20% · 剩余0分钟 · — km/hr — kW — A — V），
+    //   一片空值既占版面又像坏掉 → **只在充电中显示**。
+    //   判定复用上面的 isCharging（充电状态含「充电中」），与环形表/闪电同一口径。
+    //   ⚠️ 用 style.display 而不是 hidden 属性：`.hero .metrics{display:grid}` 特异性更高，
+    //      会盖掉 [hidden] 的默认 display:none（这条坑在仓库里出现过多次）。
+    const mBox = q(".hero .metrics");
+    if (mBox) mBox.style.display = isCharging ? "" : "none";
+
     // ★ 2026-10-14 对齐官方：环形电量表（SOC）+ 上限滑杆
     const lim = this._num(this._eid("limit") || this._eid("limit_sensor"));
     const soc = this._num(this._eid("soc"));
@@ -3448,7 +3460,12 @@ class LixiangChargePage extends HTMLElement {
       const uEl = q("#u-power"); if (uEl) uEl.textContent = pU;
     // ★ 2026-10-14 官方格式：「剩余2小时7分钟」（原来显示 185 min）
     const rEl = q("#rem-text");
-    if (rEl) rEl.textContent = rm == null ? I18N.remainPrefix + " —" : I18N.remainPrefix + this._fmtDur(rm);
+    if (rEl) {
+      rEl.textContent = rm == null ? I18N.remainPrefix + " —" : I18N.remainPrefix + this._fmtDur(rm);
+      // ★ 2026-10-16 同上：不充电时「剩余0分钟」是空信息 → 一并收起（充电中或有时长才显示）
+      const hasDur = rm != null && Number(rm) > 0;
+      rEl.hidden = !(isCharging || hasDur);
+    }
       // ★ 官方 4 项指标之三/四：输入电压 / 输入电流（单位跟随实体）
       const Sx = (id) => (id && this._hass && this._hass.states) ? this._hass.states[id] : null;
       const vSt = Sx(this._eid("charge_voltage")), aSt = Sx(this._eid("charge_current"));
