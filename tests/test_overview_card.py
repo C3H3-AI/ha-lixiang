@@ -616,6 +616,46 @@ class TestQuickActiveState:
             "还有把统计区压成三列的规则")
 
 
+    def test_chev_expands_quick_not_car(self):
+        """★ 2026-10-16 车主定稿（两次澄清）：
+
+          「小箭头不是收齐车模的功能，是展开和收齐快捷键的功能。
+            比如有车可能有 8 个快捷，那么小箭头就可以展开更多。
+            车模是上滑收起，下拉展开。」
+
+        所以三条硬规则：
+          ① 默认只显示**第一行 4 个**快捷键；按小箭头展开更多（全部可用项）
+          ② 小箭头**永不**碰车模（车模由滚动驱动）
+          ③ 可用项 ≤4 时（没有"更多"）箭头藏起来，不留无用按钮
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-app-home.js")
+        s = p.read_text(encoding="utf-8")
+        # ① 默认收起第一行 4 个 + 展开态
+        assert ".root:not(.quick-open) .quick > .q:nth-child(n+5) { display:none; }" in s, (
+            "默认没有收起成第一行 4 个")
+        assert ".root.quick-open .chev img { transform:rotate(180deg); }" in s, "缺展开态样式"
+        # ② 接线分离：小箭头→快捷，右上小车→车模
+        assert 'bind(this.querySelector("#chev"), toggleQuick);' in s, "小箭头没接快捷开关"
+        assert 'bind(this.querySelector("#mini"), toggle3d);' in s, "右上小车没接车模开关"
+        # ③ ≤4 项藏箭头
+        assert 'chevEl.style.display = avail.length > 4 ? "" : "none";' in s, (
+            "可用项 ≤4 时没有隐藏箭头")
+
+    def test_car_area_collapses_without_gap(self):
+        """★ 2026-10-16 车主：「车模都右上角了，中间车模地方空着了，没收起来」
+
+        手机断点里曾经是 `.big3d, .root.expanded3d .big3d { height:188px }` ——
+        裸 .big3d 盖掉了收起态的 height:0，收起后仍占 188px 空白，
+        而车模已经缩到右上角小图里了。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-app-home.js")
+        s = p.read_text(encoding="utf-8")
+        assert ".big3d, .root.expanded3d .big3d { height: 188px; }" not in s, (
+            "手机断点还有裸 .big3d —— 收起后会留空白")
+        assert ".root.expanded3d .big3d { height: 188px; }" in s, "手机断点缺展开态高度"
+
     def test_charge_idle_hides_empty_metrics(self):
         """★ 2026-10-16 车主截图标注：「这个信息可否在不充电时自动隐藏起来?」
 

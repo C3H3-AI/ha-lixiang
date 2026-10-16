@@ -803,13 +803,16 @@ const STYLE = `
   .chev { display:flex; justify-content:center; padding:10px 0 2px; cursor:pointer; }
   .chev img { width:22px; height:22px; opacity:.55; transition:transform .25s; }
   .root.collapsed3d .chev img { transform:rotate(180deg); }
-  /* ★ 2026-10-16 车主：「是快捷下面的小三角箭头。这个键应该是快捷按键更多显示，
-     不是隐藏和展示车模的地方。」
-     → #chev 改管快捷区：默认显示全部可用项（跟现在一样），
-       按下收成「第一行 4 个」，再按恢复。车模显隐只由 #mini（右上小车图）和
-       滚动自动收起控制。 */
-  .root.quick-compact .quick > .q:nth-child(n+5) { display:none; }
-  .root.quick-compact .chev img { transform:rotate(180deg); }
+  /* ★ 2026-10-16 车主（两次澄清后定稿）：
+       「小箭头不是收齐车模的功能，是展开和收齐快捷键的功能。
+         比如有车可能有 8 个快捷，那么小箭头就可以展开更多。
+         车模是上滑收起，下拉展开。」
+     → 默认只显示**第一行 4 个**快捷键；按小箭头展开「更多」（全部可用项），
+       再按收起。车模完全不归它管 —— 车模只由滚动（上滑收起/下拉展开）驱动；
+       右上角小车图是车模自己的开关。
+     → 可用项 ≤4 时箭头无意义，_renderQuick 里会把它藏起来。 */
+  .root:not(.quick-open) .quick > .q:nth-child(n+5) { display:none; }
+  .root.quick-open .chev img { transform:rotate(180deg); }
 
   .wrap { padding:12px 20px 0; display:grid; gap:12px; }
   .row2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
@@ -1385,7 +1388,7 @@ class LixiangAppHome extends HTMLElement {
         </div>
       </div>
       <div class="quick" id="quick" role="group" aria-label="快捷操作"></div>
-      <div class="chev" id="chev" role="button" tabindex="0" aria-label="收起快捷按键">
+      <div class="chev" id="chev" role="button" tabindex="0" aria-expanded="false" aria-label="展开更多快捷按键">
         <img src="${__iconBase}/ic_home_pulldown.png" onerror="__lxIconFallback(this)" alt="">
       </div>
       <div class="wrap">
@@ -1578,10 +1581,13 @@ class LixiangAppHome extends HTMLElement {
       try { localStorage.setItem("lx_3d_collapsed", collapsed ? "1" : "0"); } catch (e) {}
     };
     const toggleQuick = () => {
-      const compact = !root.classList.contains("quick-compact");
-      root.classList.toggle("quick-compact", compact);
+      const open = !root.classList.contains("quick-open");
+      root.classList.toggle("quick-open", open);
       const chev = this.querySelector("#chev");
-      if (chev) chev.setAttribute("aria-label", compact ? "展开更多快捷按键" : "收起快捷按键");
+      if (chev) {
+        chev.setAttribute("aria-label", open ? "收起快捷按键" : "展开更多快捷按键");
+        chev.setAttribute("aria-expanded", open ? "true" : "false");
+      }
     };
     const bind = (el, fn) => {
       if (!el) return;
@@ -1653,6 +1659,9 @@ class LixiangAppHome extends HTMLElement {
     if (q.querySelector(".q") && q.dataset.shown === String(avail.length)
         && avail.every(it => q.querySelector(`.q[data-key="${it.key}"]`))) return;
     q.dataset.shown = String(avail.length);
+    // ★ 2026-10-16：快捷项 ≤4（一行）时没有"更多"可展开 → 藏掉小箭头
+    const chevEl = this.querySelector("#chev");
+    if (chevEl) chevEl.style.display = avail.length > 4 ? "" : "none";
     q.replaceChildren();
     if (!avail.length) {
       q.innerHTML = '<div class="qempty">该车型暂无可用快捷功能</div>';
