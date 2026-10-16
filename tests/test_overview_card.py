@@ -674,7 +674,11 @@ class TestQuickActiveState:
         #     仍会显示「剩余0分钟」这种假信息（车主："剩余充电时间没显示"）。
         #     官方 Hermes 包证据：App 取的是同一个路径
         #     'Vehicle.Powertrain.Battery.ChargeSurplusTime'，车此刻就是没给估值。
-        assert "rEl.hidden = !hasDur" in s, "剩余时间行没有按「有值才显示」处理"
+        # 按官方 PowerDisplay 三分支（Hermes 包还原）：
+        #   有值 → 剩余X小时Y分钟 ｜ 充电中但=0 → 充电校准中，预计5-10分钟 ｜ 其余 → 收起
+        assert "I18N.calibrating" in s, "缺官方「充电校准中」分支"
+        assert "rEl.hidden = false;" in s and "rEl.hidden = true;" in s, "剩余时间行没有三分支显隐"
+        assert 'calibrating: "充电校准中，预计5-10分钟"' in s, "缺官方校准文案原文"
         # ③ 必须有 CSS 兜底：.metrics 是 display:grid，会盖掉 hidden 属性的 display:none
         assert ".hero .metrics[hidden], .remline[hidden] { display:none; }" in s, (
             "缺 [hidden] 的 CSS 兜底（display:grid 会盖掉 hidden）")

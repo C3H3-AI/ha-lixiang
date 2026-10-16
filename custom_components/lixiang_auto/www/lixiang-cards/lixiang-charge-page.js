@@ -95,6 +95,10 @@ const I18N = {
   remain: "剩余时间",
   records: "充电记录",        // ★ 官方右上角入口
   remainPrefix: "剩余",       // ★ 官方「剩余2小时7分钟」
+      // ★ 2026-10-17 官方 PowerDisplay 文案（Hermes 包 i18n：chargingCalibration1/2）
+      //   车刚插枪进入"校准"阶段时 ChargeSurplusTime 会暂时为 0，
+      //   官方此刻显示的是"充电校准中，预计5-10分钟"，而不是"剩余0分钟"。
+      calibrating: "充电校准中，预计5-10分钟",
   hour: "小时",
   apptEnd: "按时结束",        // ★ 官方文案
   hint: "日常快充建议最高设置为95%，95%以上充电功率较低。",
@@ -1149,8 +1153,19 @@ class LixiangChargePage extends HTMLElement {
       //     'Vehicle.Powertrain.Battery.ChargeSurplusTime'（还有 remainTime / remainTimeMintueTip）
       //   —— 与我们同一路径，所以 **车此刻就是没给估值**，App 也拿不到。
       //   那就不能显示「剩余0分钟」这种假信息：只在真有时长时才显示。
-      const hasDur = rm != null && Number(rm) > 0;
-      rEl.hidden = !hasDur;
+      const mins = rm == null ? null : Math.max(0, Math.round(Number(rm) || 0));
+      // ★ 2026-10-17 按官方 PowerDisplay 分支（Hermes 包还原）：
+      //   有值 → 剩余X小时Y分钟 ｜ 充电中但值=0 → "充电校准中，预计5-10分钟"
+      //   ｜ 未充电且无值 → 收起
+      if (mins && mins > 0) {
+        rEl.textContent = I18N.remainPrefix + this._fmtDur(mins);
+        rEl.hidden = false;
+      } else if (isCharging) {
+        rEl.textContent = I18N.calibrating;
+        rEl.hidden = false;
+      } else {
+        rEl.hidden = true;
+      }
     }
       // ★ 官方 4 项指标之三/四：输入电压 / 输入电流（单位跟随实体）
       const Sx = (id) => (id && this._hass && this._hass.states) ? this._hass.states[id] : null;
