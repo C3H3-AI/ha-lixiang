@@ -9143,6 +9143,10 @@ const STYLE = `
   .fresh { color:#b2c9b9; }
   .stale { color:#dfba83; }
   .details { border-top:1px solid #ffffff0c; }
+  /* ★ 2026-10-17 车辆位置（复用 HA 官方 ha-map，见 _mapHtml） */
+  .mapsec { padding:0 26px 14px; }
+  .mapsec .lxmap { display:block; height:190px; border-radius:14px; overflow:hidden; }
+  @container (max-width: 520px) { .mapsec { padding:0 14px 12px; } .mapsec .lxmap { height:160px; } }
   .details summary { font-size:11px; color:#bac7d7; padding:11px 26px; cursor:pointer;
                      user-select:none; }
   .details summary:focus-visible { outline:2px solid #a9d7ed; outline-offset:-4px; }
@@ -9393,7 +9397,10 @@ class LixiangOverviewCard extends __Base {
 
   _render() {
     if (!this._built || !this._body) return;
-    const open = this._body.querySelector("details") ? this._body.querySelector("details").open : false;
+    // ★ 2026-10-17 车主：「概览卡片下面有个更多数据，建议默认展开」
+    //   初次渲染默认展开；用户手动开合后（details 已存在）沿用其状态。
+    const _prev = this._body.querySelector("details");
+    const open = _prev ? _prev.open : true;
 
     const online = this.state("online");
     const onlineOn = online === "在线" || online === "on" || online === "true";
@@ -9485,6 +9492,8 @@ class LixiangOverviewCard extends __Base {
         <span>总里程 ${this.fmt("total_km", 1)} km</span>
       </div>
 
+      ${this._mapHtml()}
+
       <details class="details" ${open ? "open" : ""}>
         <summary>更多车辆数据</summary>
         <div class="detail-grid">
@@ -9505,6 +9514,44 @@ class LixiangOverviewCard extends __Base {
         </div>
       </details>`;
     if (!this._artDone) { this._artDone = true; this._loadArt(); }
+    this._wireMap();   // ★ 每次渲染都要重新喂（innerHTML 重建后 ha-map 是新元素）
+  }
+
+  /** 车辆位置地图（★ 2026-10-17 车主建议）
+   *
+   * 用 **HA 官方 `ha-map`**（2026.8.3 实测属性：entities / paths / layers /
+   * auto-fit / zoom / theme-mode / cluster-markers，底层 leaflet），
+   * 不自己接瓦片 —— 主题、缩放、标记聚合全部跟随 HA，也免维护。
+   *
+   * * 照顾其它车主（重要）：
+   *   · 卡片配置 `show_map: false` 可完全关闭
+   *   · **拿不到经纬度就不渲染**（没开定位 / 车型无该实体 / 数据缺失）→ 不出现空框或破图
+   */
+  _mapHtml() {
+    if (this._config && this._config.show_map === false) return "";
+    // ⚠️ _st() 收的是**字段名**（内部再 _eid 解析），不是实体 id ——
+    //    传 id 进去会被当成字段名再解析一次 → 恒为 null（地图永远不出现）。
+    const st = this._st("tracker");
+    const a = st && st.attributes ? st.attributes : null;
+    const lat = a ? a.latitude : null, lon = a ? a.longitude : null;
+    if (lat == null || lon == null) return "";
+    return `<section class="mapsec">
+              <div class="section-label"><span>车辆位置</span></div>
+              <ha-map class="lxmap"></ha-map>
+            </section>`;
+  }
+
+  /** 给 ha-map 注入 hass 与实体（innerHTML 之后调用） */
+  _wireMap() {
+    const m = this._body && this._body.querySelector("ha-map");
+    if (!m) return;
+    const eid = this._eid("tracker");
+    if (!eid) return;
+    m.hass = this._hass;    // ★ 本卡是 this._hass（没有 hass getter）
+    m.entities = [{ entity_id: eid }];
+    m.autoFit = true;
+    m.zoom = 15;
+    m.themeMode = "auto";
   }
 
   /* 车图：config.image > 侧视 > 横版 > 竖版（后端 /lixiang_auto/car-image.json） */

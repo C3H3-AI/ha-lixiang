@@ -153,9 +153,9 @@ class TestCarArt:
 
     def test_config_image_wins(self):
         s = _strip_comments(_src())
-        i = s.find("_loadArt()")
-        assert i > 0
-        assert "if (this._config.image) return" in s[i:i + 300], "config.image 应优先且不被覆盖"
+        i = s.index("_loadArt() {")
+        j = s.index("\n  }", i)        # ★ 不用写死窗口（加几行就被挤出窗口误报）
+        assert "if (this._config.image) return" in s[i:j], "config.image 应优先且不被覆盖"
 
     def test_failure_keeps_layout(self):
         """接口失败不得出现破图（保持空 src）。"""
@@ -186,6 +186,39 @@ class TestCarArt:
         assert 0 < j < i, "未先创建车模图目录（会导致首次 404）"
         # 不得再有 is_dir() 门控
         assert "if _car_dir.is_dir():" not in s, "仍有 is_dir() 门控（首次会 404）"
+
+    def test_more_data_expanded_by_default(self):
+        """★ 2026-10-17 车主：「概览卡片下面有个更多数据，建议默认展开」。
+
+        初次渲染默认展开；用户手动开合后沿用其状态（不覆盖用户选择）。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-overview-card.js")
+        s = p.read_text(encoding="utf-8")
+        assert "const open = _prev ? _prev.open : true;" in s, "「更多车辆数据」未默认展开"
+
+    def test_overview_map_uses_ha_map_and_degrades(self):
+        """★ 2026-10-17 车主：总览卡加地图 / 地图跟踪；并强调「要考虑其他车主」。
+
+        ① 复用 **HA 官方 ha-map**（2026.8.3 前端实测属性：entities / paths / layers /
+           auto-fit / zoom / theme-mode / cluster-markers，底层 leaflet），
+           不自己接瓦片 —— 主题/缩放/聚合跟随 HA。
+        ② 照顾其它车主（必须）：
+           · `show_map: false` 可完全关闭
+           · 拿不到经纬度（没开定位 / 车型无该实体 / 数据缺失）→ **不渲染**，不留空框或破图
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-overview-card.js")
+        s = p.read_text(encoding="utf-8")
+        # ① 用官方 ha-map
+        assert "<ha-map" in s, "未复用 HA 官方 ha-map"
+        assert "m.entities = [{ entity_id: eid }]" in s, "ha-map 未绑定位置实体"
+        # ② 降级与配置
+        assert 'this._config.show_map === false' in s, "缺 show_map 关闭开关"
+        assert "if (lat == null || lon == null) return" in s, (
+            "无经纬度时仍会渲染（其他车主会看到空框/破图）")
+        # ③ _st 收字段名（踩过的坑：传实体 id 会二次解析成 null → 地图永不出现）
+        assert 'this._st("tracker")' in s, "_st 必须传字段名而不是实体 id"
 
     def test_car_art_hardened_against_flaky_network(self):
         """★ 2026-10-16 车主："车辆图片经常显示不出来，有时候显示了过会儿又没了"。
