@@ -145,6 +145,50 @@ class TestFamilyAccountControlHint:
         assert "resp = self.send_command_raw(command_key, command_data)" in src
 
 
+class TestFamilyAccountKeepsControlEntities:
+    """★ 家人/授权账号【仍然要建】车控实体 —— 不要"好心"过滤掉。
+
+    这是 2026-10-18 查证后的【反直觉】结论，写下来防止以后有人做反：
+
+      直觉：家人账号用不了车控 → 那就别建实体（免得点了报错）。
+      实测官方 App：**并不这么做**。
+
+    App 的真实做法（assets/index.vehicle.js 实证）：
+      · `isOwner()` / `isFamily()` 都存在，但 **`isCarOwner()` 调用数为 0**
+        → 车控【不是】按"是否车主"来显隐的。
+      · `isFamily()` 只用于隐藏少量【设置/维保】入口
+        （如「车辆保养」页右上角的按钮），车控按钮本身不隐藏。
+      · 所以家人账号在 App 里【能看到】车控，点了 → 服务端拒绝并提示无权限。
+
+    → 我们建实体 = 与 App 一致；真正该修的是【报错文案】
+       （cmd/send 对家人账号返回 HTTP 503「服务暂时不可用」，
+        会让人干等；已由 _control_permission_hint 改述为权限原因）。
+    """
+
+    def test_control_platforms_not_gated_by_role(self):
+        """车控实体的创建入口不得按 relation / 是否车主做过滤。"""
+        import re
+
+        for fn in ("switch.py", "lock.py", "cover.py", "button.py"):
+            src = (PKG / fn).read_text(encoding="utf-8")
+            # 只看代码，不看注释
+            code = "\n".join(l for l in src.splitlines()
+                              if not l.strip().startswith("#"))
+            assert not re.search(r"relation_of\(|REL_FAMILY|is_owner", code), (
+                f"{fn} 里出现了【按角色过滤】车控的逻辑 —— "
+                "这与 App 不一致（App 对家人账号同样显示车控，点了才提示无权限）。"
+                "若确有必要，请先复核 App 行为再改，并同步更新本测试。")
+
+    def test_filter_specs_ignores_relation(self):
+        """filter_specs 的过滤依据是能力声明，不是账号角色。"""
+        src = (PKG / "features.py").read_text(encoding="utf-8")
+        i = src.find("def filter_specs")
+        assert i > 0
+        body = src[i:i + 900]
+        assert "relation_of" not in body and "REL_FAMILY" not in body, (
+            "filter_specs 不应按账号角色过滤信号")
+
+
 class TestM01Mapping:
     """real-time-state → signal-key 映射的正确性（用实车真值）。"""
 
