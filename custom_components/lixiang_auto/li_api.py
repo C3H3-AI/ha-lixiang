@@ -827,6 +827,15 @@ class LiApiClient:
         self._cli = cli
         # ★ 保存主 Bearer：travel/陪伴里程接口用（此前只存 refresh_token → travel 120001）
         self._main_bearer = str(tok.get("access_token") or "")
+        # ★★★ 2026-10-17（理想 ONE 实车定位出的重大 bug）：
+        #   `X-CHJ-Token` 请求头此前一直取 self._app_token —— 那是【配置条目里
+        #   上次保存的旧值】，而登录后只更新了 _main_bearer（Authorization 头）。
+        #   两者不同步 → 车机网关（尤其 M01 / as-mobile 域）判定会话过期：
+        #       240225 账号登录已过期，请重新登录
+        #   实测（同账号、同一份登录会话，只改这个头）：
+        #       X-CHJ-Token = 旧 entry 值 → 240225
+        #       X-CHJ-Token = 登录返回值  → code=0 SUCCESS（23 字段真实车况）
+        self._app_token = self._main_bearer
         self._refresh_token = tok.get("refresh_token", "") or self._refresh_token
         self._tokens.clear()
         # ★ 2026-10-10：把本次建立的会话 cookie 存下来（下次启动直接复用）
@@ -853,6 +862,9 @@ class LiApiClient:
             "refresh_token": self._refresh_token,
             "main_bearer": self._main_bearer,
             "access_token": self._main_bearer,
+            # ★ 2026-10-17：X-CHJ-Token 用的就是它，不同步会 240225（见 _login 注释）
+            #   getattr 容忍半初始化实例（与 _cookies_dirty / _main_bearer 同风格）
+            "app_token": getattr(self, "_app_token", ""),
         }
         # ★ 2026-10-10：会话 cookie 变化时回写（重启复用会话，少一次密码登录）
         #   getattr 与 _main_bearer / _on_token_update 同风格：容忍半初始化实例
