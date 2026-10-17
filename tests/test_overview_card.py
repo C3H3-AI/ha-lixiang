@@ -197,6 +197,30 @@ class TestCarArt:
         s = p.read_text(encoding="utf-8")
         assert "const open = _prev ? _prev.open : true;" in s, "「更多车辆数据」未默认展开"
 
+    def test_overview_art_reapplied_after_rerender(self):
+        """★ 2026-10-17 车主：「总览里面的车模图片也存在一会儿显示一会儿没显示的问题」
+
+        根因：`_render()` 用 innerHTML 整块重画，模板里的车图 <img> 是
+        `src="${config.image || ''}"` —— 用户没配图时就是 src="" 的空元素；
+        而 `_loadArt()` 被 `_artDone` 只跑一次 → 重画后再没人给新 <img> 赋 src
+        → **每重画一次（60s 定时器 / 任何状态更新）车图就消失一次**。
+
+        修法：拆出 `_paintArt()`，每次渲染后从 localStorage 缓存把 URL 重新贴上
+        （纯内存，不发请求），并保留 ?v= 重试兜底。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-overview-card.js")
+        s = p.read_text(encoding="utf-8")
+        assert "_paintArt() {" in s, "缺少 _paintArt（重画后车图不会被重新赋值）"
+        # 必须在每次渲染后调用（与 _wireMap 并列）
+        assert "this._paintArt();" in s, "_paintArt 未在渲染后调用"
+        i = s.find("this._paintArt();")
+        j = s.find("this._wireMap();")
+        assert abs(i - j) < 400, "_paintArt 未与 _wireMap 一起在渲染末尾调用"
+        # 贴图来源：缓存键 + 用户配图时不覆盖 + 失败重试
+        assert "lx_car_img_v1" in s, "_paintArt 未从缓存取 URL"
+        assert "img.src = src;" in s, "_paintArt 未设置 src"
+
     def test_overview_map_uses_ha_map_and_degrades(self):
         """★ 2026-10-17 车主：总览卡加地图 / 地图跟踪；并强调「要考虑其他车主」。
 

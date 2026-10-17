@@ -473,6 +473,7 @@ class LixiangOverviewCard extends __Base {
       </details>`;
     if (!this._artDone) { this._artDone = true; this._loadArt(); }
     this._wireMap();   // ★ 每次渲染都要重新喂（innerHTML 重建后 ha-map 是新元素）
+    this._paintArt();  // ★ 同理：车图 <img> 也是每次重画新建的，必须重新贴 src
   }
 
   /** 车辆位置地图（★ 2026-10-17 车主建议）
@@ -497,6 +498,48 @@ class LixiangOverviewCard extends __Base {
               <div class="section-label"><span>车辆位置</span></div>
               <ha-map class="lxmap"></ha-map>
             </section>`;
+  }
+
+  /** ★ 2026-10-17 修「总览车模一会儿有一会儿没」
+   *
+   *  根因：`_render()` 用 innerHTML **整块重画**，模板里的车图 <img> 是
+   *  `src="${config.image || ''}"` —— 用户没配图时就是 **src="" 的空元素**。
+   *  而 `_loadArt()` 被 `_artDone` 只跑一次 → 重画后再没人给新 <img> 赋 src
+   *  → **每重画一次，车图就消失一次**（定时器 60s + 任何状态更新都会触发）。
+   *
+   *  修法：把「贴 src」从「拉数据」里拆出来，每次渲染后都重新贴一次
+   *  （URL 从 localStorage 取，纯内存操作，不发请求）。
+   *  —— 与首页 `_loadCarImage` 同一策略，避免两边行为不一致。
+   */
+  _paintArt() {
+    const img = this._body && this._body.querySelector(".art img");
+    if (!img) return;
+    let src = "", key = "";
+    try {
+      const o = JSON.parse(localStorage.getItem("lx_car_img_v1") || "{}");
+      if (o && o.src) { src = o.src; key = o.key || ""; }
+    } catch (e) {}
+    // 用户显式配了图 → 模板里已经有 src，别覆盖
+    if (!src && this._config && this._config.image) return;
+    if (!src) {
+      // 没有缓存也至少别留 src=""（否则浏览器会去请求当前页 URL）
+      if (!img.getAttribute("src")) img.removeAttribute("src");
+      return;
+    }
+    if (img.getAttribute("src") === src) { img.style.opacity = "1"; return; }
+    img.dataset.lxReal = "1";
+    img.style.opacity = "1";
+    img.src = src;
+    img.alt = "爱车车型示意图" + (key ? " · " + key : "");
+    // 兜底：万一这次请求失败，600ms 后再带 ?v= 重试一次
+    img.onerror = () => {
+      if (img.dataset.lxRetried === "1") { img.style.opacity = "0"; return; }
+      img.dataset.lxRetried = "1";
+      setTimeout(() => {
+        img.src = src + (src.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
+      }, 600);
+    };
+    img.onload = () => { img.style.opacity = "1"; delete img.dataset.lxRetried; };
   }
 
   /** 给 ha-map 注入 hass 与实体（innerHTML 之后调用） */
