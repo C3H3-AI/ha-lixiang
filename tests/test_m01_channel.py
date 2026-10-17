@@ -145,6 +145,48 @@ class TestFamilyAccountControlHint:
         assert "resp = self.send_command_raw(command_key, command_data)" in src
 
 
+class TestM01ChargeButtons:
+    """★ 充电启停：只有 M 系（理想ONE）能建，且必须走 send-command 通道。
+
+    权威依据（官方配置表，不是推测）：
+      · M 系 LXMVehicleConfig2025.json
+          StartCharging → cmdKey=remote_charging_start
+          StopCharging  → cmdKey=remote_charging_stop
+          sendUrl=/ssp-as-mobile-api/v3-0/remote-vehicle-control/send-command
+      · X 系 LXXVehicleConfig2025.json
+          开始/停止充电 cmdKey 均为 remote_charge_control
+          → 走 JOB(LiNdn) 长连接，HTTP 必返 2009（我们 2026-09 实测）
+    """
+
+    def test_cmdkeys_from_official_table(self):
+        src = (PKG / "button.py").read_text(encoding="utf-8")
+        assert "remote_charging_start" in src, "开始充电 cmdKey 应为 remote_charging_start"
+        assert "remote_charging_stop" in src, "停止充电 cmdKey 应为 remote_charging_stop"
+
+    def test_gated_to_m_series_only(self):
+        """必须按 is_m_series 门控 —— L 系建了也必然 2009。"""
+        src = (PKG / "button.py").read_text(encoding="utf-8")
+        assert "is_m_series" in src, "充电按钮必须按车型门控（L 系不可控）"
+        assert "M_SERIES_CHARGE_BUTTONS" in src
+
+    def test_uses_send_command_channel(self):
+        """必须走 send_vehicle_command（send-command），不是 cmd/send。"""
+        src = (PKG / "button.py").read_text(encoding="utf-8")
+        i = src.find("class LiM01ChargeButton")
+        assert i > 0, "缺 LiM01ChargeButton 实体类"
+        body = src[i:i + 2000]
+        assert "send_vehicle_command" in body, "必须用 send-command 通道（M 系权威）"
+        assert "send_command(" not in body, "不能用 cmd/send（M 系充电走 send-command）"
+
+    def test_raise_label_keeps_exception_chain(self):
+        """既有守卫：每个 raise _label(...) 必须 `from err`（单行）。"""
+        src = (PKG / "button.py").read_text(encoding="utf-8")
+        lines = [l for l in src.splitlines() if "raise _label(" in l]
+        assert lines
+        assert all(l.rstrip().endswith("from err") for l in lines), (
+            "button.py 有 raise _label 没带 `from err`（异常链断了）")
+
+
 class TestFamilyAccountKeepsControlEntities:
     """★ 家人/授权账号【仍然要建】车控实体 —— 不要"好心"过滤掉。
 
