@@ -144,6 +144,9 @@ CHANNEL_NOTICE = 1          # 通知类别
 CHANNEL_OTHER_2 = 2
 CHANNEL_OTHER_4 = 4
 
+#: ★ 2026-10-17：KMS 软签换长连接 JWT（见 kms_softsig 模块）
+KMS_JWT_EP = "/bcs-kms-jwt/jwt/iot2/v1-0/"
+
 EP_CMD_SEND = "/ssp-vehicle-control-service/ssp-vehicle-control/cmd/send"
 EP_CMD_RESULT = "/ssp-vehicle-control-service/ssp-vehicle-control/cmd-result"
 EP_WAKEUP = "/iot-connect-manager-service/v2/wakeup"
@@ -1245,6 +1248,108 @@ class LiApiClient:
         path = f"/ssp-as-mobile-api/v3-0/vehicles/{self._vin}/real-time-state"
         r = self._signed_call_travel("GET", path, "", self._travel_bearer())
         return (r or {}).get("data") or {}
+
+    def get_iot2_jwt(self) -> dict:
+        """换取长连接用的 iot2 JWT（KMS 软签，软件 Ed25519 顶替 SE）。
+
+        ★ 2026-10-17 落地自 `docs/方向A_KMS软签打通_20261017.md`（队友逆向）。
+          官方在手机本地用 SE 安全区签名换 JWT；我们用 **App SO 里的出厂兜底密钥**
+          做软件 Ed25519，服务端照收（实测 `code:0` + 30 天有效期）。
+
+        返回 `{"ok": bool, "jwt": str, "code": ..., "msg": ..., "raw": dict}`
+        —— 失败时 `ok=False` 并带服务端原始 code/msg，**不抛异常**
+          （诊断性质，且错误码本身有排查价值，见 kms_softsig 模块说明）。
+        """
+        import json as _json
+
+        from .kms_softsig import build_kms_body, summarize_jwt
+
+        device_id = self._xdev or self._device_id
+        body, message = build_kms_body(device_id)
+        payload = _json.dumps(body, separators=(",", ":"), ensure_ascii=False)
+        try:
+            resp = self._signed_call("POST", KMS_JWT_EP, payload, self._main_bearer)
+        except Exception as err:  # noqa: BLE001
+            return {"ok": False, "jwt": "", "code": None,
+                    "msg": f"请求失败: {err}", "raw": {}}
+
+        code = resp.get("code")
+        data = resp.get("data") or {}
+        jwt = str(data.get("jwt") or "") if isinstance(data, dict) else ""
+        out: dict = {
+            "ok": code == 0 and bool(jwt),
+            "jwt": jwt,
+            "code": code,
+            "msg": _as_text(resp.get("msg") or resp.get("message")),
+            "raw": resp,
+            "device_id": device_id,
+        }
+        if jwt:
+            out["summary"] = summarize_jwt(jwt)
+        _LOGGER.info(
+            "KMS 软签换 iot2 JWT: code=%s ok=%s%s",
+            code, out["ok"],
+            (f"（有效期 {out['summary'].get('valid_seconds', 0) // 86400} 天）"
+             if out.get("summary") else ""),
+        )
+        return out
+
+    def probe_gfm_face(self) -> dict:
+        """用刚换到的 JWT 查长连接接入点 —— **验证 JWT 是否真被网关接受**。
+
+        端点与请求头取自队友的实测（`docs/方向A_KMS软签打通_20261017.md` §5.3/§5.4）：
+            POST https://api-app-cnhz2n01-b.lixiang.com
+                 /li-ndn-gfm/gfm-server/v2-0/nfd-face?device_id=<deviceId>&device_type=MOBILE
+        注意头名 `x-chj-kms-verify-type` 的值是字面量 `KMS-JWT`（不是 MOBILE）。
+
+        只读：拿到的只是「有哪些 NFD 可以连」，**不会真的建连**。
+        """
+        import json as _json
+
+        import requests
+
+        from .kms_softsig import gfm_face_headers, gfm_face_url
+
+        minted = self.get_iot2_jwt()
+        out: dict = {"jwt_ok": minted.get("ok"), "jwt_code": minted.get("code"),
+                     "jwt_msg": minted.get("jwt_msg") or minted.get("msg")}
+        if not minted.get("ok"):
+            out["error"] = "JWT 未取到，无法验证网关"
+            return out
+
+        device_id = self._xdev or self._device_id
+        url = gfm_face_url(device_id)
+        try:
+            r = requests.post(
+                url,
+                headers={**gfm_face_headers(device_id, minted["jwt"]),
+                         "Content-Type": "application/json",
+                         "x-chj-key": self._key_id,
+                         "X-CHJ-TOKEN": self._app_token},
+                data=_json.dumps({}, separators=(",", ":")), timeout=20,
+                verify=False)  # noqa: S501 —— 该域证书链与本地 CA 不匹配
+        except Exception as err:  # noqa: BLE001
+            out["error"] = f"GFM 请求失败: {err}"
+            return out
+
+        try:
+            j = r.json()
+        except Exception:  # noqa: BLE001
+            out["http_status"] = r.status_code
+            out["body"] = r.text[:300]
+            return out
+
+        data = j.get("data")
+        out["http_status"] = r.status_code
+        out["code"] = j.get("code")
+        out["msg"] = j.get("msg")
+        out["faces"] = len(data) if isinstance(data, list) else 0
+        if isinstance(data, list) and data:
+            out["sample"] = data[0]
+        out["accepted"] = (r.status_code == 200 and j.get("code") == 0 and out["faces"] > 0)
+        _LOGGER.info("GFM 接入点查询: HTTP %s code=%s faces=%d accepted=%s",
+                     r.status_code, j.get("code"), out["faces"], out.get("accepted"))
+        return out
 
     def probe_realtime_state(self) -> dict:
         """诊断：探测「老平台车型（如理想ONE / M01）」的 real-time-state 通道。
