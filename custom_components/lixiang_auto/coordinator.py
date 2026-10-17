@@ -842,6 +842,40 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                             break
             except Exception as err:  # noqa: BLE001
                 _fail_if_credential(err)
+                # ★★★ 2026-10-17（理想 ONE 实车定位出的第 3 个 bug）：
+                #   M 系（platform=='1'，理想ONE/M01）**没有 VSS 服务**，
+                #   `vss:get-batch` 对它恒返 HTTP 503（不是 access_denied）。
+                #   而下面那段「补拉 real-time-state」写在 try 块内部 →
+                #   503 一抛就直接跳到这里，**补拉永远执行不到**
+                #   → 于是 ONE 的全部实体常年 unknown。
+                #   修法：在异常分支里为 M 系直接改用 real-time-state
+                #   （DynamicInfoRes）填满同一套 signal-key 空间。
+                _skip_vss_warn = False
+                if getattr(self, "_use_realtime_state", False):
+                    _skip_vss_warn = True
+                    try:
+                        _mapped_m = await self.hass.async_add_executor_job(
+                            self._realtime_state_signals)
+                    except Exception as _err_m:  # noqa: BLE001
+                        _fail_if_credential(_err_m)
+                        _LOGGER.debug("M 系 real-time-state 拉取失败: %s", _err_m)
+                        _mapped_m = None
+                    data["vss"] = dict(_mapped_m or {})
+                    data["vss_polled_at"] = now
+                    if _mapped_m:
+                        self._absent_count.clear()
+                        # ★ 2026-10-17：「在线状态」实体读的是**顶层** vehicle_status
+                        #   （rendering.py: `data.get("vehicle_status")`），不是 vss
+                        #   → 不补这一行，ONE 的在线状态永远 unknown。
+                        _on_m = (_mapped_m.get("online_status") or {}).get("value")
+                        if _on_m is not None:
+                            data["vehicle_status"] = int(_on_m)
+                        if not getattr(self, "_m01_channel_logged", False):
+                            self._m01_channel_logged = True
+                            _LOGGER.info(
+                                "M 系老平台车型（理想ONE/M01）没有 VSS 服务 → "
+                                "实时数据改走 real-time-state，已映射 %d 个信号",
+                                len(_mapped_m))
                 # 实时信号失败不拖垮静态数据 (也避免反复触发登录)
                 # ★ 2026-10-11（理想ONE 车主日志实证）：`access_denied` 意味着
                 #   该车型**没有开通 VSS 信号服务**（M01/理想ONE 属老平台，走
@@ -861,7 +895,9 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                         _LOGGER.debug("VSS 仍被拒绝（已提示过）: %s", err)
                 else:
                     self._vss_denied_notified = False
-                    _LOGGER.warning("VSS 实时信号轮询失败: %s", err)
+                    # ★ M 系已知没有 VSS（走 real-time-state）→ 不必每分钟告警
+                    if not _skip_vss_warn:
+                        _LOGGER.warning("VSS 实时信号轮询失败: %s", err)
 
 
 

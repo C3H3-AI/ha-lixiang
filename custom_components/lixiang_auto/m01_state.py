@@ -245,6 +245,10 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     _on = _raw(_dig(res, "vehOnlineStatus").get("status"))
     if isinstance(_on, str) and _on.strip():
         put("online_5g", 0 if _on.strip().lower() in _SLEEP_STATES else 1)
+    # ★ 2026-10-17：实体用的键是 `online_status`（signals.py），而这里原先只写
+    #   `online_5g` → 「在线状态」实体永远 unknown。两个键都写（消费方不同）。
+    if isinstance(_on, str) and _on.strip():
+        put("online_status", 0 if _on.strip().lower() in _SLEEP_STATES else 1)
 
     # ---- 2026-10-11 按车主回传的实测响应扩展 ----
     # 依据：real-time-state v3 原始响应（realtime_state_v3 / ok=true, code=0）

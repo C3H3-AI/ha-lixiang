@@ -4,6 +4,77 @@
 
 ---
 
+## [1.6.0-beta.1] — 2026-10-17
+
+> **预发布（Beta）**：新增 **理想 ONE（M01 / 老平台）实时数据支持**。
+> 请 ONE 车主先试用反馈，稳定后再发正式版。
+> HACS 里需要打开「显示 Beta 版」才能看到本版本。
+
+### ✨ Added — 理想 ONE（M01）实时数据通道
+
+理想 ONE / M01 平台车型**没有 VSS 信号服务**（`vss:get-batch` 恒返 HTTP 503），
+其数据走**另一条通道**：
+
+```
+GET /ssp-as-mobile-api/v3-0/vehicles/{vin}/real-time-state
+```
+
+现在会自动识别（`platform == '1'`，与 App 的 `isM()` 判定一致）并改用该通道，
+把 23 个顶层字段（`chargeSetting` / `doorSwitchStatus` / `windowSwitchStatus` /
+`seatStatus` / `airConditioningStatus` / `locationStatus` …）映射进**同一套
+signal-key 空间** —— 实体、卡片、自动化用法与 L 系列**完全一致**，无需改动。
+
+**首次实测（2026-10-17，理想 ONE 家人账号）**：
+```
+电量 79%   纯电续航(CLTC) 123km   燃油续航(CLTC) 202km   油量 28%
+车内温度 22℃   档位 P   在线状态 离线   车窗 closed   位置 not_home
+车门×5 / 座椅加热通风×4 / 空调 / 四窗+天窗 / 环灯 / OTA版本
+→ 163 个实体里 51 个有真实值（其余是该车型本来没有的 VSS 专有信号）
+```
+
+### 🐛 Fixed — 三个叠加 bug（这才是 ONE 之前"全 unknown"的真因）
+
+1. **`X-CHJ-Token` 请求头用了配置条目里上次保存的旧 token**
+   登录成功后只更新了 `main_bearer`（`Authorization` 头），从不同步 `app_token`
+   → 会话一过期重登，`X-CHJ-Token` 就永远是旧的。实测（同账号、同一份会话）：
+   ```
+   X-CHJ-Token = 旧值     → 240225 账号登录已过期，请重新登录
+   X-CHJ-Token = 登录返回 → code=0 SUCCESS（23 字段真实车况）
+   ```
+   ★ 这个 bug **不只影响 ONE** —— 任何「会话过期后自动重登」场景都会踩到，
+   多车 / 多账号用户可能表现为「数据突然不动了」。
+
+2. **M 系「补拉 real-time-state」写在 VSS 的 try 块内部 → 永不执行**
+   M 系的 VSS 是 503（不是 `access_denied`），异常一抛就跳 except，
+   补拉代码根本执行不到。现改为在异常分支里直接走 real-time-state。
+
+3. **503 被当成普通失败** → 每分钟刷一条 WARNING。现对 M 系抑制并只提示一次。
+
+### 🐛 Fixed — 其它
+
+- **「在线状态」取错层**：`rendering.py` 读的是顶层 `data["vehicle_status"]`，
+  而 M01 映射只写了 `data["vss"]["online_status"]` → 永远 unknown。现两者都写。
+
+### 🔧 工具
+
+- `scripts/li-release.sh` 新增 `--prerelease`：把草稿 Release 以**预发布**形式发布
+  （HACS 需勾选「显示 Beta 版」才可见）。
+
+### ⚠️ 已知限制（不是 bug）
+
+- **家人 / 授权账号（`vehicleType=authorized`）无法远程车控**：服务端返回
+  `241000 用户没有权限`。数据读取不受影响。需要车控请用**车主账号**再添加一个条目
+  （本集成支持多账号多条目并存）。
+- 理想 ONE 的 **WLTC 续航**、**本月油耗**、**陪伴里程** 等字段该车型不上报 → 保持 unknown。
+
+### ✅ Tests
+
+- 新增 `tests/test_m01_channel.py`（7 条）：token 同步 / 回写 / M 系分支 /
+  告警抑制 / `is_m_series` 三态 / 映射真值 / `online_status` 键
+- **变异测试**：删掉 M 系补拉 → 对应断言 FAILED
+- 全量 **2370 passed, 9 skipped**
+- 测试机（HA 2026.8.3）双车并存：L6 242 实体 + ONE 188 实体，重启 **0 ERROR**
+
 ## [1.5.15] — 2026-10-17
 
 > 本版 10 个提交全部来自车主实机反馈，核心是**修「官方 App 有、我们显示不对」**。
