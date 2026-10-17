@@ -504,18 +504,30 @@ class TestQuickActiveState:
 
 
     def test_auth_label_follows_state(self):
-        """★ 车主："授权驾驶为什么一直显示开着" → 对照官方 App 车控页截图修正。
+        """★ 2026-10-14 写过一版「已授权时标签要变『已授权』」，**2026-10-17 推翻**。
 
-        官方那里第 4 个按钮在已授权时**标签变成「已授权」+ 实心圆**，未授权时是「授权驾驶」。
-        所以状态要保留，但**标签必须跟着变** —— 只高亮不改标签，用户看到的就是
-        "授权驾驶一直开着"。
+        当年依据：官方截图里"已授权时标签变『已授权』"，我们用
+        `binary_sensor.车辆授权`（`Vehicle.Provision.Authorize.State`）当依据。
+
+        ★ 推翻理由（车主："已授权怎么一直显示？app 上显示是授权驾驶" + 实测）：
+          · 那个信号是**这台车与账号的绑定关系，长期为 on** → 于是永远「已授权」；
+          · 官方真正的依据是**车辆状态里的 BLE 组**（请求字段 `vehicleStateKey: 'BLE'`，
+            枚举 connected/connecting/close/abnormal/unfamiliar），即**车端上报的
+            蓝牙授权通道状态**，一次性的 —— 我们集成尚未订阅 `Vehicle.Ble.*`（缺实体）。
+
+        所以：**拿不到依据就不假装有** —— auth 不再挂 stateField / onName，
+        标签恒为官方动作名「授权驾驶」（动作下发是远程的，不受影响）。
+        将来若接上 BLE 实体，这里才该恢复两态显示。
         """
         s = self._src()
         i = s.find('{ key:"auth"')
         assert i > 0
-        entry = s[i:s.find("}", i) + 1]
-        assert 'stateField:"auth_state"' in entry, "auth 应保留状态实体（用于显示已授权）"
-        assert 'onName:"已授权"' in entry, "缺 onName：授权后标签不会变成「已授权」"
+        j2 = s.find('{ key:', i + 5)          # ★ 取到下一条定义，别用第一个 '}' 截断
+        entry = s[i:j2 if j2 > 0 else i + 400]
+        assert 'stateField' not in entry, (
+            "授权按钮不该再用长期 on 的『车辆授权』当依据（会永远显示已授权）")
+        assert 'onName' not in entry, "拿不到 BLE 依据时不该显示『已授权』标签"
+        assert 'name:"授权驾驶"' in entry, "应保持官方动作名「授权驾驶」"
 
     def test_auth_has_official_confirm_flow(self):
         """★ 官方逻辑（逆向证据）：授权驾驶是**动作**且有二次确认。
@@ -672,6 +684,32 @@ class TestQuickActiveState:
         assert ".detail-grid { grid-template-columns:repeat(3,minmax(0,1fr))" not in s, (
             "还有把统计区压成三列的规则")
 
+
+    def test_auth_button_not_permanently_authorized(self):
+        """★ 2026-10-17 车主：「已授权怎么一直显示？app 上显示是授权驾驶」
+
+        根因：我们拿 `binary_sensor.车辆授权`（= `Vehicle.Provision.Authorize.State`，
+        那是**这台车与账号的绑定关系，长期为 on**）当作"是否已授权"的依据
+        （onName 改标签 + stateField 点亮圆点）→ 于是永远显示「已授权」。
+
+        官方依据（Hermes 包证据）：**LXVehicleBLEConnectState**
+        （'bleConnected' / 'bleConnectionStatus'，55/78 处引用）—— 蓝牙连接状态，
+        一次性的、下车即失效；我们集成**没有** BLE 信号，无法复现。
+
+        结论：拿不到真实依据就不假装有 —— 去掉 onName 与 stateField，
+        始终显示官方动作名「授权驾驶」，圆点也不常亮（点击下发不受影响）。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-app-home.js")
+        s = p.read_text(encoding="utf-8")
+        i = s.find('{ key:"auth"')
+        assert i > 0, "未找到 auth 按钮定义"
+        # 只取这一条定义（到下一个 { key: 为止）
+        j = s.find('{ key:', i + 5)
+        blk = s[i:j if j > 0 else i + 400]
+        assert 'onName' not in blk, "授权按钮仍会用「已授权」标签（长期 on 的绑定关系当依据）"
+        assert 'stateField' not in blk, "授权按钮仍绑定 stateField（圆点会常亮）"
+        assert 'name:"授权驾驶"' in blk, "标签应保持官方的动作名「授权驾驶」"
 
     def test_chev_expands_quick_not_car(self):
         """★ 2026-10-16 车主定稿（两次澄清）：

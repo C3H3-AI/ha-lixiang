@@ -465,9 +465,20 @@ const QUICK = [
   //   用户看到的就是"授权驾驶一直开着"（车主的疑问）。
   // 官方 I18N（VehicleHomeControl）：authorization=授权驾驶 / alreadyAuthorization=已授权 /
   // alreadyStart=已启动 / dismiss=不再提醒 → 授权按钮有**两态**且动作前要**二次确认**。
-  { key:"auth",   name:"授权驾驶", onName:"已授权", startedName:"已启动",
+  // ★ 2026-10-17 车主：「已授权怎么一直显示？app 上显示是授权驾驶」
+  //   根因：我们用 `Vehicle.Provision.Authorize.State`（binary_sensor.车辆授权）
+  //   当"是否已授权"的依据 —— 那个是**这台车与账号的绑定关系，长期为 on**，
+  //   于是标签永远变「已授权」。
+  //   官方包证据：它用的是 **LXVehicleBLEConnectState**（'bleConnected'/
+  //   'bleConnectionStatus'，共 55/78 处引用）—— **蓝牙连接状态**，一次性的，
+  //   下车/断连就失效；我们集成**没有** BLE 信号，无法复现。
+  //   → 拿不到真实依据就不假装有：去掉 onName，始终显示官方动作名「授权驾驶」。
+  //   （点击下发不受影响 —— 它本来就是动作按钮 remoteVehAuth。）
+  //   同样去掉 stateField（原本指向 binary_sensor.车辆授权）：没有真实 BLE 依据时
+  //   **连圆点也不该常亮**（官方只有 bleConnected 为真才高亮）。
+  { key:"auth",   name:"授权驾驶", startedName:"已启动",
     confirm:"请在 2 分钟内上车并踩下刹车踏板，下车后请远程上锁。",
-    remember:true, stateField:"auth_state",
+    remember:true,
     off:"ic_home_authorization_off_lisa.png",  on:"ic_home_authorization_on_lisa.png" },
   { key:"summon", name:"直线召唤", unsupported:true, note:"命令走 JOB 通道，HTTP 不可达",
     off:"ic_home_parkingout_off_lisa.png",     on:"ic_home_parkingout_on_lisa.png" },
