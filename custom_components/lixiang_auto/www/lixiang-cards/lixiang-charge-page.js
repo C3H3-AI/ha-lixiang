@@ -885,6 +885,8 @@ class LixiangChargePage extends HTMLElement {
         const y0 = this._years[0] && this._years[0].year;
         if (y0 != null) this._openYears.add(String(y0));
         this._renderYears();
+        // ★ 数据到位 → 补刷顶部「本月次数」（之前只刷记录区，导致它永远停在「—」）
+        this._updateStats();
       }
     } catch (e) {
       this._error = (e && e.message) || "网络请求失败";
@@ -1180,7 +1182,21 @@ class LixiangChargePage extends HTMLElement {
     q("#m-mode").textContent = md || "—";
     q("#m-mode").className = "v" + ((md && isNaN(parseFloat(md))) ? " txt" : "");
 
-    // 电量三栏
+    this._updateStats();
+  }
+
+  /** ★ 2026-10-17 修「本月充电次数没正确显示」
+   *
+   *  根因（时序）：`_update()` 先跑（此时 _years 还是 null → 本月次数显示「—」），
+   *  末尾才 `this._fetchStats()` **不 await**；等月度统计回来后，`_fetchStats()`
+   *  只调了 `_renderYears()`（记录区），**没有刷新顶部统计** →
+   *  本月次数就一直停在「—」（只有手动点刷新才会好）。
+   *
+   *  修法：把电量三栏抽成 `_updateStats()`，月度统计到位后单独调它 ——
+   *  不整卡重绘（避免连带把车图/滑杆/地图重画一遍）。
+   */
+  _updateStats() {
+    const q = (s) => this.querySelector(s);
     const mk = this._num(this._eid("month_kwh"));
     let tk = this._num(this._eid("month_times"));      // ★ let（下方可能回填）
     const tot = this._num(this._eid("total_kwh"));

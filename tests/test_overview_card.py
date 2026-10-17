@@ -713,6 +713,29 @@ class TestQuickActiveState:
             "手机断点还有裸 .big3d —— 收起后会留空白")
         assert ".root.expanded3d .big3d { height: 188px; }" in s, "手机断点缺展开态高度"
 
+    def test_charge_monthly_count_refreshed_after_fetch(self):
+        """★ 2026-10-17 车主：「本月充电次数没正确显示」
+
+        根因是**时序**：`_update()` 先跑（此时月度统计还没到 → 本月次数显示「—」），
+        末尾才发起**不 await** 的 `_fetchStats()`；等数据回来后只调了 `_renderYears()`
+        （记录区），**没刷新顶部统计** → 本月次数一直停在「—」，只有手动刷新才好。
+
+        修法：把电量三栏抽成 `_updateStats()`，在月度统计到位后单独调它
+        （不整卡重绘，避免连带重画车图/滑杆/地图）。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-charge-page.js")
+        s = p.read_text(encoding="utf-8")
+        assert "_updateStats() {" in s, "缺少 _updateStats（顶部电量三栏无法单独刷新）"
+        # 本月次数的赋值必须在 _updateStats 里
+        i = s.find("_updateStats() {")
+        assert 'q("#s-times")' in s[i:i + 2000], "本月次数赋值不在 _updateStats 内"
+        # 月度统计到位后必须调用它
+        # 锚在「月度统计解析成功」那段（_years 组装之后），而不是别处的 _renderYears()
+        j = s.find("this._years = Object.keys(byYear)")
+        assert j > 0, "未找到月度统计解析处"
+        assert "this._updateStats();" in s[j:j + 800], "月度统计到位后未补刷顶部统计"
+
     def test_charge_idle_hides_empty_metrics(self):
         """★ 2026-10-16 车主截图标注：「这个信息可否在不充电时自动隐藏起来?」
 
