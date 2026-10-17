@@ -438,6 +438,54 @@ SIGNALS: dict[str, SignalSpec] = {
     #     而该 key 在 li_api._JOB_CHANNEL_COMMANDS 里 —— 走 App 的
     #     LiNdn（JOB）长连接，HTTP cmd/send 实测 resultCode=2009。
     #     把不可控的东西做成 switch 会让用户以为能开。
+    # ★ 2026-10-18：理想ONE【专属】—— 由官方配置表【差集】确认，不是推测
+    #
+    #   来源：assets/2025/LXMVehicleConfig2025.json（M 系 70 条）与
+    #   LXXVehicleConfig2025.json（X 系 98 条）比对：
+    #     SetChargeInsulation（充电保温）/ SetChargeAppointment（预约充电）
+    #     **只有 M 系有**，X 系表里没有这两条标签。
+    #   数据由 real-time-state 提供（m01_state.py 已补映射）：
+    #     batteryWarmSwitch.switchState / appointmentTime.{chargeOnOff,startTime,endTime}
+    #   L 系无对应 VSS 路径 → 用 requires="platform:1" 门控，只有理想ONE 会建。
+    "charge_insulation": SignalSpec(
+        key="charge_insulation",
+        path="",
+        name="充电保温",
+        freq=Freq.HIGH,
+        icon="mdi:heat-wave",
+        category="充电桩",
+        platforms=frozenset({"switch"}),
+        requires="platform:1",
+    ),
+    "charge_appointment": SignalSpec(
+        key="charge_appointment",
+        path="",
+        name="预约充电",
+        freq=Freq.HIGH,
+        icon="mdi:clock-outline",
+        category="充电桩",
+        platforms=frozenset({"switch"}),
+        requires="platform:1",
+    ),
+    "charge_appointment_start": SignalSpec(
+        key="charge_appointment_start",
+        path="",
+        name="预约充电开始时间",
+        freq=Freq.MID,
+        icon="mdi:clock-start",
+        category="充电桩",
+        requires="platform:1",
+    ),
+    "charge_appointment_end": SignalSpec(
+        key="charge_appointment_end",
+        path="",
+        name="预约充电结束时间",
+        freq=Freq.MID,
+        icon="mdi:clock-end",
+        category="充电桩",
+        requires="platform:1",
+    ),
+
     "upperlimit_continue": SignalSpec(
         key="upperlimit_continue",
         path="",

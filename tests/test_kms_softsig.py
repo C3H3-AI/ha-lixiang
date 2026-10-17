@@ -97,7 +97,7 @@ class TestKmsRequest:
         """防回归：别把 VIN 当 verifyId（服务端会报 144001 args error）。"""
         import kms_softsig as K
 
-        vin = "HLX32B14XR1361015"
+        vin = "LSJA0000000000001"
         body, _msg = K.build_kms_body("dev-1")
         assert body["verifyId"] != vin
 

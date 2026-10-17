@@ -204,6 +204,36 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     cst = _dig(res, "chargeSetting", "chargeStatus")
     put("charge_status", _num(cst.get("chargeStatus")))
 
+    # ★★★ 2026-10-18：理想ONE【专属】的 3 项功能 —— 权威清单 LXMVehicleConfig2025.json
+    #   与 X 系表比对后确认只有 M 系有：SetChargeLimit（充电阈值）/
+    #   SetChargeInsulation（充电保温）/ SetChargeAppointment（预约充电）。
+    #   数据【本来就在 real-time-state 里】，此前没映射 → ONE 上这三项全 unknown。
+    #
+    #   实测（2026-10-17，ONE 家人账号）：
+    #     chargingTarget    = {"target": "100"}                      → 充电阈值
+    #     batteryWarmSwitch = {"switchState": "0"}                   → 充电保温
+    #     appointmentTime   = {"chargeOnOff":0, "startTime":"23:00",
+    #                          "endTime":"06:00", "isContinue":true} → 预约充电
+
+    # ① 充电阈值（与 X 系「充电上限」同义 → 复用 charge_limit，number 实体直接可用）
+    _tgt = _dig(res, "chargeSetting", "chargingTarget")
+    put("charge_limit", _num(_tgt.get("target")))
+
+    # ② 充电保温（M 系专属开关）
+    _warm = _dig(res, "chargeSetting", "batteryWarmSwitch")
+    put("charge_insulation", _int01(_warm.get("switchState")))
+
+    # ③ 预约充电（M 系专属：开关 + 起止时间）
+    _appt = _dig(res, "chargeSetting", "appointmentTime")
+    if _appt:
+        put("charge_appointment", _int01(_appt.get("chargeOnOff")))
+        _st = _raw(_appt.get("startTime"))
+        _et = _raw(_appt.get("endTime"))
+        if isinstance(_st, str) and _st.strip():
+            put("charge_appointment_start", _st.strip())
+        if isinstance(_et, str) and _et.strip():
+            put("charge_appointment_end", _et.strip())
+
     # ★ 2026-10-12 新增：未达充电上限继续充电（**仅 M 系有**，见 signals.py）
     #   官方车型定义里这条能力只存在于 M01A/M01B（L 系整条标签不存在），
     #   所以实体侧用 requires="version:upperLimitCharging" 门控。

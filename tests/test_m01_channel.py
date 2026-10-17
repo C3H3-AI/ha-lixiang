@@ -116,7 +116,17 @@ class TestM01Mapping:
             "locationStatus": {"lat": "36.100939", "lon": "103.739979",
                                "alt": "1472.1", "dir": "190.7"},
         }
+        # ★ ONE 专属（官方配置表差集确认）：充电阈值 / 充电保温 / 预约充电
+        res["chargeSetting"]["chargingTarget"] = {"target": "90"}
+        res["chargeSetting"]["batteryWarmSwitch"] = {"switchState": "1"}
+        res["chargeSetting"]["appointmentTime"] = {
+            "chargeOnOff": 1, "startTime": "23:00", "endTime": "06:00"}
         m = map_realtime_state(res)
+        assert m["charge_limit"]["value"] == 90.0, "充电阈值（M 系 SetChargeLimit）"
+        assert m["charge_insulation"]["value"] == 1, "充电保温（M 系专属开关）"
+        assert m["charge_appointment"]["value"] == 1, "预约充电（M 系专属开关）"
+        assert m["charge_appointment_start"]["value"] == "23:00"
+        assert m["charge_appointment_end"]["value"] == "06:00"
         assert m["battery_level"]["value"] == 79.0
         assert m["range_elec_cltc"]["value"] == 123.0
         assert m["range_fuel_cltc"]["value"] == 202.0
