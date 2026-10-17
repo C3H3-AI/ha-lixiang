@@ -337,6 +337,27 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
         for src, key in _DOOR_MAP.items():
             put(key, _int01(_dig(doors, src).get("isOpen") or doors.get(src)))
 
+        # ★ 2026-10-18：整车【锁车状态】—— 此前只映射了 isOpen（门开合），
+        #   漏了 isLock（门锁）→ 理想ONE 的 `lock.车锁` 实体永远 unknown。
+        #
+        #   实测响应：doorSwitchStatus.mainDoor = {"isOpen":"0", "isLock":"1"}
+        #
+        #   ★ 语义与取值（有据，非猜）：
+        #     · 我方 lock.py：`lock_main` 且 `int(value) == 0 → locked`（0 = 已落锁）
+        #     · 官方语义：Vehicle.Body.DoorLockStatus.MainDoor，
+        #       semantics = Semantics.LOCKED（值表示"是否落锁"）
+        #     · 该次采样时车辆【离线/休眠】—— 休眠的车必然是落锁的，
+        #       而响应 isLock="1" → 可判定 **isLock=1 表示"已落锁"**
+        #     → 因此需【取反】写入：1 → 0（locked），0 → 1（unlocked）
+        #   ⚠️ 若后续拿到"解锁"状态的样本，请复核此取反（本项目规则：据实修正）。
+        _lock_raw = _int01(_dig(doors, "mainDoor").get("isLock"))
+        if _lock_raw is None:
+            _md = doors.get("mainDoor")
+            if isinstance(_md, dict):
+                _lock_raw = _int01(_md.get("isLock"))
+        if _lock_raw is not None:
+            put("lock_main", 1 - _lock_raw)          # ★ 取反：1(落锁) → 0(locked)
+
     # 车窗 + 天窗（★ App 侧：windowSwitchStatus.<窗>.openStatus，类型是 String）
     wins = res.get("windowSwitchStatus")
     if isinstance(wins, dict):

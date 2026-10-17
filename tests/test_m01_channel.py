@@ -222,6 +222,12 @@ class TestM01Mapping:
         assert m["charge_appointment"]["value"] == 1, "预约充电（M 系专属开关）"
         assert m["charge_appointment_start"]["value"] == "23:00"
         assert m["charge_appointment_end"]["value"] == "06:00"
+
+        # ★ 整车锁状态：isLock=1（已落锁）→ 我方 lock_main 取反写 0（locked）
+        res["doorSwitchStatus"] = {"mainDoor": {"isOpen": "0", "isLock": "1"}}
+        m2 = map_realtime_state(res)
+        assert m2["lock_main"]["value"] == 0, (
+            "isLock=1(已落锁) 必须取反为 0 —— lock.py 里 0 才代表 locked")
         assert m["battery_level"]["value"] == 79.0
         assert m["range_elec_cltc"]["value"] == 123.0
         assert m["range_fuel_cltc"]["value"] == 202.0
