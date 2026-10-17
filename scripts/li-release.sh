@@ -58,14 +58,15 @@ token() { cat /tmp/ghtoken 2>/dev/null || sed -n 's|https://[^:]*:\([^@]*\)@gith
 
 # ── 参数 ──────────────────────────────────────────────────────────────────
 VERSION="${1:-}"
-DRY=0; ASSUME_YES=0
+DRY=0; ASSUME_YES=0; PRERELEASE=0
 for a in "$@"; do
   [[ "$a" == "--dry-run" ]] && DRY=1
   [[ "$a" == "--yes" ]] && ASSUME_YES=1
+  [[ "$a" == "--prerelease" ]] && PRERELEASE=1
 done
 
 [[ -z "$VERSION" || "$VERSION" == --* ]] && {
-  err "用法: ./li-release.sh <版本号，如 1.2.3> [--dry-run|--yes]"
+  err "用法: ./li-release.sh <版本号，如 1.2.3> [--dry-run|--yes|--prerelease]"
   exit 2
 }
 VERSION="${VERSION#v}"
@@ -138,8 +139,13 @@ ok "草稿 Release 已就位（维护者可以去 Releases 页面确认正文）
 if [[ $DRY -eq 1 ]]; then
   echo
   warn "DRY-RUN：以下动作【未执行】——"
-  echo "      PATCH /releases/<id>  {draft: false}"
-  echo "      （同时会清掉 prerelease 标记）"
+  if [[ $PRERELEASE -eq 1 ]]; then
+    echo "      PATCH /releases/<id>  {draft: false, prerelease: true}"
+    echo "      ★ 预发布版：HACS 默认不显示，用户需勾选「显示 Beta 版」"
+  else
+    echo "      PATCH /releases/<id>  {draft: false, prerelease: false}"
+    echo "      （同时会清掉 prerelease 标记）"
+  fi
   exit 0
 fi
 
@@ -163,8 +169,13 @@ if [[ -z "$DRAFT_ID" ]]; then
   die "找不到 tag $TAG 的草稿 Release —— 刚才明明说有，怎么回事？"
 fi
 
+if [[ $PRERELEASE -eq 1 ]]; then
+  _PRE_BODY='{"draft": false, "prerelease": true}'
+else
+  _PRE_BODY='{"draft": false, "prerelease": false}'
+fi
 CODE="$(curl_gh "/releases/$DRAFT_ID" -X PATCH \
-  -d '{"draft": false, "prerelease": false}' \
+  -d "$_PRE_BODY" \
   -o /tmp/li-release-resp.json -w '%{http_code}')"
 
 if [[ "$CODE" != "200" ]]; then
