@@ -170,7 +170,12 @@ const AUTO_BIND = {
     trunk:          { name: "尾门", domain: "cover" },
     /* ★ 2026-10-09 修正：首页「授权驾驶」按钮此前绑到 binary_sensor（车辆授权，只读）
        → 点击只会弹「只读，无法控制」。集成里真实的可执行实体是
-       button.<车名>_授权驾驶（cmdKey=remoteVehAuth），状态显示另用 auth_state。 */
+       button.<车名>_授权驾驶（cmdKey=remoteVehAuth）。
+
+       ★ 2026-10-17：auth_state（binary_sensor「车辆授权」= Vehicle.Provision.Authorize.State）
+         **不再用于判断"已授权"** —— 那是这台车与账号的绑定关系，长期为 on，
+         会让标签和圆点永远显示"已授权/已启动"。官方的依据是 LXVehicleBLEConnectState
+         （蓝牙连接状态，一次性），我们集成没有该信号。字段保留仅供手动配置使用。 */
     auth:           { name: "授权驾驶", domain: "button" },
     auth_state:     { name: "车辆授权", domain: "binary_sensor" },
     find:           { name: "寻车", domain: "button" },

@@ -95,6 +95,10 @@ const I18N = {
   remain: "剩余时间",
   records: "充电记录",        // ★ 官方右上角入口
   remainPrefix: "剩余",       // ★ 官方「剩余2小时7分钟」
+      // ★ 2026-10-17 官方 PowerDisplay 文案（Hermes 包 i18n：chargingCalibration1/2）
+      //   车刚插枪进入"校准"阶段时 ChargeSurplusTime 会暂时为 0，
+      //   官方此刻显示的是"充电校准中，预计5-10分钟"，而不是"剩余0分钟"。
+      calibrating: "充电校准中，预计5-10分钟",
   hour: "小时",
   apptEnd: "按时结束",        // ★ 官方文案
   hint: "日常快充建议最高设置为95%，95%以上充电功率较低。",
@@ -183,6 +187,9 @@ const STYLE = `
     .ringwrap .rtx span { font-size:42px; letter-spacing:-1px; }
     .ringwrap .rtx small { font-size:15px; margin:12px 0 0 3px; }
     .remline { text-align:center; font-size:15px; color:var(--lx-t2); margin:2px 0 12px; }
+    /* ★ 2026-10-16：未充电时把空信息收起（见 _update 里的「不充电自动隐藏」）。
+       注意 .metrics 是 display:grid，会盖掉 hidden 属性的 display:none，所以显式写一条。 */
+    .hero .metrics[hidden], .remline[hidden] { display:none; }
     /* 上限滑杆块（官方） */
     .limitbox { margin:12px 20px 0; background:var(--lx-card); border-radius:18px; padding:16px; }
     .limitbox .lbrow1 { display:flex; align-items:baseline; justify-content:space-between;
@@ -878,6 +885,8 @@ class LixiangChargePage extends HTMLElement {
         const y0 = this._years[0] && this._years[0].year;
         if (y0 != null) this._openYears.add(String(y0));
         this._renderYears();
+        // ★ 数据到位 → 补刷顶部「本月次数」（之前只刷记录区，导致它永远停在「—」）
+        this._updateStats();
       }
     } catch (e) {
       this._error = (e && e.message) || "网络请求失败";
@@ -1089,6 +1098,15 @@ class LixiangChargePage extends HTMLElement {
     // ★ 2026-10-14：状态行已显示「充电中」，这里不再重复一遍（官方页状态由环形表表达）
     q("#sub").textContent = fault && String(fault) !== "off" && String(fault) !== "正常" ? "充电故障" : "";
 
+    // ★ 2026-10-16 车主（截图标注）：「这个信息可否在不充电时自动隐藏起来?」
+    //   未充电时 4 项指标恒为「—」（截图：20% · 剩余0分钟 · — km/hr — kW — A — V），
+    //   一片空值既占版面又像坏掉 → **只在充电中显示**。
+    //   判定复用上面的 isCharging（充电状态含「充电中」），与环形表/闪电同一口径。
+    //   ⚠️ 用 style.display 而不是 hidden 属性：`.hero .metrics{display:grid}` 特异性更高，
+    //      会盖掉 [hidden] 的默认 display:none（这条坑在仓库里出现过多次）。
+    const mBox = q(".hero .metrics");
+    if (mBox) mBox.style.display = isCharging ? "" : "none";
+
     // ★ 2026-10-14 对齐官方：环形电量表（SOC）+ 上限滑杆
     const lim = this._num(this._eid("limit") || this._eid("limit_sensor"));
     const soc = this._num(this._eid("soc"));
@@ -1129,7 +1147,28 @@ class LixiangChargePage extends HTMLElement {
       const uEl = q("#u-power"); if (uEl) uEl.textContent = pU;
     // ★ 2026-10-14 官方格式：「剩余2小时7分钟」（原来显示 185 min）
     const rEl = q("#rem-text");
-    if (rEl) rEl.textContent = rm == null ? I18N.remainPrefix + " —" : I18N.remainPrefix + this._fmtDur(rm);
+    if (rEl) {
+      rEl.textContent = rm == null ? I18N.remainPrefix + " —" : I18N.remainPrefix + this._fmtDur(rm);
+      // ★ 2026-10-17 车主：「剩余充电时间没显示」
+      //   实测：正在充电（6.54 kW）但 `剩余充电时间` 实体是 **0**（连续 40 次轮询都是 0）。
+      //   官方 Hermes 包证据：App 取的也是
+      //     'Vehicle.Powertrain.Battery.ChargeSurplusTime'（还有 remainTime / remainTimeMintueTip）
+      //   —— 与我们同一路径，所以 **车此刻就是没给估值**，App 也拿不到。
+      //   那就不能显示「剩余0分钟」这种假信息：只在真有时长时才显示。
+      const mins = rm == null ? null : Math.max(0, Math.round(Number(rm) || 0));
+      // ★ 2026-10-17 按官方 PowerDisplay 分支（Hermes 包还原）：
+      //   有值 → 剩余X小时Y分钟 ｜ 充电中但值=0 → "充电校准中，预计5-10分钟"
+      //   ｜ 未充电且无值 → 收起
+      if (mins && mins > 0) {
+        rEl.textContent = I18N.remainPrefix + this._fmtDur(mins);
+        rEl.hidden = false;
+      } else if (isCharging) {
+        rEl.textContent = I18N.calibrating;
+        rEl.hidden = false;
+      } else {
+        rEl.hidden = true;
+      }
+    }
       // ★ 官方 4 项指标之三/四：输入电压 / 输入电流（单位跟随实体）
       const Sx = (id) => (id && this._hass && this._hass.states) ? this._hass.states[id] : null;
       const vSt = Sx(this._eid("charge_voltage")), aSt = Sx(this._eid("charge_current"));
@@ -1143,7 +1182,21 @@ class LixiangChargePage extends HTMLElement {
     q("#m-mode").textContent = md || "—";
     q("#m-mode").className = "v" + ((md && isNaN(parseFloat(md))) ? " txt" : "");
 
-    // 电量三栏
+    this._updateStats();
+  }
+
+  /** ★ 2026-10-17 修「本月充电次数没正确显示」
+   *
+   *  根因（时序）：`_update()` 先跑（此时 _years 还是 null → 本月次数显示「—」），
+   *  末尾才 `this._fetchStats()` **不 await**；等月度统计回来后，`_fetchStats()`
+   *  只调了 `_renderYears()`（记录区），**没有刷新顶部统计** →
+   *  本月次数就一直停在「—」（只有手动点刷新才会好）。
+   *
+   *  修法：把电量三栏抽成 `_updateStats()`，月度统计到位后单独调它 ——
+   *  不整卡重绘（避免连带把车图/滑杆/地图重画一遍）。
+   */
+  _updateStats() {
+    const q = (s) => this.querySelector(s);
     const mk = this._num(this._eid("month_kwh"));
     let tk = this._num(this._eid("month_times"));      // ★ let（下方可能回填）
     const tot = this._num(this._eid("total_kwh"));
