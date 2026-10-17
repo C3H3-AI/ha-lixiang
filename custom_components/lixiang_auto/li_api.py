@@ -214,6 +214,32 @@ def _as_text(value) -> str:
     return "" if value is None else str(value)
 
 
+def _control_permission_hint(api_self) -> str:
+    """车控失败时，若【确定不是车主账号】→ 给出准确原因（否则返回 ""）。
+
+    ★ 2026-10-18（理想ONE 家人账号实测发现的【误导】）：
+      家人账号（`vehicleType=authorized` / `vehicleRoleId=15`）发车控时，
+      `cmd/send` 返回的是 **HTTP 503「服务暂时不可用」** ——
+      但真实原因不是服务端故障，而是**服务端按账号角色拒绝**
+      （同一辆车走 `send-command` 通道会明确报 `241000 用户没有权限`）。
+
+      若不改述，用户会以为「等会儿再试」——实际上等也没用，必须换车主账号。
+      这与 App 一致：App 对家人账号同样不开放车控。
+    """
+    try:
+        from .vehicle_role import REL_OWNER, relation_of
+
+        veh = api_self.get_vehicles() or []
+        rel = relation_of(veh[0] if veh else None)
+        if rel in (None, 0, REL_OWNER):
+            return ""            # 车主 / 无法判定 → 不猜，保持原错误
+        return ("当前是【家人/授权账号】，服务端按角色限制不允许远程车控"
+                "（用车主账号即可；App 对家人账号同样不开放车控）。"
+                "注：cmd/send 对此返回 HTTP 503「服务暂时不可用」，并非服务端故障。")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _first_of(payload, *names: str):
     """从响应里按顺序取第一个存在的键值（容错不同后端字段命名）。
 
@@ -2371,15 +2397,29 @@ class LiApiClient:
             except LiApiError as err:  # 唤醒失败不阻断 (车辆可能已在线)
                 _LOGGER.debug("唤醒失败(忽略, 继续下发): %s", err)
 
-        resp = self.send_command_raw(command_key, command_data)
+        try:
+            resp = self.send_command_raw(command_key, command_data)
+        except LiApiError as err:
+            # ★ 2026-10-18：家人/授权账号发车控 → cmd/send 返回 HTTP 503，
+            #   但真实原因是【服务端按角色拒绝】（同一辆车走 send-command 通道
+            #   明确报 241000 用户没有权限）。不改述会让用户干等 —— 必须说清。
+            _hint = _control_permission_hint(self)
+            if _hint:
+                raise LiCommandError(
+                    f"命令下发失败 ({command_key})：{_hint}｜原始错误：{err}",
+                    request_id="", result_code=None,
+                ) from err
+            raise
         request_id = resp.get("requestId") or resp.get("data", {}).get("requestId") or ""
 
         # cmd/send 自身可能在响应里直接带业务错误
         rc = resp.get("resultCode")
         if rc not in (None, 0):
+            _hint = _control_permission_hint(self)
             raise LiCommandError(
                 f"命令下发被拒 ({command_key}): resultCode={rc} "
-                f"msg={resp.get('resultMsg') or resp.get('message')}",
+                f"msg={resp.get('resultMsg') or resp.get('message')}"
+                + (f"｜{_hint}" if _hint else ""),
                 request_id=request_id, result_code=rc,
             )
 

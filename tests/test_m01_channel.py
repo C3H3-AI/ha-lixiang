@@ -94,6 +94,57 @@ class TestM01Channel:
         assert is_m_series(None) is False
 
 
+class TestFamilyAccountControlHint:
+    """★ 家人/授权账号发车控 —— 错误必须说清是【权限】而非【服务故障】。
+
+    实测（2026-10-18）：ONE 家人账号走 `cmd/send` 返回 **HTTP 503
+    「服务暂时不可用」**，但真实原因是服务端按角色拒绝（同一辆车走
+    `send-command` 通道明确报 `241000 用户没有权限`）。
+
+    若原样透传 503，用户会以为「等会儿再试」——实际上等也没用，必须换车主账号。
+    App 做法一致：对家人账号不开放车控。
+    """
+
+    def test_role_detection_matches_app(self):
+        """角色判定必须复刻 App（authorized + roleId 15 → 家人共享）。"""
+        from vehicle_role import REL_FAMILY_SHARED, REL_OWNER, relation_of
+
+        assert relation_of({"vehicleType": "authorized",
+                            "vehicleRoleId": 15}) == REL_FAMILY_SHARED
+        assert relation_of({"vehicleType": "owned",
+                            "vehicleRoleId": 11}) == REL_OWNER
+
+    def test_hint_mentions_permission_and_503(self):
+        """提示语要点明【权限】且戳穿 503 伪装（文本断言，跳过 HA 依赖）。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _control_permission_hint")
+        assert i > 0, "缺 _control_permission_hint"
+        body = src[i:i + 1800]
+        assert "家人" in body and "授权账号" in body, "必须点明家人/授权账号"
+        assert "503" in body, "必须说明 503 是伪装而非真故障"
+        assert "REL_OWNER" in body, "车主不得被加提示"
+
+    def test_hint_text_is_actionable(self):
+        """★ 行为级：提示语必须【可操作】—— 让用户知道换车主账号，而不是干等。
+
+        直接从源码取提示语原文做内容断言（比"关键字存在"更强）：
+        li_api 需 HA 环境，这里只验证消息本身的正确性。
+        """
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _control_permission_hint")
+        body = src[i:i + 2000]
+        assert "车主账号" in body, "必须给出解法：换车主账号"
+        assert "并非服务端故障" in body, "必须否定『服务故障』这个误解"
+        assert "App 对家人账号" in body, "应说明与 App 一致（家人账号同样不可控）"
+
+
+    def test_hint_wired_into_send_command(self):
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert "_control_permission_hint(self)" in src, "必须挂到 send_command 的失败路径"
+        # 必须包住 send_command_raw（家人账号的失败来自 HTTP 503，不是 resultCode）
+        assert "resp = self.send_command_raw(command_key, command_data)" in src
+
+
 class TestM01Mapping:
     """real-time-state → signal-key 映射的正确性（用实车真值）。"""
 
