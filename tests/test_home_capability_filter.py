@@ -188,7 +188,10 @@ class TestHomePageWiring:
         """
         src = HOME.read_text(encoding="utf-8")
         i = src.index("  _renderQuick(warmup) {")
-        blk = src[i:i + 700]
+        # ★ 2026-10-16：原来写死 i+700 的窗口 —— 方法里加几行注释就会被挤出窗口，
+        #   测试随即误报。改成取到方法结束（2 空格缩进的右括号）。
+        j = src.index("\n  }", i)
+        blk = src[i:j]
         assert "QUICK.filter" in blk, "渲染前必须过滤 QUICK"
         assert "avail.forEach" in blk, "必须遍历过滤后的集合"
         # 而且真的接在渲染路径上（不只存在一个孤立方法）

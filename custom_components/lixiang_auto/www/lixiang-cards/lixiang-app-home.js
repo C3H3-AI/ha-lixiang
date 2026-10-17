@@ -234,6 +234,16 @@ const STYLE = `
   .chev { display:flex; justify-content:center; padding:10px 0 2px; cursor:pointer; }
   .chev img { width:22px; height:22px; opacity:.55; transition:transform .25s; }
   .root.collapsed3d .chev img { transform:rotate(180deg); }
+  /* ★ 2026-10-16 车主（两次澄清后定稿）：
+       「小箭头不是收齐车模的功能，是展开和收齐快捷键的功能。
+         比如有车可能有 8 个快捷，那么小箭头就可以展开更多。
+         车模是上滑收起，下拉展开。」
+     → 默认只显示**第一行 4 个**快捷键；按小箭头展开「更多」（全部可用项），
+       再按收起。车模完全不归它管 —— 车模只由滚动（上滑收起/下拉展开）驱动；
+       右上角小车图是车模自己的开关。
+     → 可用项 ≤4 时箭头无意义，_renderQuick 里会把它藏起来。 */
+  .root:not(.quick-open) .quick > .q:nth-child(n+5) { display:none; }
+  .root.quick-open .chev img { transform:rotate(180deg); }
 
   .wrap { padding:12px 20px 0; display:grid; gap:12px; }
   .row2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
@@ -414,7 +424,11 @@ const STYLE = `
          全部移除，只在极窄（≤330px）才收。 */
       .head { padding-left:14px; padding-right:14px; }
       .wrap { padding-left:14px; padding-right:14px; }
-      .big3d, .root.expanded3d .big3d { height: 188px; }
+      /* ★ 2026-10-16 车主（截图）：「车模都右上角了，中间车模地方空着了，没收起来」
+         原来是 ".big3d, .root.expanded3d .big3d { height:188px }" —— 裸 .big3d
+         把收起态的 height:0 盖掉了，于是收起后仍占 188px 空白。
+         收起态就该完全塌陷，所以这里只留展开态选择器。 */
+      .root.expanded3d .big3d { height: 188px; }
       .mini { width:118px; height:78px; }
     }
 
@@ -451,9 +465,20 @@ const QUICK = [
   //   用户看到的就是"授权驾驶一直开着"（车主的疑问）。
   // 官方 I18N（VehicleHomeControl）：authorization=授权驾驶 / alreadyAuthorization=已授权 /
   // alreadyStart=已启动 / dismiss=不再提醒 → 授权按钮有**两态**且动作前要**二次确认**。
-  { key:"auth",   name:"授权驾驶", onName:"已授权", startedName:"已启动",
+  // ★ 2026-10-17 车主：「已授权怎么一直显示？app 上显示是授权驾驶」
+  //   根因：我们用 `Vehicle.Provision.Authorize.State`（binary_sensor.车辆授权）
+  //   当"是否已授权"的依据 —— 那个是**这台车与账号的绑定关系，长期为 on**，
+  //   于是标签永远变「已授权」。
+  //   官方包证据：它用的是 **LXVehicleBLEConnectState**（'bleConnected'/
+  //   'bleConnectionStatus'，共 55/78 处引用）—— **蓝牙连接状态**，一次性的，
+  //   下车/断连就失效；我们集成**没有** BLE 信号，无法复现。
+  //   → 拿不到真实依据就不假装有：去掉 onName，始终显示官方动作名「授权驾驶」。
+  //   （点击下发不受影响 —— 它本来就是动作按钮 remoteVehAuth。）
+  //   同样去掉 stateField（原本指向 binary_sensor.车辆授权）：没有真实 BLE 依据时
+  //   **连圆点也不该常亮**（官方只有 bleConnected 为真才高亮）。
+  { key:"auth",   name:"授权驾驶", startedName:"已启动",
     confirm:"请在 2 分钟内上车并踩下刹车踏板，下车后请远程上锁。",
-    remember:true, stateField:"auth_state",
+    remember:true,
     off:"ic_home_authorization_off_lisa.png",  on:"ic_home_authorization_on_lisa.png" },
   { key:"summon", name:"直线召唤", unsupported:true, note:"命令走 JOB 通道，HTTP 不可达",
     off:"ic_home_parkingout_off_lisa.png",     on:"ic_home_parkingout_on_lisa.png" },
@@ -805,7 +830,7 @@ class LixiangAppHome extends HTMLElement {
         </div>
       </div>
       <div class="quick" id="quick" role="group" aria-label="快捷操作"></div>
-      <div class="chev" id="chev" role="button" tabindex="0" aria-label="收起车辆视图">
+      <div class="chev" id="chev" role="button" tabindex="0" aria-expanded="false" aria-label="展开更多快捷按键">
         <img src="${__iconBase}/ic_home_pulldown.png" onerror="__lxIconFallback(this)" alt="">
       </div>
       <div class="wrap">
@@ -985,20 +1010,36 @@ class LixiangAppHome extends HTMLElement {
   ///
   /// 后端返回 {model_id, color_code, vertical:{static, cached, key}}，
   /// 车型与车漆色都由服务器给，**用户无需任何配置**。
-    const toggle = () => {
+    // ★ 2026-10-16 车主：「是快捷下面的小三角箭头。这个键应该是快捷按键更多显示，
+    //   不是隐藏和展示车模的地方。」
+    //   → 拆成两个互不相干的开关：
+    //     · #chev  = 快捷按键更多/收起（quick-compact：只留第一行 4 个）
+    //     · #mini  = 车模 3D 的收起/展开（右上角小车图，它才是车模自己的开关）
+    const toggle3d = () => {
       this._userToggled = true;    // 用户手动操作后，停止自动跟随
       const collapsed = !root.classList.contains("collapsed3d");
       root.classList.toggle("collapsed3d", collapsed);
       root.classList.toggle("expanded3d", !collapsed);
       try { localStorage.setItem("lx_3d_collapsed", collapsed ? "1" : "0"); } catch (e) {}
     };
-    [this.querySelector("#chev"), this.querySelector("#mini")].forEach(el => {
+    const toggleQuick = () => {
+      const open = !root.classList.contains("quick-open");
+      root.classList.toggle("quick-open", open);
+      const chev = this.querySelector("#chev");
+      if (chev) {
+        chev.setAttribute("aria-label", open ? "收起快捷按键" : "展开更多快捷按键");
+        chev.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+    };
+    const bind = (el, fn) => {
       if (!el) return;
-      el.addEventListener("click", e => { e.stopPropagation(); toggle(); });
+      el.addEventListener("click", e => { e.stopPropagation(); fn(); });
       el.addEventListener("keydown", e => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggle(); }
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); fn(); }
       });
-    });
+    };
+    bind(this.querySelector("#chev"), toggleQuick);   // 小三角 → 快捷按键更多/收起
+    bind(this.querySelector("#mini"), toggle3d);      // 右上小车图 → 车模收起/展开
 
     // ★ 上拉自动收起 3D（对齐 App 交互）
     //   App 用滚动驱动：页面下滑 → 3D 收起；回到顶部 → 3D 展开
@@ -1060,6 +1101,9 @@ class LixiangAppHome extends HTMLElement {
     if (q.querySelector(".q") && q.dataset.shown === String(avail.length)
         && avail.every(it => q.querySelector(`.q[data-key="${it.key}"]`))) return;
     q.dataset.shown = String(avail.length);
+    // ★ 2026-10-16：快捷项 ≤4（一行）时没有"更多"可展开 → 藏掉小箭头
+    const chevEl = this.querySelector("#chev");
+    if (chevEl) chevEl.style.display = avail.length > 4 ? "" : "none";
     q.replaceChildren();
     if (!avail.length) {
       q.innerHTML = '<div class="qempty">该车型暂无可用快捷功能</div>';

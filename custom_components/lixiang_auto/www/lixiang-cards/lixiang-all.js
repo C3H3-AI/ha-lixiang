@@ -803,6 +803,16 @@ const STYLE = `
   .chev { display:flex; justify-content:center; padding:10px 0 2px; cursor:pointer; }
   .chev img { width:22px; height:22px; opacity:.55; transition:transform .25s; }
   .root.collapsed3d .chev img { transform:rotate(180deg); }
+  /* ★ 2026-10-16 车主（两次澄清后定稿）：
+       「小箭头不是收齐车模的功能，是展开和收齐快捷键的功能。
+         比如有车可能有 8 个快捷，那么小箭头就可以展开更多。
+         车模是上滑收起，下拉展开。」
+     → 默认只显示**第一行 4 个**快捷键；按小箭头展开「更多」（全部可用项），
+       再按收起。车模完全不归它管 —— 车模只由滚动（上滑收起/下拉展开）驱动；
+       右上角小车图是车模自己的开关。
+     → 可用项 ≤4 时箭头无意义，_renderQuick 里会把它藏起来。 */
+  .root:not(.quick-open) .quick > .q:nth-child(n+5) { display:none; }
+  .root.quick-open .chev img { transform:rotate(180deg); }
 
   .wrap { padding:12px 20px 0; display:grid; gap:12px; }
   .row2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
@@ -983,7 +993,11 @@ const STYLE = `
          全部移除，只在极窄（≤330px）才收。 */
       .head { padding-left:14px; padding-right:14px; }
       .wrap { padding-left:14px; padding-right:14px; }
-      .big3d, .root.expanded3d .big3d { height: 188px; }
+      /* ★ 2026-10-16 车主（截图）：「车模都右上角了，中间车模地方空着了，没收起来」
+         原来是 ".big3d, .root.expanded3d .big3d { height:188px }" —— 裸 .big3d
+         把收起态的 height:0 盖掉了，于是收起后仍占 188px 空白。
+         收起态就该完全塌陷，所以这里只留展开态选择器。 */
+      .root.expanded3d .big3d { height: 188px; }
       .mini { width:118px; height:78px; }
     }
 
@@ -1020,9 +1034,20 @@ const QUICK = [
   //   用户看到的就是"授权驾驶一直开着"（车主的疑问）。
   // 官方 I18N（VehicleHomeControl）：authorization=授权驾驶 / alreadyAuthorization=已授权 /
   // alreadyStart=已启动 / dismiss=不再提醒 → 授权按钮有**两态**且动作前要**二次确认**。
-  { key:"auth",   name:"授权驾驶", onName:"已授权", startedName:"已启动",
+  // ★ 2026-10-17 车主：「已授权怎么一直显示？app 上显示是授权驾驶」
+  //   根因：我们用 `Vehicle.Provision.Authorize.State`（binary_sensor.车辆授权）
+  //   当"是否已授权"的依据 —— 那个是**这台车与账号的绑定关系，长期为 on**，
+  //   于是标签永远变「已授权」。
+  //   官方包证据：它用的是 **LXVehicleBLEConnectState**（'bleConnected'/
+  //   'bleConnectionStatus'，共 55/78 处引用）—— **蓝牙连接状态**，一次性的，
+  //   下车/断连就失效；我们集成**没有** BLE 信号，无法复现。
+  //   → 拿不到真实依据就不假装有：去掉 onName，始终显示官方动作名「授权驾驶」。
+  //   （点击下发不受影响 —— 它本来就是动作按钮 remoteVehAuth。）
+  //   同样去掉 stateField（原本指向 binary_sensor.车辆授权）：没有真实 BLE 依据时
+  //   **连圆点也不该常亮**（官方只有 bleConnected 为真才高亮）。
+  { key:"auth",   name:"授权驾驶", startedName:"已启动",
     confirm:"请在 2 分钟内上车并踩下刹车踏板，下车后请远程上锁。",
-    remember:true, stateField:"auth_state",
+    remember:true,
     off:"ic_home_authorization_off_lisa.png",  on:"ic_home_authorization_on_lisa.png" },
   { key:"summon", name:"直线召唤", unsupported:true, note:"命令走 JOB 通道，HTTP 不可达",
     off:"ic_home_parkingout_off_lisa.png",     on:"ic_home_parkingout_on_lisa.png" },
@@ -1374,7 +1399,7 @@ class LixiangAppHome extends HTMLElement {
         </div>
       </div>
       <div class="quick" id="quick" role="group" aria-label="快捷操作"></div>
-      <div class="chev" id="chev" role="button" tabindex="0" aria-label="收起车辆视图">
+      <div class="chev" id="chev" role="button" tabindex="0" aria-expanded="false" aria-label="展开更多快捷按键">
         <img src="${__iconBase}/ic_home_pulldown.png" onerror="__lxIconFallback(this)" alt="">
       </div>
       <div class="wrap">
@@ -1554,20 +1579,36 @@ class LixiangAppHome extends HTMLElement {
   ///
   /// 后端返回 {model_id, color_code, vertical:{static, cached, key}}，
   /// 车型与车漆色都由服务器给，**用户无需任何配置**。
-    const toggle = () => {
+    // ★ 2026-10-16 车主：「是快捷下面的小三角箭头。这个键应该是快捷按键更多显示，
+    //   不是隐藏和展示车模的地方。」
+    //   → 拆成两个互不相干的开关：
+    //     · #chev  = 快捷按键更多/收起（quick-compact：只留第一行 4 个）
+    //     · #mini  = 车模 3D 的收起/展开（右上角小车图，它才是车模自己的开关）
+    const toggle3d = () => {
       this._userToggled = true;    // 用户手动操作后，停止自动跟随
       const collapsed = !root.classList.contains("collapsed3d");
       root.classList.toggle("collapsed3d", collapsed);
       root.classList.toggle("expanded3d", !collapsed);
       try { localStorage.setItem("lx_3d_collapsed", collapsed ? "1" : "0"); } catch (e) {}
     };
-    [this.querySelector("#chev"), this.querySelector("#mini")].forEach(el => {
+    const toggleQuick = () => {
+      const open = !root.classList.contains("quick-open");
+      root.classList.toggle("quick-open", open);
+      const chev = this.querySelector("#chev");
+      if (chev) {
+        chev.setAttribute("aria-label", open ? "收起快捷按键" : "展开更多快捷按键");
+        chev.setAttribute("aria-expanded", open ? "true" : "false");
+      }
+    };
+    const bind = (el, fn) => {
       if (!el) return;
-      el.addEventListener("click", e => { e.stopPropagation(); toggle(); });
+      el.addEventListener("click", e => { e.stopPropagation(); fn(); });
       el.addEventListener("keydown", e => {
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); toggle(); }
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); fn(); }
       });
-    });
+    };
+    bind(this.querySelector("#chev"), toggleQuick);   // 小三角 → 快捷按键更多/收起
+    bind(this.querySelector("#mini"), toggle3d);      // 右上小车图 → 车模收起/展开
 
     // ★ 上拉自动收起 3D（对齐 App 交互）
     //   App 用滚动驱动：页面下滑 → 3D 收起；回到顶部 → 3D 展开
@@ -1629,6 +1670,9 @@ class LixiangAppHome extends HTMLElement {
     if (q.querySelector(".q") && q.dataset.shown === String(avail.length)
         && avail.every(it => q.querySelector(`.q[data-key="${it.key}"]`))) return;
     q.dataset.shown = String(avail.length);
+    // ★ 2026-10-16：快捷项 ≤4（一行）时没有"更多"可展开 → 藏掉小箭头
+    const chevEl = this.querySelector("#chev");
+    if (chevEl) chevEl.style.display = avail.length > 4 ? "" : "none";
     q.replaceChildren();
     if (!avail.length) {
       q.innerHTML = '<div class="qempty">该车型暂无可用快捷功能</div>';
@@ -2414,6 +2458,10 @@ const I18N = {
   remain: "剩余时间",
   records: "充电记录",        // ★ 官方右上角入口
   remainPrefix: "剩余",       // ★ 官方「剩余2小时7分钟」
+      // ★ 2026-10-17 官方 PowerDisplay 文案（Hermes 包 i18n：chargingCalibration1/2）
+      //   车刚插枪进入"校准"阶段时 ChargeSurplusTime 会暂时为 0，
+      //   官方此刻显示的是"充电校准中，预计5-10分钟"，而不是"剩余0分钟"。
+      calibrating: "充电校准中，预计5-10分钟",
   hour: "小时",
   apptEnd: "按时结束",        // ★ 官方文案
   hint: "日常快充建议最高设置为95%，95%以上充电功率较低。",
@@ -2502,6 +2550,9 @@ const STYLE = `
     .ringwrap .rtx span { font-size:42px; letter-spacing:-1px; }
     .ringwrap .rtx small { font-size:15px; margin:12px 0 0 3px; }
     .remline { text-align:center; font-size:15px; color:var(--lx-t2); margin:2px 0 12px; }
+    /* ★ 2026-10-16：未充电时把空信息收起（见 _update 里的「不充电自动隐藏」）。
+       注意 .metrics 是 display:grid，会盖掉 hidden 属性的 display:none，所以显式写一条。 */
+    .hero .metrics[hidden], .remline[hidden] { display:none; }
     /* 上限滑杆块（官方） */
     .limitbox { margin:12px 20px 0; background:var(--lx-card); border-radius:18px; padding:16px; }
     .limitbox .lbrow1 { display:flex; align-items:baseline; justify-content:space-between;
@@ -3197,6 +3248,8 @@ class LixiangChargePage extends HTMLElement {
         const y0 = this._years[0] && this._years[0].year;
         if (y0 != null) this._openYears.add(String(y0));
         this._renderYears();
+        // ★ 数据到位 → 补刷顶部「本月次数」（之前只刷记录区，导致它永远停在「—」）
+        this._updateStats();
       }
     } catch (e) {
       this._error = (e && e.message) || "网络请求失败";
@@ -3408,6 +3461,15 @@ class LixiangChargePage extends HTMLElement {
     // ★ 2026-10-14：状态行已显示「充电中」，这里不再重复一遍（官方页状态由环形表表达）
     q("#sub").textContent = fault && String(fault) !== "off" && String(fault) !== "正常" ? "充电故障" : "";
 
+    // ★ 2026-10-16 车主（截图标注）：「这个信息可否在不充电时自动隐藏起来?」
+    //   未充电时 4 项指标恒为「—」（截图：20% · 剩余0分钟 · — km/hr — kW — A — V），
+    //   一片空值既占版面又像坏掉 → **只在充电中显示**。
+    //   判定复用上面的 isCharging（充电状态含「充电中」），与环形表/闪电同一口径。
+    //   ⚠️ 用 style.display 而不是 hidden 属性：`.hero .metrics{display:grid}` 特异性更高，
+    //      会盖掉 [hidden] 的默认 display:none（这条坑在仓库里出现过多次）。
+    const mBox = q(".hero .metrics");
+    if (mBox) mBox.style.display = isCharging ? "" : "none";
+
     // ★ 2026-10-14 对齐官方：环形电量表（SOC）+ 上限滑杆
     const lim = this._num(this._eid("limit") || this._eid("limit_sensor"));
     const soc = this._num(this._eid("soc"));
@@ -3448,7 +3510,28 @@ class LixiangChargePage extends HTMLElement {
       const uEl = q("#u-power"); if (uEl) uEl.textContent = pU;
     // ★ 2026-10-14 官方格式：「剩余2小时7分钟」（原来显示 185 min）
     const rEl = q("#rem-text");
-    if (rEl) rEl.textContent = rm == null ? I18N.remainPrefix + " —" : I18N.remainPrefix + this._fmtDur(rm);
+    if (rEl) {
+      rEl.textContent = rm == null ? I18N.remainPrefix + " —" : I18N.remainPrefix + this._fmtDur(rm);
+      // ★ 2026-10-17 车主：「剩余充电时间没显示」
+      //   实测：正在充电（6.54 kW）但 `剩余充电时间` 实体是 **0**（连续 40 次轮询都是 0）。
+      //   官方 Hermes 包证据：App 取的也是
+      //     'Vehicle.Powertrain.Battery.ChargeSurplusTime'（还有 remainTime / remainTimeMintueTip）
+      //   —— 与我们同一路径，所以 **车此刻就是没给估值**，App 也拿不到。
+      //   那就不能显示「剩余0分钟」这种假信息：只在真有时长时才显示。
+      const mins = rm == null ? null : Math.max(0, Math.round(Number(rm) || 0));
+      // ★ 2026-10-17 按官方 PowerDisplay 分支（Hermes 包还原）：
+      //   有值 → 剩余X小时Y分钟 ｜ 充电中但值=0 → "充电校准中，预计5-10分钟"
+      //   ｜ 未充电且无值 → 收起
+      if (mins && mins > 0) {
+        rEl.textContent = I18N.remainPrefix + this._fmtDur(mins);
+        rEl.hidden = false;
+      } else if (isCharging) {
+        rEl.textContent = I18N.calibrating;
+        rEl.hidden = false;
+      } else {
+        rEl.hidden = true;
+      }
+    }
       // ★ 官方 4 项指标之三/四：输入电压 / 输入电流（单位跟随实体）
       const Sx = (id) => (id && this._hass && this._hass.states) ? this._hass.states[id] : null;
       const vSt = Sx(this._eid("charge_voltage")), aSt = Sx(this._eid("charge_current"));
@@ -3462,7 +3545,21 @@ class LixiangChargePage extends HTMLElement {
     q("#m-mode").textContent = md || "—";
     q("#m-mode").className = "v" + ((md && isNaN(parseFloat(md))) ? " txt" : "");
 
-    // 电量三栏
+    this._updateStats();
+  }
+
+  /** ★ 2026-10-17 修「本月充电次数没正确显示」
+   *
+   *  根因（时序）：`_update()` 先跑（此时 _years 还是 null → 本月次数显示「—」），
+   *  末尾才 `this._fetchStats()` **不 await**；等月度统计回来后，`_fetchStats()`
+   *  只调了 `_renderYears()`（记录区），**没有刷新顶部统计** →
+   *  本月次数就一直停在「—」（只有手动点刷新才会好）。
+   *
+   *  修法：把电量三栏抽成 `_updateStats()`，月度统计到位后单独调它 ——
+   *  不整卡重绘（避免连带把车图/滑杆/地图重画一遍）。
+   */
+  _updateStats() {
+    const q = (s) => this.querySelector(s);
     const mk = this._num(this._eid("month_kwh"));
     let tk = this._num(this._eid("month_times"));      // ★ let（下方可能回填）
     const tot = this._num(this._eid("total_kwh"));
@@ -9073,6 +9170,10 @@ const STYLE = `
   .fresh { color:#b2c9b9; }
   .stale { color:#dfba83; }
   .details { border-top:1px solid #ffffff0c; }
+  /* ★ 2026-10-17 车辆位置（复用 HA 官方 ha-map，见 _mapHtml） */
+  .mapsec { padding:0 26px 14px; }
+  .mapsec .lxmap { display:block; height:190px; border-radius:14px; overflow:hidden; }
+  @container (max-width: 520px) { .mapsec { padding:0 14px 12px; } .mapsec .lxmap { height:160px; } }
   .details summary { font-size:11px; color:#bac7d7; padding:11px 26px; cursor:pointer;
                      user-select:none; }
   .details summary:focus-visible { outline:2px solid #a9d7ed; outline-offset:-4px; }
@@ -9323,7 +9424,10 @@ class LixiangOverviewCard extends __Base {
 
   _render() {
     if (!this._built || !this._body) return;
-    const open = this._body.querySelector("details") ? this._body.querySelector("details").open : false;
+    // ★ 2026-10-17 车主：「概览卡片下面有个更多数据，建议默认展开」
+    //   初次渲染默认展开；用户手动开合后（details 已存在）沿用其状态。
+    const _prev = this._body.querySelector("details");
+    const open = _prev ? _prev.open : true;
 
     const online = this.state("online");
     const onlineOn = online === "在线" || online === "on" || online === "true";
@@ -9415,6 +9519,8 @@ class LixiangOverviewCard extends __Base {
         <span>总里程 ${this.fmt("total_km", 1)} km</span>
       </div>
 
+      ${this._mapHtml()}
+
       <details class="details" ${open ? "open" : ""}>
         <summary>更多车辆数据</summary>
         <div class="detail-grid">
@@ -9435,6 +9541,87 @@ class LixiangOverviewCard extends __Base {
         </div>
       </details>`;
     if (!this._artDone) { this._artDone = true; this._loadArt(); }
+    this._wireMap();   // ★ 每次渲染都要重新喂（innerHTML 重建后 ha-map 是新元素）
+    this._paintArt();  // ★ 同理：车图 <img> 也是每次重画新建的，必须重新贴 src
+  }
+
+  /** 车辆位置地图（★ 2026-10-17 车主建议）
+   *
+   * 用 **HA 官方 `ha-map`**（2026.8.3 实测属性：entities / paths / layers /
+   * auto-fit / zoom / theme-mode / cluster-markers，底层 leaflet），
+   * 不自己接瓦片 —— 主题、缩放、标记聚合全部跟随 HA，也免维护。
+   *
+   * * 照顾其它车主（重要）：
+   *   · 卡片配置 `show_map: false` 可完全关闭
+   *   · **拿不到经纬度就不渲染**（没开定位 / 车型无该实体 / 数据缺失）→ 不出现空框或破图
+   */
+  _mapHtml() {
+    if (this._config && this._config.show_map === false) return "";
+    // ⚠️ _st() 收的是**字段名**（内部再 _eid 解析），不是实体 id ——
+    //    传 id 进去会被当成字段名再解析一次 → 恒为 null（地图永远不出现）。
+    const st = this._st("tracker");
+    const a = st && st.attributes ? st.attributes : null;
+    const lat = a ? a.latitude : null, lon = a ? a.longitude : null;
+    if (lat == null || lon == null) return "";
+    return `<section class="mapsec">
+              <div class="section-label"><span>车辆位置</span></div>
+              <ha-map class="lxmap"></ha-map>
+            </section>`;
+  }
+
+  /** ★ 2026-10-17 修「总览车模一会儿有一会儿没」
+   *
+   *  根因：`_render()` 用 innerHTML **整块重画**，模板里的车图 <img> 是
+   *  `src="${config.image || ''}"` —— 用户没配图时就是 **src="" 的空元素**。
+   *  而 `_loadArt()` 被 `_artDone` 只跑一次 → 重画后再没人给新 <img> 赋 src
+   *  → **每重画一次，车图就消失一次**（定时器 60s + 任何状态更新都会触发）。
+   *
+   *  修法：把「贴 src」从「拉数据」里拆出来，每次渲染后都重新贴一次
+   *  （URL 从 localStorage 取，纯内存操作，不发请求）。
+   *  —— 与首页 `_loadCarImage` 同一策略，避免两边行为不一致。
+   */
+  _paintArt() {
+    const img = this._body && this._body.querySelector(".art img");
+    if (!img) return;
+    let src = "", key = "";
+    try {
+      const o = JSON.parse(localStorage.getItem("lx_car_img_v1") || "{}");
+      if (o && o.src) { src = o.src; key = o.key || ""; }
+    } catch (e) {}
+    // 用户显式配了图 → 模板里已经有 src，别覆盖
+    if (!src && this._config && this._config.image) return;
+    if (!src) {
+      // 没有缓存也至少别留 src=""（否则浏览器会去请求当前页 URL）
+      if (!img.getAttribute("src")) img.removeAttribute("src");
+      return;
+    }
+    if (img.getAttribute("src") === src) { img.style.opacity = "1"; return; }
+    img.dataset.lxReal = "1";
+    img.style.opacity = "1";
+    img.src = src;
+    img.alt = "爱车车型示意图" + (key ? " · " + key : "");
+    // 兜底：万一这次请求失败，600ms 后再带 ?v= 重试一次
+    img.onerror = () => {
+      if (img.dataset.lxRetried === "1") { img.style.opacity = "0"; return; }
+      img.dataset.lxRetried = "1";
+      setTimeout(() => {
+        img.src = src + (src.indexOf("?") >= 0 ? "&" : "?") + "v=" + Date.now();
+      }, 600);
+    };
+    img.onload = () => { img.style.opacity = "1"; delete img.dataset.lxRetried; };
+  }
+
+  /** 给 ha-map 注入 hass 与实体（innerHTML 之后调用） */
+  _wireMap() {
+    const m = this._body && this._body.querySelector("ha-map");
+    if (!m) return;
+    const eid = this._eid("tracker");
+    if (!eid) return;
+    m.hass = this._hass;    // ★ 本卡是 this._hass（没有 hass getter）
+    m.entities = [{ entity_id: eid }];
+    m.autoFit = true;
+    m.zoom = 15;
+    m.themeMode = "auto";
   }
 
   /* 车图：config.image > 侧视 > 横版 > 竖版（后端 /lixiang_auto/car-image.json） */
@@ -10173,7 +10360,12 @@ const AUTO_BIND = {
     trunk:          { name: "尾门", domain: "cover" },
     /* ★ 2026-10-09 修正：首页「授权驾驶」按钮此前绑到 binary_sensor（车辆授权，只读）
        → 点击只会弹「只读，无法控制」。集成里真实的可执行实体是
-       button.<车名>_授权驾驶（cmdKey=remoteVehAuth），状态显示另用 auth_state。 */
+       button.<车名>_授权驾驶（cmdKey=remoteVehAuth）。
+
+       ★ 2026-10-17：auth_state（binary_sensor「车辆授权」= Vehicle.Provision.Authorize.State）
+         **不再用于判断"已授权"** —— 那是这台车与账号的绑定关系，长期为 on，
+         会让标签和圆点永远显示"已授权/已启动"。官方的依据是 LXVehicleBLEConnectState
+         （蓝牙连接状态，一次性），我们集成没有该信号。字段保留仅供手动配置使用。 */
     auth:           { name: "授权驾驶", domain: "button" },
     auth_state:     { name: "车辆授权", domain: "binary_sensor" },
     find:           { name: "寻车", domain: "button" },

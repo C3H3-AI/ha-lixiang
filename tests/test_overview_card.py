@@ -153,9 +153,9 @@ class TestCarArt:
 
     def test_config_image_wins(self):
         s = _strip_comments(_src())
-        i = s.find("_loadArt()")
-        assert i > 0
-        assert "if (this._config.image) return" in s[i:i + 300], "config.image 应优先且不被覆盖"
+        i = s.index("_loadArt() {")
+        j = s.index("\n  }", i)        # ★ 不用写死窗口（加几行就被挤出窗口误报）
+        assert "if (this._config.image) return" in s[i:j], "config.image 应优先且不被覆盖"
 
     def test_failure_keeps_layout(self):
         """接口失败不得出现破图（保持空 src）。"""
@@ -186,6 +186,63 @@ class TestCarArt:
         assert 0 < j < i, "未先创建车模图目录（会导致首次 404）"
         # 不得再有 is_dir() 门控
         assert "if _car_dir.is_dir():" not in s, "仍有 is_dir() 门控（首次会 404）"
+
+    def test_more_data_expanded_by_default(self):
+        """★ 2026-10-17 车主：「概览卡片下面有个更多数据，建议默认展开」。
+
+        初次渲染默认展开；用户手动开合后沿用其状态（不覆盖用户选择）。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-overview-card.js")
+        s = p.read_text(encoding="utf-8")
+        assert "const open = _prev ? _prev.open : true;" in s, "「更多车辆数据」未默认展开"
+
+    def test_overview_art_reapplied_after_rerender(self):
+        """★ 2026-10-17 车主：「总览里面的车模图片也存在一会儿显示一会儿没显示的问题」
+
+        根因：`_render()` 用 innerHTML 整块重画，模板里的车图 <img> 是
+        `src="${config.image || ''}"` —— 用户没配图时就是 src="" 的空元素；
+        而 `_loadArt()` 被 `_artDone` 只跑一次 → 重画后再没人给新 <img> 赋 src
+        → **每重画一次（60s 定时器 / 任何状态更新）车图就消失一次**。
+
+        修法：拆出 `_paintArt()`，每次渲染后从 localStorage 缓存把 URL 重新贴上
+        （纯内存，不发请求），并保留 ?v= 重试兜底。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-overview-card.js")
+        s = p.read_text(encoding="utf-8")
+        assert "_paintArt() {" in s, "缺少 _paintArt（重画后车图不会被重新赋值）"
+        # 必须在每次渲染后调用（与 _wireMap 并列）
+        assert "this._paintArt();" in s, "_paintArt 未在渲染后调用"
+        i = s.find("this._paintArt();")
+        j = s.find("this._wireMap();")
+        assert abs(i - j) < 400, "_paintArt 未与 _wireMap 一起在渲染末尾调用"
+        # 贴图来源：缓存键 + 用户配图时不覆盖 + 失败重试
+        assert "lx_car_img_v1" in s, "_paintArt 未从缓存取 URL"
+        assert "img.src = src;" in s, "_paintArt 未设置 src"
+
+    def test_overview_map_uses_ha_map_and_degrades(self):
+        """★ 2026-10-17 车主：总览卡加地图 / 地图跟踪；并强调「要考虑其他车主」。
+
+        ① 复用 **HA 官方 ha-map**（2026.8.3 前端实测属性：entities / paths / layers /
+           auto-fit / zoom / theme-mode / cluster-markers，底层 leaflet），
+           不自己接瓦片 —— 主题/缩放/聚合跟随 HA。
+        ② 照顾其它车主（必须）：
+           · `show_map: false` 可完全关闭
+           · 拿不到经纬度（没开定位 / 车型无该实体 / 数据缺失）→ **不渲染**，不留空框或破图
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-overview-card.js")
+        s = p.read_text(encoding="utf-8")
+        # ① 用官方 ha-map
+        assert "<ha-map" in s, "未复用 HA 官方 ha-map"
+        assert "m.entities = [{ entity_id: eid }]" in s, "ha-map 未绑定位置实体"
+        # ② 降级与配置
+        assert 'this._config.show_map === false' in s, "缺 show_map 关闭开关"
+        assert "if (lat == null || lon == null) return" in s, (
+            "无经纬度时仍会渲染（其他车主会看到空框/破图）")
+        # ③ _st 收字段名（踩过的坑：传实体 id 会二次解析成 null → 地图永不出现）
+        assert 'this._st("tracker")' in s, "_st 必须传字段名而不是实体 id"
 
     def test_car_art_hardened_against_flaky_network(self):
         """★ 2026-10-16 车主："车辆图片经常显示不出来，有时候显示了过会儿又没了"。
@@ -447,18 +504,30 @@ class TestQuickActiveState:
 
 
     def test_auth_label_follows_state(self):
-        """★ 车主："授权驾驶为什么一直显示开着" → 对照官方 App 车控页截图修正。
+        """★ 2026-10-14 写过一版「已授权时标签要变『已授权』」，**2026-10-17 推翻**。
 
-        官方那里第 4 个按钮在已授权时**标签变成「已授权」+ 实心圆**，未授权时是「授权驾驶」。
-        所以状态要保留，但**标签必须跟着变** —— 只高亮不改标签，用户看到的就是
-        "授权驾驶一直开着"。
+        当年依据：官方截图里"已授权时标签变『已授权』"，我们用
+        `binary_sensor.车辆授权`（`Vehicle.Provision.Authorize.State`）当依据。
+
+        ★ 推翻理由（车主："已授权怎么一直显示？app 上显示是授权驾驶" + 实测）：
+          · 那个信号是**这台车与账号的绑定关系，长期为 on** → 于是永远「已授权」；
+          · 官方真正的依据是**车辆状态里的 BLE 组**（请求字段 `vehicleStateKey: 'BLE'`，
+            枚举 connected/connecting/close/abnormal/unfamiliar），即**车端上报的
+            蓝牙授权通道状态**，一次性的 —— 我们集成尚未订阅 `Vehicle.Ble.*`（缺实体）。
+
+        所以：**拿不到依据就不假装有** —— auth 不再挂 stateField / onName，
+        标签恒为官方动作名「授权驾驶」（动作下发是远程的，不受影响）。
+        将来若接上 BLE 实体，这里才该恢复两态显示。
         """
         s = self._src()
         i = s.find('{ key:"auth"')
         assert i > 0
-        entry = s[i:s.find("}", i) + 1]
-        assert 'stateField:"auth_state"' in entry, "auth 应保留状态实体（用于显示已授权）"
-        assert 'onName:"已授权"' in entry, "缺 onName：授权后标签不会变成「已授权」"
+        j2 = s.find('{ key:', i + 5)          # ★ 取到下一条定义，别用第一个 '}' 截断
+        entry = s[i:j2 if j2 > 0 else i + 400]
+        assert 'stateField' not in entry, (
+            "授权按钮不该再用长期 on 的『车辆授权』当依据（会永远显示已授权）")
+        assert 'onName' not in entry, "拿不到 BLE 依据时不该显示『已授权』标签"
+        assert 'name:"授权驾驶"' in entry, "应保持官方动作名「授权驾驶」"
 
     def test_auth_has_official_confirm_flow(self):
         """★ 官方逻辑（逆向证据）：授权驾驶是**动作**且有二次确认。
@@ -614,6 +683,124 @@ class TestQuickActiveState:
             "还有把统计区压成两列的规则")
         assert ".detail-grid { grid-template-columns:repeat(3,minmax(0,1fr))" not in s, (
             "还有把统计区压成三列的规则")
+
+
+    def test_auth_button_not_permanently_authorized(self):
+        """★ 2026-10-17 车主：「已授权怎么一直显示？app 上显示是授权驾驶」
+
+        根因：我们拿 `binary_sensor.车辆授权`（= `Vehicle.Provision.Authorize.State`，
+        那是**这台车与账号的绑定关系，长期为 on**）当作"是否已授权"的依据
+        （onName 改标签 + stateField 点亮圆点）→ 于是永远显示「已授权」。
+
+        官方依据（Hermes 包证据）：**LXVehicleBLEConnectState**
+        （'bleConnected' / 'bleConnectionStatus'，55/78 处引用）—— 蓝牙连接状态，
+        一次性的、下车即失效；我们集成**没有** BLE 信号，无法复现。
+
+        结论：拿不到真实依据就不假装有 —— 去掉 onName 与 stateField，
+        始终显示官方动作名「授权驾驶」，圆点也不常亮（点击下发不受影响）。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-app-home.js")
+        s = p.read_text(encoding="utf-8")
+        i = s.find('{ key:"auth"')
+        assert i > 0, "未找到 auth 按钮定义"
+        # 只取这一条定义（到下一个 { key: 为止）
+        j = s.find('{ key:', i + 5)
+        blk = s[i:j if j > 0 else i + 400]
+        assert 'onName' not in blk, "授权按钮仍会用「已授权」标签（长期 on 的绑定关系当依据）"
+        assert 'stateField' not in blk, "授权按钮仍绑定 stateField（圆点会常亮）"
+        assert 'name:"授权驾驶"' in blk, "标签应保持官方的动作名「授权驾驶」"
+
+    def test_chev_expands_quick_not_car(self):
+        """★ 2026-10-16 车主定稿（两次澄清）：
+
+          「小箭头不是收齐车模的功能，是展开和收齐快捷键的功能。
+            比如有车可能有 8 个快捷，那么小箭头就可以展开更多。
+            车模是上滑收起，下拉展开。」
+
+        所以三条硬规则：
+          ① 默认只显示**第一行 4 个**快捷键；按小箭头展开更多（全部可用项）
+          ② 小箭头**永不**碰车模（车模由滚动驱动）
+          ③ 可用项 ≤4 时（没有"更多"）箭头藏起来，不留无用按钮
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-app-home.js")
+        s = p.read_text(encoding="utf-8")
+        # ① 默认收起第一行 4 个 + 展开态
+        assert ".root:not(.quick-open) .quick > .q:nth-child(n+5) { display:none; }" in s, (
+            "默认没有收起成第一行 4 个")
+        assert ".root.quick-open .chev img { transform:rotate(180deg); }" in s, "缺展开态样式"
+        # ② 接线分离：小箭头→快捷，右上小车→车模
+        assert 'bind(this.querySelector("#chev"), toggleQuick);' in s, "小箭头没接快捷开关"
+        assert 'bind(this.querySelector("#mini"), toggle3d);' in s, "右上小车没接车模开关"
+        # ③ ≤4 项藏箭头
+        assert 'chevEl.style.display = avail.length > 4 ? "" : "none";' in s, (
+            "可用项 ≤4 时没有隐藏箭头")
+
+    def test_car_area_collapses_without_gap(self):
+        """★ 2026-10-16 车主：「车模都右上角了，中间车模地方空着了，没收起来」
+
+        手机断点里曾经是 `.big3d, .root.expanded3d .big3d { height:188px }` ——
+        裸 .big3d 盖掉了收起态的 height:0，收起后仍占 188px 空白，
+        而车模已经缩到右上角小图里了。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-app-home.js")
+        s = p.read_text(encoding="utf-8")
+        assert ".big3d, .root.expanded3d .big3d { height: 188px; }" not in s, (
+            "手机断点还有裸 .big3d —— 收起后会留空白")
+        assert ".root.expanded3d .big3d { height: 188px; }" in s, "手机断点缺展开态高度"
+
+    def test_charge_monthly_count_refreshed_after_fetch(self):
+        """★ 2026-10-17 车主：「本月充电次数没正确显示」
+
+        根因是**时序**：`_update()` 先跑（此时月度统计还没到 → 本月次数显示「—」），
+        末尾才发起**不 await** 的 `_fetchStats()`；等数据回来后只调了 `_renderYears()`
+        （记录区），**没刷新顶部统计** → 本月次数一直停在「—」，只有手动刷新才好。
+
+        修法：把电量三栏抽成 `_updateStats()`，在月度统计到位后单独调它
+        （不整卡重绘，避免连带重画车图/滑杆/地图）。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-charge-page.js")
+        s = p.read_text(encoding="utf-8")
+        assert "_updateStats() {" in s, "缺少 _updateStats（顶部电量三栏无法单独刷新）"
+        # 本月次数的赋值必须在 _updateStats 里
+        i = s.find("_updateStats() {")
+        assert 'q("#s-times")' in s[i:i + 2000], "本月次数赋值不在 _updateStats 内"
+        # 月度统计到位后必须调用它
+        # 锚在「月度统计解析成功」那段（_years 组装之后），而不是别处的 _renderYears()
+        j = s.find("this._years = Object.keys(byYear)")
+        assert j > 0, "未找到月度统计解析处"
+        assert "this._updateStats();" in s[j:j + 800], "月度统计到位后未补刷顶部统计"
+
+    def test_charge_idle_hides_empty_metrics(self):
+        """★ 2026-10-16 车主截图标注：「这个信息可否在不充电时自动隐藏起来?」
+
+        未充电时 4 项指标恒为「—」（截图：已预约 · 20% · 剩余0分钟 ·
+        — km/hr — kW — A — V），一片空值既占版面又像坏掉 → 只在充电中显示。
+        判定复用 isCharging（充电状态含「充电中」），与环形表/闪电同一口径。
+        """
+        p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
+             / "www" / "lixiang-cards" / "lixiang-charge-page.js")
+        s = p.read_text(encoding="utf-8")
+        # ① 指标行随充电状态显隐
+        assert 'mBox.style.display = isCharging ? "" : "none"' in s, (
+            "指标行没有随充电状态显隐")
+        # ② 剩余时间：**只在真有时长时显示**（0 / 空都收起）
+        #   ★ 2026-10-17 修正：原来写 `!(isCharging || hasDur)` —— 充电中但车给 0 时
+        #     仍会显示「剩余0分钟」这种假信息（车主："剩余充电时间没显示"）。
+        #     官方 Hermes 包证据：App 取的是同一个路径
+        #     'Vehicle.Powertrain.Battery.ChargeSurplusTime'，车此刻就是没给估值。
+        # 按官方 PowerDisplay 三分支（Hermes 包还原）：
+        #   有值 → 剩余X小时Y分钟 ｜ 充电中但=0 → 充电校准中，预计5-10分钟 ｜ 其余 → 收起
+        assert "I18N.calibrating" in s, "缺官方「充电校准中」分支"
+        assert "rEl.hidden = false;" in s and "rEl.hidden = true;" in s, "剩余时间行没有三分支显隐"
+        assert 'calibrating: "充电校准中，预计5-10分钟"' in s, "缺官方校准文案原文"
+        # ③ 必须有 CSS 兜底：.metrics 是 display:grid，会盖掉 hidden 属性的 display:none
+        assert ".hero .metrics[hidden], .remline[hidden] { display:none; }" in s, (
+            "缺 [hidden] 的 CSS 兜底（display:grid 会盖掉 hidden）")
+
 
     def test_charge_metrics_single_row_four_columns(self):
         """★ 车主："剩余时间下面，一行直接显示四个，跟 app 保持一致。我们这样两行不美观"
