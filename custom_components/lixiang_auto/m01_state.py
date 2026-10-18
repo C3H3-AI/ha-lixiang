@@ -463,4 +463,37 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
             if isinstance(_v, (int, bool)):
                 put("support_" + _k, int(_v))
 
+
+    # ── 充电电压 / 电流（2026-10-19 补齐）──────────────────────────
+    #   实测 ONE 响应：chargeSetting.chargeStatus = {
+    #     "chargeStatus": 10, "voltage": 377.0, "current": 0.0, …}
+    #   键名沿用 signals.py 已有的 charge_voltage_ac / charge_current_ac
+    _cs = _dig(res, "chargeSetting", "chargeStatus")
+    put("charge_voltage_ac", _num(_cs.get("voltage")))
+    put("charge_current_ac", _num(_cs.get("current")))
+
+    # ── 车外温度（2026-10-19 新增）─────────────────────────────────
+    #   实测：temperatureStatus.outdoorTemperature = 17.5（℃）
+    #   注意：signals.py 里本来没有「车外温度」键 —— 需同时补 SignalSpec
+    _tsx = _dig(res, "temperatureStatus")
+    put("outside_temp", _num(_tsx.get("outdoorTemperature")))
+
+    # ── 四座加热通风档位（2026-10-19 补齐）────────────────────────
+    #   实测：seatStatus = {flSeatHeatVent: 0, frSeatHeatVent: 0,
+    #                       rlSeatHeatVent: 0, rrSeatHeatVent: 0}
+    _seat = _dig(res, "seatStatus")
+    put("seat_heat_vent_fl", _num(_seat.get("flSeatHeatVent")))
+    put("seat_heat_vent_fr", _num(_seat.get("frSeatHeatVent")))
+    put("seat_heat_vent_rl", _num(_seat.get("rlSeatHeatVent")))
+    put("seat_heat_vent_rr", _num(_seat.get("rrSeatHeatVent")))
+
+
+    # ── 其余四门「锁」状态（2026-10-19 补齐）──────────────────────
+    #   实测：doorSwitchStatus.<门> = {"isOpen": 0, "isLock": 1, …}
+    #   （此前只映射了主驾门锁）
+    _door2 = _dig(res, "doorSwitchStatus")
+    put("lock_copilot", _int01(_dig(_door2, "copilotDoor").get("isLock")))
+    put("lock_back_left", _int01(_dig(_door2, "backLeftDoor").get("isLock")))
+    put("lock_back_right", _int01(_dig(_door2, "backRightDoor").get("isLock")))
+
     return out

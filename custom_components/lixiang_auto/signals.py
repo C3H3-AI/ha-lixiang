@@ -878,6 +878,20 @@ SIGNALS: dict[str, SignalSpec] = {
         diagnostic=True,
         universal=True,
     ),
+
+    # ★ 2026-10-19 新增：车外温度（理想ONE / M 系）
+    #   来源：real-time-state 的 temperatureStatus.outdoorTemperature（实测 17.5）
+    #   注：X 系走 VSS 的 Vehicle.Cabin.OutsideTemp；M 系没有 VSS，由 m01_state 提供
+    "outside_temp": SignalSpec(
+        key="outside_temp",
+        path="",                    # 虚拟信号：由 m01_state.map_realtime_state 填入
+        name="车外温度",
+        unit="°C",
+        freq=Freq.HIGH,
+        icon="mdi:thermometer",
+        category="空调",
+        universal=True,
+    ),
     "inside_temp": SignalSpec(
         key="inside_temp",
         path="Vehicle.Cabin.AC.FrtACIncarTemp",

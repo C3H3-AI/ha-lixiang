@@ -232,6 +232,47 @@ class TestM01DedicatedEndpoints:
         assert '_vss_all.get("charge_appointment")' in src, "is_on 未回退到 M 系键"
 
 
+class TestM01SensorCoverage:
+    """★ M 系传感器覆盖：响应里有的字段要尽量映射出来（2026-10-19 补齐）。
+
+    实测 ONE 的 real-time-state 有 **150 个叶子字段**，此前只映射了 42 个。
+    本轮补齐最有价值的几类（沿用 signals.py 里【已有】的键名，不重造）：
+      充电电压/电流 · 车外温度 · 四座加热通风档位 · 其余门锁
+    """
+
+    def test_charge_voltage_current(self):
+        """实测响应：chargeSetting.chargeStatus.{voltage:377.0, current:0.0}"""
+        src = (PKG / "m01_state.py").read_text(encoding="utf-8")
+        assert 'put("charge_voltage_ac"' in src, "缺充电电压映射"
+        assert 'put("charge_current_ac"' in src, "缺充电电流映射"
+        assert "chargeStatus" in src, "应从 chargeSetting.chargeStatus 取值"
+
+    def test_outside_temp(self):
+        """实测响应：temperatureStatus.outdoorTemperature = 17.5"""
+        src = (PKG / "m01_state.py").read_text(encoding="utf-8")
+        assert 'put("outside_temp"' in src, "缺车外温度映射"
+        assert "outdoorTemperature" in src, "应取 outdoorTemperature"
+        # 它是新键 → signals.py 必须有对应 SignalSpec，且登记为虚拟信号
+        sg = (PKG / "signals.py").read_text(encoding="utf-8")
+        assert '"outside_temp": SignalSpec(' in sg, "signals.py 缺 outside_temp"
+        t = (Path(__file__).resolve().parent.parent / "tests" / "test_signals.py")
+        assert '"outside_temp"' in t.read_text(encoding="utf-8"), (
+            "test_signals.py 需把 outside_temp 登记为虚拟信号（否则守卫拦截）")
+
+    def test_seat_heat_vent_levels(self):
+        """实测响应：seatStatus.{fl,fr,rl,rr}SeatHeatVent（四座档位）"""
+        src = (PKG / "m01_state.py").read_text(encoding="utf-8")
+        for k in ("fl", "fr", "rl", "rr"):
+            assert f'put("seat_heat_vent_{k}"' in src, f"缺 {k} 座加热通风档位"
+        assert "SeatHeatVent" in src, "应取 seatStatus 的 SeatHeatVent 字段"
+
+    def test_remaining_door_locks(self):
+        """实测响应：doorSwitchStatus.<门>.isLock —— 此前只映射了主驾"""
+        src = (PKG / "m01_state.py").read_text(encoding="utf-8")
+        for k in ("copilot", "back_left", "back_right"):
+            assert f'put("lock_{k}"' in src, f"缺 {k} 门锁状态"
+
+
 class TestTaskMasterPermanentFailure:
     """★ 任务大师遇到【永久性失败】不该每 60 秒重试（车主实测日志）。
 
