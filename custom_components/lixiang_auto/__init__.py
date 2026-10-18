@@ -723,6 +723,7 @@ SERVICE_DUMP_ABILITY = "dump_ability"
 SERVICE_DUMP_REALTIME_STATE = "dump_realtime_state"
 SERVICE_GET_IOT2_JWT = "get_iot2_jwt"          # KMS 软签换长连接 JWT
 SERVICE_PROBE_GFM = "probe_gfm_face"            # 验证 JWT 是否被长连接网关接受
+SERVICE_PROBE_SEND_CMD = "probe_send_command"      # ★ M 系车控通道探测（不会动到车）
 # ★ 2026-10-02：行程/陪伴里程查询服务（逆向自 App travel 接口）
 SERVICE_GET_TRAVEL = "get_travel"
 SERVICE_GET_CHARGE = "get_charge"
@@ -804,6 +805,29 @@ def _async_register_services(hass: HomeAssistant) -> None:
                      result.get("code"), result.get("msg"))
         # ★ 只回前 40 字符，不把完整 token 写进日志
         return {**result, "jwt": (jwt[:40] + "…") if len(jwt) > 40 else jwt}
+
+    async def _handle_probe_send_command(call) -> dict:
+        """★ 2026-10-19：探测 M 系（理想ONE）车控通道 —— **不会动到车**。
+
+        手法：用【服务端一定不存在】的 cmdKey 调 send-command：
+          · 返回「命令不存在」类错误 → **通道通了**（只是 cmdKey 不对）→ 换键即可
+          · 返回 100035 / access_denied → **入口就拒** → 得换授权方式
+
+        调用：lixiang_auto.probe_send_command
+        参数：entry_id（可选；省略则取第一个条目）
+        """
+        api = None
+        eid = call.data.get("entry_id")
+        if eid:
+            api = (hass.data.get(DOMAIN, {}).get(eid, {}) or {}).get("li_api")
+        if api is None:
+            for _v in hass.data.get(DOMAIN, {}).values():
+                if isinstance(_v, dict) and _v.get("li_api") is not None:
+                    api = _v["li_api"]
+                    break
+        if api is None:
+            return {"error": "无可用 li_api（条目未加载？）"}
+        return await hass.async_add_executor_job(api.probe_send_command)
 
     async def _handle_probe_gfm(call) -> dict:
         """诊断：拿 JWT 去查长连接接入点，验证它**真被网关接受**。
@@ -1471,6 +1495,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
                                  _handle_get_iot2_jwt)
     hass.services.async_register(DOMAIN, SERVICE_PROBE_GFM,
                                  _handle_probe_gfm)
+
+    hass.services.async_register(DOMAIN, SERVICE_PROBE_SEND_CMD,
+                                 _handle_probe_send_command)
     hass.services.async_register(DOMAIN, SERVICE_DUMP_REALTIME_STATE,
                                   _handle_dump_realtime_state,
                                   supports_response=SupportsResponse.OPTIONAL)
