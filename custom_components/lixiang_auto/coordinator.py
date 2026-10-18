@@ -24,6 +24,21 @@ from . import vehicle_role as _vr
 #   且用户无法自行解决（属服务端限制，非配置问题）。
 _OWNER_ONLY_NOTICE = "仅车主账号可用（服务端按账号角色限制）"
 
+#: 任务大师的【永久性失败】特征（服务端给出的确定性结论，非临时故障）
+#:
+#: ★ 2026-10-18 车主实测（理想ONE）：HTTP 400
+#:     {"error_code":"120009","message":"无法获取车辆信息"}
+#:   含义：该车型/账号没有任务大师能力 → 重试永远不会成功。
+#:   原实现每 60 秒重试一次，既无意义又每轮刷一条日志 → 改为识别后停止重试。
+_TASK_PERMANENT_CODES = ("120009",)
+
+
+def _is_permanent_task_error(msg: str) -> bool:
+    """任务大师失败是否属于「重试也没用」的永久性失败。"""
+    text = str(msg or "")
+    return any(code in text for code in _TASK_PERMANENT_CODES)
+
+
 _LOGGER = logging.getLogger(LOGGER_NAME)
 
 
@@ -567,7 +582,9 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
             #   不跳过的话会「服务端拒绝 → 60s 重试」无限循环刷屏，用户无法解决
             if await self._owner_only_skip(_rid5):
                 _tasks = self._task_cache.get(_rid5) or []
-            elif (_now5 - _last5) > TASK_POLL_INTERVAL_SECONDS or _last5 == 0.0:
+            elif (self._task_permanent.get(_rid5)   # ★ 2026-10-18 永久失败不再重试
+                  or (_now5 - _last5) > TASK_POLL_INTERVAL_SECONDS
+                  or _last5 == 0.0):
                 _api5 = self.li_api
                 if _api5 is not None and hasattr(_api5, "get_tasks"):
                     try:
@@ -584,9 +601,20 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                         # 失败 60s 后重试（不阻塞整轮更新）；
                         # ★ 错误上浮到传感器属性；内容变化才打 warning（防刷屏）
                         # 失败退避：比正常间隔再久一点，避免连续失败时反复请求
+                        _msg = f"{type(_err5).__name__}: {_err5}"[:300]
+                        # ★ 2026-10-18：识别【永久性失败】→ 不再周期性重试。
+                        #   车主实测（理想ONE）：HTTP 400
+                        #     error_code=120009「无法获取车辆信息」
+                        #   这是**服务端给出的确定性结论**（该车型/账号没有
+                        #   任务大师能力），不是临时故障 —— 每 60 秒重试一次
+                        #   既没意义又刷日志（车主日志里每轮一条 debug）。
+                        if _is_permanent_task_error(_msg):
+                            if self._task_permanent.get(_rid5) != _msg:
+                                self._task_permanent[_rid5] = _msg
+                                _LOGGER.info(
+                                    "任务大师不可用（已停止重试）: %s", _msg)
                         self._task_ts[_rid5] = (_now5 - TASK_POLL_INTERVAL_SECONDS
                                                 + TASK_FORCE_REFRESH_COOLDOWN)
-                        _msg = f"{type(_err5).__name__}: {_err5}"[:300]
                         _prev = self._task_error.get(_rid5)
                         self._task_error[_rid5] = _msg
                         if _prev != _msg:

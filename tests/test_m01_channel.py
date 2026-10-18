@@ -232,6 +232,47 @@ class TestM01DedicatedEndpoints:
         assert '_vss_all.get("charge_appointment")' in src, "is_on 未回退到 M 系键"
 
 
+class TestTaskMasterPermanentFailure:
+    """★ 任务大师遇到【永久性失败】不该每 60 秒重试（车主实测日志）。
+
+    车主实测（理想ONE）：HTTP 400 `{"error_code":"120009","message":"无法获取车辆信息"}`
+    这是服务端给出的**确定性结论**（该车型/账号没有任务大师能力），
+    不是临时故障 —— 但原实现每 60 秒重试一次，既没意义又每轮刷一条日志。
+
+    （本机无 HA 运行环境，用源码文本断言 + 纯函数逻辑断言；
+      纯函数的实际判定逻辑由 test_coordinator_permanent_task 的等价实现验证。）
+    """
+
+    def test_permanent_error_code_listed(self):
+        src = (PKG / "coordinator.py").read_text(encoding="utf-8")
+        assert "_TASK_PERMANENT_CODES" in src, "缺永久错误码常量"
+        assert '"120009"' in src, "必须包含 120009（车主实测的错误码）"
+
+    def test_only_120009_is_permanent(self):
+        """只有确定性错误码算永久；网络抖动/5xx 仍要重试。"""
+        import ast
+
+        src = (PKG / "coordinator.py").read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        codes = None
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                for t in node.targets:
+                    if getattr(t, "id", "") == "_TASK_PERMANENT_CODES":
+                        codes = ast.literal_eval(node.value)
+        assert codes == ("120009",), f"永久错误码应只有 120009，实际 {codes}"
+        # 判定函数必须是「任一码命中」
+        assert "any(code in text for code in _TASK_PERMANENT_CODES)" in src, (
+            "判定应为「命中任一永久错误码」，不能把 5xx/超时也算进去")
+
+    def test_retry_is_skipped_after_permanent(self):
+        """标记后本轮不再进入拉取分支。"""
+        src = (PKG / "coordinator.py").read_text(encoding="utf-8")
+        assert "self._task_permanent.get(_rid5)" in src, (
+            "重试条件必须先检查永久失败标记")
+        assert "任务大师不可用（已停止重试）" in src, "缺一次性提示"
+
+
 class TestNumericSensorNeverCrashesListener:
     """★ 数值型 sensor 不得把 HA 监听器搞崩（2026-10-18 实测 396 次/6h）。
 

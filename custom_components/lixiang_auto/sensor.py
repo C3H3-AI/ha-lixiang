@@ -614,6 +614,12 @@ class LiCarSensor(CoordinatorEntity, RestoreSensor):
                 key in (data.get("vss") or {}),
                 ((data.get("vss") or {}).get(key) or {}).get("computed"),
                 len((data.get("vss") or {})))
+        # ★ 2026-10-18 诊断留存（debug 级，不吵）：M 系（理想ONE）在 HA 上
+        #   出现  且 UI 日志不打印栈，
+        #   难以定位是哪个实体抛的。开了 debug 就能从最后一条定位元凶。
+        _LOGGER.debug("sensor 取值: key=%s state_class=%r unit=%r", key,
+                      getattr(self.entity_description, "state_class", None),
+                      getattr(self.entity_description, "native_unit_of_measurement", None))
         _out = render_value(key, val, sig, data)
 
         # ★★ 2026-10-18 修「数值型 sensor 把 HA 监听器搞崩」（实测 396 次/6h）
