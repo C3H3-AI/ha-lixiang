@@ -221,28 +221,49 @@ class TestCarArt:
         assert "lx_car_img_v1" in s, "_paintArt 未从缓存取 URL"
         assert "img.src = src;" in s, "_paintArt 未设置 src"
 
-    def test_overview_map_uses_ha_map_and_degrades(self):
-        """★ 2026-10-17 车主：总览卡加地图 / 地图跟踪；并强调「要考虑其他车主」。
+    def test_overview_map_selfrenders_tiles_and_degrades(self):
+        """总览卡地图：2026-10-18 由 <ha-map> 改为**自绘高德瓦片** + 降级处理。
 
-        ① 复用 **HA 官方 ha-map**（2026.8.3 前端实测属性：entities / paths / layers /
-           auto-fit / zoom / theme-mode / cluster-markers，底层 leaflet），
-           不自己接瓦片 —— 主题/缩放/聚合跟随 HA。
-        ② 照顾其它车主（必须）：
-           · `show_map: false` 可完全关闭
-           · 拿不到经纬度（没开定位 / 车型无该实体 / 数据缺失）→ **不渲染**，不留空框或破图
+        改 ha-map 的原因（实测，非猜测）：
+          ha-map 的瓦片走 HA 代理 `/api/map_tiles` → 上游不可达时整块空白。
+          测试机实测：容器内 DNS 只解析出 `tile.openstreetmap.org` 的 **IPv6**
+          而无 IPv6 出口（`Network unreachable` / Errno 101）→ 代理 502 →
+          「车辆位置」整段不显示（车控「位置页」因自拉高德瓦片而一直正常）。
+          → 统一成与车控位置页相同的实现：直接拉高德瓦片自绘。
+
+        本测试固化的核心意图（照顾其它车主，必须保持）：
+          ① 只依赖高德，不依赖 HA 地图服务可用性
+          ② `show_map: false` 可完全关闭
+          ③ 拿不到经纬度（没开定位 / 车型无该实体 / 数据缺失）→ **不渲染**，
+             不留空框或破图
+          ④ `_st` 收【字段名】而不是实体 id（传 id 会二次解析成 null → 地图永不出现）
         """
         p = (Path(__file__).resolve().parent.parent / "custom_components" / "lixiang_auto"
              / "www" / "lixiang-cards" / "lixiang-overview-card.js")
         s = p.read_text(encoding="utf-8")
-        # ① 用官方 ha-map
-        assert "<ha-map" in s, "未复用 HA 官方 ha-map"
-        assert "m.entities = [{ entity_id: eid }]" in s, "ha-map 未绑定位置实体"
-        # ② 降级与配置
+
+        # ① 自绘高德瓦片，且不再依赖 ha-map
+        assert "_renderTileMap" in s, "缺自绘瓦片实现"
+        assert "webrd0" in s and "autonavi.com" in s, "应直接拉高德瓦片（与车控位置页一致）"
+        # ★ style 必须是 8：实测高德已下线 style=6（深色）→ 404 → 地图空白
+        assert "style=8" in s, "瓦片 style 必须为 8（实测 style=6 已 404）"
+        # 只查代码行（注释里会提到 style=6 作为「已下线」的说明）
+        _code = "\n".join(l for l in s.splitlines()
+                              if not l.strip().startswith(("*", "//", "/*")))
+        assert "style=6" not in _code, "style=6（深色瓦片）已被高德下线，会 404"
+        assert 'querySelector(".lxmap .tiles")' in s, "瓦片容器未接上"
+        # ② 降级与配置（原有意图必须保留）
         assert 'this._config.show_map === false' in s, "缺 show_map 关闭开关"
         assert "if (lat == null || lon == null) return" in s, (
             "无经纬度时仍会渲染（其他车主会看到空框/破图）")
-        # ③ _st 收字段名（踩过的坑：传实体 id 会二次解析成 null → 地图永不出现）
+        # ③ _st 收字段名（踩过的坑）
         assert 'this._st("tracker")' in s, "_st 必须传字段名而不是实体 id"
+        # ④ 坐标系坑：偏移必须用小数部分 × 256，不能把整个瓦片坐标当像素
+        assert "(fx - cx) * 256" in s, (
+            "坐标系错误：车辆偏移要用瓦片坐标的小数部分 × 256"
+            "（位置页曾因把整个 cx 当像素导致瓦片全跑到屏幕外）")
+        # ⑤ 容器样式：瓦片要绝对定位 + 裁剪
+        assert ".lxmap .tiles img" in s, "瓦片 <img> 缺绝对定位样式"
 
     def test_car_art_hardened_against_flaky_network(self):
         """★ 2026-10-16 车主："车辆图片经常显示不出来，有时候显示了过会儿又没了"。

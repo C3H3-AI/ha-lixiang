@@ -98,3 +98,90 @@ const api = {
 };
 
 if (typeof window !== "undefined") window.LxBase = api;
+
+
+/* ══════════════════════════════════════════════════════════════════
+ * 车辆位置小地图（高德瓦片自绘）
+ *
+ * ★ 为什么不复用 HA 官方 <ha-map>：
+ *   ha-map 的瓦片走 HA 自己的代理 /api/map_tiles，上游不可达时整块空白
+ *   （2026-10-18 实测：部分网络环境解析到 IPv6 但无 IPv6 出口 → 502 → 地图不显示）。
+ *   车控「位置页」早就自己拉高德瓦片，这里把那段成熟实现抽成公共函数，
+ *   让总览卡与位置页【行为一致】，都只依赖高德。
+ *
+ * ★ 坐标系坑（位置页踩过，已修）：
+ *   lonlatToTile 返回的是【瓦片坐标系里的小数】(如 27394.7)，
+ *   车辆相对该瓦片左上角的像素偏移 = (exact - floor(exact)) * 256。
+ *   早期把整个 cx（两万多）当像素用 → left ≈ -1400 万 px → 瓦片全跑到屏幕外。
+ */
+export function lonlatToTile(lat, lon, z) {
+  const n = 2 ** z;
+  const x = Math.floor(((lon + 180) / 360) * n);
+  const y = Math.floor(
+    ((1 - Math.asinh(Math.tan((lat * Math.PI) / 180)) / Math.PI) / 2) * n);
+  const fx = ((lon + 180) / 360) * n - x;
+  const fy = ((1 - Math.asinh(Math.tan((lat * Math.PI) / 180)) / Math.PI) / 2) * n - y;
+  return [x + fx, y + fy, fx * 256, fy * 256];
+}
+
+/** 高德瓦片 URL（style=8 深色；4 个节点轮询） */
+export function amapTileUrl(tx, ty, z, dark) {
+  const s = ((tx + ty) % 4 + 4) % 4 + 1;
+  return `https://webrd0${s}.is.autonavi.com/appmaptile`
+       + `?lang=zh_cn&size=1&scale=1&style=${dark ? 6 : 8}&x=${tx}&y=${ty}&z=${z}`;
+}
+
+/**
+ * 把一组瓦片 <img> 铺进容器，使 (lat,lon) 落在容器中心。
+ * @param {HTMLElement} box   瓦片容器（position:relative，overflow:hidden）
+ * @param {number} lat @param {number} lon @param {number} z
+ * @param {{w?:number,h?:number,dark?:boolean}} [opt]
+ */
+export function renderTileMap(box, lat, lon, z, opt) {
+  if (!box) return;
+  const W = opt && opt.w ? opt.w : (box.clientWidth || 320);
+  const H = opt && opt.h ? opt.h : (box.clientHeight || 180);
+  const dark = !!(opt && opt.dark);
+  const [fx, fy, offX, offY] = lonlatToTile(lat, lon, z);
+  const cxInt = Math.floor(fx), cyInt = Math.floor(fy);
+  const cpx = W / 2, cpy = H / 2;
+  const x0 = cxInt - Math.ceil((cpx - offX) / 256);
+  const x1 = cxInt + Math.ceil((W - cpx + offX) / 256);
+  const y0 = cyInt - Math.ceil((cpy - offY) / 256);
+  const y1 = cyInt + Math.ceil((H - cpy + offY) / 256);
+  const n = 2 ** z;
+  const keep = new Set();
+  const wanted = [];
+  for (let tx = x0; tx <= x1; tx++) {
+    for (let ty = y0; ty <= y1; ty++) {
+      if (tx < 0 || ty < 0 || tx >= n || ty >= n) continue;
+      const key = tx + "_" + ty;
+      keep.add(key);
+      wanted.push({ key, tx, ty,
+        left: Math.round(cpx - offX + (tx - cxInt) * 256),
+        top: Math.round(cpy - offY + (ty - cyInt) * 256) });
+    }
+  }
+  // 复用已有节点，减少闪烁
+  const have = new Map();
+  box.querySelectorAll("img").forEach((im) => have.set(im.dataset.k, im));
+  for (const w of wanted) {
+    const im = have.get(w.key);
+    if (im) {
+      im.style.left = w.left + "px";
+      im.style.top = w.top + "px";
+      if (im.getAttribute("src") !== amapTileUrl(w.tx, w.ty, z, dark)) {
+        im.src = amapTileUrl(w.tx, w.ty, z, dark);
+      }
+      have.delete(w.key);
+    } else {
+      const el = document.createElement("img");
+      el.dataset.k = w.key;
+      el.src = amapTileUrl(w.tx, w.ty, z, dark);
+      el.style.left = w.left + "px";
+      el.style.top = w.top + "px";
+      box.appendChild(el);
+    }
+  }
+  have.forEach((im) => im.remove());
+}
