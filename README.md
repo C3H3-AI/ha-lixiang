@@ -278,10 +278,10 @@ type: custom:lixiang-overview-card
 
 ```yaml
 type: custom:lixiang-overview-card
-vin: HLX32B14XR1361015     # L6 这张卡只看 L6
+vin: HLX32XXXXXXXXXXXX     # L6 这张卡只看 L6
 ---
 type: custom:lixiang-overview-card
-vin: LW433B111M1027177     # 理想 ONE 这张卡只看 ONE
+vin: LW433XXXXXXXXXXX     # 理想 ONE 这张卡只看 ONE
 ```
 
 **为什么必须写 `vin`**（2026-10-18 修复的真实问题）：
@@ -309,7 +309,7 @@ vin: LW433B111M1027177     # 理想 ONE 这张卡只看 ONE
 
 ```yaml
 type: custom:lixiang-overview-card
-vin: LW433B111M1027177
+vin: LW433XXXXXXXXXXX
 entities:
   battery: sensor.lixiang_理想ONE_电池电量
   range_total: sensor.lixiang_理想ONE_总续航
@@ -445,10 +445,10 @@ A: **一张卡只对应一辆车。** 两辆车时：
 
    ```yaml
    type: custom:lixiang-overview-card
-   vin: HLX32B14XR1361015
+   vin: HLX32XXXXXXXXXXXX
    ---
    type: custom:lixiang-overview-card
-   vin: LW433B111M1027177
+   vin: LW433XXXXXXXXXXX
    ```
 
 2. 为什么：卡片默认按**中文名**匹配实体，而两辆车的实体中文名**完全相同**
