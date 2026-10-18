@@ -2529,6 +2529,62 @@ class LiApiClient:
             policy=POLICY_RESULT,
         )
 
+    # M 系（理想 ONE）专用 cmdKey —— 官方 MControlKeyConst 常量表
+    #
+    # ★ 来源（REA 静态读取 smali 静态字段初始值，逐条核对）：
+    #     com/chehejia/lib/vehicle/m/constant/MControlKeyConst.smali
+    #   并与 LXMVehicleConfig2025.json（70 条）的 cmdKey 完全一致。
+    #
+    # ⚠️ 与 X 系（remoteVeh*）是【两套并存】的键，不能混用：
+    #     M 系示例：remote_central_lock_lock / remote_window_open
+    #     X 系示例：remoteVehLockControl / remoteVehWdwControl
+    _M01_CMDKEY_MAP: dict[str, str] = {
+        # X 系 cmdKey → M 系 cmdKey（在同一 APK 里并存，按车型选）
+        "remoteVehLockControl": "remote_central_lock_lock",      # 锁车
+    }
+
+    def _use_send_command_channel(self) -> bool:
+        """本车是否应走 send-command（M 系专用通道）而非 cmd/send。
+
+        判据：车型 platform == '1'（M 系 / 理想 ONE）。
+        ★ 不靠猜：platform 来自服务端 get_vehicles() 的返回。
+        """
+        try:
+            for v in (self.get_vehicles() or []):
+                if str(v.get("vin") or "") != self._vin:
+                    continue
+                if str(v.get("vehicleType") or "") == "" and str(
+                        v.get("platform") or "") == "":
+                    continue
+                # get_vehicles 里没有 platform 字段 → 回退用 modelId 前缀
+                mid = str(v.get("modelId") or "")
+                if mid.startswith("1002043"):
+                    return True          # M01B 车型（理想 ONE）实测 modelId
+                if str(v.get("platform") or "") == "1":
+                    return True
+            return False
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _send_command_via_rvc(self, command_key: str,
+                              command_data: dict | None,
+                              *, poll: bool, timeout: float) -> dict:
+        """经 send-command 下发（M 系专用），并把结果对齐 send_command 的形状。
+
+        ★ cmdKey 需要按车型换成 M 系键（两套并存，不能混用）。
+        ★ 只用 MESH token —— 不需要 VAT（官方 subTokenData 已证实）。
+        """
+        key = self._M01_CMDKEY_MAP.get(command_key, command_key)
+        res = self.send_vehicle_command(key, command_data or {}, poll=poll)
+        # 形状对齐：send_command 返回 {...}、调用方读 resultCode / msg
+        return {
+            "ok": bool(res.get("ok")),
+            "resultCode": res.get("resultCode"),
+            "msg": res.get("msg") or "",
+            "operationId": res.get("operationId") or "",
+            "raw": res.get("raw") or {},
+        }
+
     def send_command(
         self,
         command_key: str,
@@ -2549,6 +2605,26 @@ class LiApiClient:
           poll  : 是否轮询 cmd-result 直到 pushState 终态
           timeout / poll_interval: 轮询上限 (默认最多 ~60s, 每 2s 一次)
         """
+
+        # ★★ 2026-10-19（车主实测 + 官方配置表双重确认）：
+        #   M 系（理想 ONE）的车控**不能走 cmd/send**（需要 VAT token，
+        #   而服务端不向 M 系签发 —— 实测 access_denied）。
+        #   官方配置表 LXMVehicleConfig2025.json（70 条）**全部**带 sendUrl =
+        #   /ssp-as-mobile-api/v3-0/remote-vehicle-control/send-command
+        #   ⇒ M 系车控改走 send-command，且**只用 MESH token**（ONE 拿得到 ✓）。
+        #
+        #   依据链（三条独立证据，非推测）：
+        #     ① subTokenData（m01config.json 权威表）：
+        #        httpLiMeshServiceV2.scope = veh-ctrl:cmd-send …（MESH）
+        #        VAT.scope = remoteVehACSmartControl, remoteVehLockControl …
+        #        ⇒ VAT 的 scope 全是 X 系 cmdKey ⇒ VAT 属于 cmd/send 专用
+        #     ② MControlKeyConst（M 系 cmdKey 常量表）+ BaseAppWidget.H() 下发入口
+        #     ③ L6 实测：send-command 仅带 MESH → 100035（X 系不开放），
+        #        不是「token 无效」⇒ MESH 就够了
+        if self._use_send_command_channel():
+            return self._send_command_via_rvc(command_key, command_data,
+                                              poll=poll, timeout=timeout)
+
         if wake:
             try:
                 self.wakeup()

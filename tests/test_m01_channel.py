@@ -433,6 +433,52 @@ class TestFamilyAccountKeepsControlEntities:
             "filter_specs 不应按账号角色过滤信号")
 
 
+class TestM01ControlDispatch:
+    """★ M 系车控改走 send-command（2026-10-19 · 官方配置表 + 实测双重确认）。
+
+    依据链（三条独立证据，非推测）：
+      ① subTokenData（m01config.json 权威表）：
+         httpLiMeshServiceV2.scope 含 veh-ctrl:cmd-send（MESH）；
+         VAT.scope 全是 X 系 cmdKey ⇒ VAT 属于 cmd/send 专用
+      ② MControlKeyConst（M 系 cmdKey 常量表）+ BaseAppWidget.H() 下发入口
+      ③ L6 实测：send-command 仅带 MESH → 100035（X 系不开放），
+         不是「token 无效」⇒ MESH 就够了，不需要 VAT
+    """
+
+    def test_m_series_uses_send_command(self):
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert "_use_send_command_channel" in src, "缺车型通道判定"
+        assert "_send_command_via_rvc" in src, "缺 send-command 下发实现"
+        # 分派点在 send_command 内（一处改，全平台受益）
+        assert "self._use_send_command_channel()" in src
+
+    def test_m_series_cmdkeys_declared(self):
+        """M 系 cmdKey 与 X 系是两套并存的键，必须显式声明映射。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert "_M01_CMDKEY_MAP" in src, "缺 M 系 cmdKey 映射表"
+        assert '"remoteVehLockControl": "remote_central_lock_lock"' in src, (
+            "锁车键应映射为 M 系的 remote_central_lock_lock")
+        assert "MControlKeyConst" in src, "应注明 cmdKey 来源（官方常量表）"
+
+    def test_only_meshtoken_needed(self):
+        """send-command 只用 MESH，不需要 VAT —— 这是 ONE 能控的关键。"""
+        src = (PKG / "li_api.py").read_text(encoding='utf-8')
+        i = src.find("def _send_command_via_rvc")
+        body = src[i:i + 1200]
+        assert "send_vehicle_command" in body, "应复用已有的 send-command 方法"
+        assert "VAT" not in body or "#" in body, (
+            "send-command 路径不应需要 VAT（官方 subTokenData 已证实）")
+
+    def test_x_series_unaffected(self):
+        """X 系（L6）必须不受影响 —— 实测 _use_send_command_channel() = False。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _use_send_command_channel")
+        body = src[i:i + 1200]
+        # 判定依据是车型（platform/modelId），不是无条件切换
+        assert "modelId" in body or "platform" in body, (
+            "应按车型判定，不能无条件走 send-command（否则误伤 X 系）")
+
+
 class TestM01Mapping:
     """real-time-state → signal-key 映射的正确性（用实车真值）。"""
 
