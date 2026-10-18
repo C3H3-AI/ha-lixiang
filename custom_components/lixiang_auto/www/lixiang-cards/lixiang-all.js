@@ -10439,10 +10439,18 @@ class LixiangAutoBind {
     }
     const list = [];
     for (const e of Object.values(h.entities)) {
-      const isMine = e.platform === "lixiang_auto"
-        || (devIds && devIds.has(e.device_id));
+      // ★ 2026-10-18 修「两辆车时总览卡地图不显示」
+      //   `e.platform === "lixiang_auto"` **不区分车** → 两辆车的同名实体
+      //   （都叫「车辆位置」「车锁」…）一起进池 → 匹配命中哪辆不确定 →
+      //   可能拿到【另一辆】没有位置的实体 → _mapHtml 的 lat/lon 为 null
+      //   → 整段 return "" → 地图消失（删掉一辆就正常）。
+      //   修法：**有 vin 且能定位到该车设备时，只收该车的实体**。
+      const scoped = !!(vin && devIds && devIds.size);
+      const byDevice = !!(devIds && devIds.has(e.device_id));
+      const isMine = scoped ? byDevice
+                           : (e.platform === "lixiang_auto" || byDevice);
       if (!isMine) continue;
-      if (vin && devIds && devIds.size && !devIds.has(e.device_id)) continue;
+      if (scoped && !byDevice) continue;
       const st = h.states[e.entity_id];
       if (!st) continue;   // 未启用/不可用
       list.push({
@@ -10456,6 +10464,26 @@ class LixiangAutoBind {
   }
 
   /** 单字段匹配（三道策略）*/
+  /**
+   * ★ 2026-10-18：多车同名实体消歧。
+   *   多候选时**优先选状态有值（非 unknown/unavailable）的那个**；
+   *   仍无法区分则返回 null（不猜，避免绑错车 —— 保持既有语义）。
+   */
+  _pick(cands) {
+    if (!cands || !cands.length) return null;
+    if (cands.length === 1) return cands[0].id;
+    const h = this._hass || {};
+    const usable = cands.filter((x) => {
+      const st = h.states && h.states[x.id];
+      if (!st) return false;
+      const v = st.state;
+      return v !== "unknown" && v !== "unavailable" &&
+             v !== null && v !== undefined && v !== "";
+    });
+    if (usable.length === 1) return usable[0].id;
+    return null;   // 消歧不出来 → 不猜（原有行为）
+  }
+
   _match(field, rule, pool) {
     // 显式配置优先
     const explicit = this._config[field];

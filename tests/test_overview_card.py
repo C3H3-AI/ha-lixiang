@@ -711,6 +711,34 @@ class TestQuickActiveState:
         assert 'stateField' not in blk, "授权按钮仍绑定 stateField（圆点会常亮）"
         assert 'name:"授权驾驶"' in blk, "标签应保持官方的动作名「授权驾驶」"
 
+    def test_multicar_entity_disambiguation(self):
+        """★ 2026-10-18：账号里有【两辆车】时，总览卡地图不显示（删一辆就正常）。
+
+        根因：自动绑定引擎各匹配分支都是 `cands[0]`（取第一个命中），
+        而 `_pool()` 里的 `isMine` 判定是
+            `e.platform === "lixiang_auto" || devIds.has(e.device_id)`
+        —— 前者【不区分车】→ 两辆车的同名实体（都叫「车辆位置」「车锁」…）
+        一起进池 → 命中哪辆不确定 → 若命中的是没有位置的另一辆，
+        `_mapHtml()` 的 lat/lon 为 null → 整段 return "" → 地图消失。
+
+        修法：`_pick()` 消歧 —— 多候选时优先选状态有值（非 unknown）的。
+        """
+        bind = (Path(__file__).resolve().parent.parent / "custom_components"
+                / "lixiang_auto" / "www" / "lixiang-cards" / "lixiang-auto-bind.js")
+        src = bind.read_text(encoding="utf-8")
+
+        assert "_pick(cands)" in src, "匹配分支必须走 _pick 消歧"
+        # _pool 的 isMine：有 vin 时按 device 收窄，不要无差别按 platform 收
+        assert 'const scoped = !!(vin && devIds && devIds.size);' in src, (
+            "_pool 应在有 vin 时按设备收窄（否则两辆车实体混在一起）")
+        assert "const isMine = scoped ? byDevice" in src, (
+            "isMine 需按 scoped 决定是否只看 device")
+        # 消歧逻辑本身：多候选时选有值的
+        i = src.find("_pick(cands) {")
+        assert i > 0, "缺 _pick 方法"
+        body = src[i:i + 1200]
+        assert 'unknown' in body and 'unavailable' in body, (
+            "_pick 必须排除 unknown/unavailable 的候选")
     def test_chev_expands_quick_not_car(self):
         """★ 2026-10-16 车主定稿（两次澄清）：
 
