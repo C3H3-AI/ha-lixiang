@@ -260,7 +260,7 @@ class TestM01Mapping:
             "chargeOnOff": 1, "startTime": "23:00", "endTime": "06:00"}
         m = map_realtime_state(res)
         assert m["charge_limit"]["value"] == 90.0, "充电阈值（M 系 SetChargeLimit）"
-        assert m["charge_insulation"]["value"] == 1, "充电保温（M 系专属开关）"
+        assert m["battery_insulation"]["value"] == 1, "充电保温（M 系专属开关）"
         assert m["charge_appointment"]["value"] == 1, "预约充电（M 系专属开关）"
         assert m["charge_appointment_start"]["value"] == "23:00"
         assert m["charge_appointment_end"]["value"] == "06:00"

@@ -2291,6 +2291,30 @@ class LiApiClient:
             {"vin": self._vin, "switchState": 1 if on else 0},
             f"电池保温 → {'开' if on else '关'}")
 
+    def set_charge_warm(self, enable: bool) -> dict:
+        """设置**充电保温**（电池加热）开关。
+
+        端点（官方 M 系 NetApiConst.chargeWarmSwitch）：
+            POST /ssp-as-mobile-api/v1-0/vehicles/battery-warm-switch
+        请求体：{vin, switchState}
+            switchState: "0"=关闭  "1"=开启
+
+        ★ **理想 ONE（M 系）专属功能** —— 权威依据：
+            ① M 系配置表 assets/2025/LXMVehicleConfig2025.json 有
+               `SetChargeInsulation`（充电保温），而 X 系 LXXVehicleConfig2025.json
+               **没有这一条** → 只有 M 系有此功能。
+            ② 官方 M 系代码 `NetApiConst.chargeWarmSwitch` 给出上面的端点。
+            ③ 状态来源：real-time-state 的
+               `chargeSetting.batteryWarmSwitch.switchState`（m01_state 已映射
+               到 `charge_insulation` signal）。
+
+        这是**同步** API —— 不需要 JOB 长连接，也不需要轮询。
+        """
+        return self._sync_update(
+            EP_BATTERY_WARM,
+            {"vin": self._vin, "switchState": "1" if enable else "0"},
+            ("充电保温 → 开启" if enable else "充电保温 → 关闭"))
+
     def set_ac_appointment(self, body: dict) -> dict:
         """预约空调。
 

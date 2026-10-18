@@ -306,7 +306,8 @@ async def async_setup_entry(
         _LOGGER.info("车型不支持, 跳过开关: %s", skipped)
 
     async_add_entities([
-        LiCarSwitch(coordinator, li_api, device_info, vin, *spec[:5])
+        LiCarSwitch(coordinator, li_api, device_info, vin, *spec[:5],
+                          ability=_d.get("ability"))
         for spec in specs
     ])
 
@@ -342,11 +343,12 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
 
     def __init__(self, coordinator, li_api, device_info, vin: str,
                  suffix: str, name: str, icon: str,
-                 state_key: str, control_type: str) -> None:
+                 state_key: str, control_type: str, ability=None) -> None:
         super().__init__(coordinator)
         self._api = li_api
         self._state_key = state_key
         self._control_type = control_type
+        self._ability = ability
         self._attr_name = name
         self._attr_icon = icon
         self._rid = route_id_of_vin(vin)
@@ -617,6 +619,23 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
                 "isContinue": "0",
             }
         elif self._control_type == "__INSULATION__":
+            # ★ 电池保温（充电保温）—— **按车型分派**（2026-10-18）
+            #
+            #   权威依据：官方 M 系代码 `NetApiConst.chargeWarmSwitch`
+            #     → POST /ssp-as-mobile-api/v1-0/vehicles/battery-warm-switch
+            #       body {vin, switchState:"1"/"0"}
+            #     且 M 系配置表有 `SetChargeInsulation`，X 系表**没有这一条**
+            #       → 这是【理想 ONE 专属】：M 系走这个**同步端点**，
+            #         不需要 JOB 长连接，也不该落到下面的 2009 路径。
+            #
+            #   X 系（L 系列）无此端点，仍走原来的
+            #     cmdKey=remote_charge_control + controlType='2'（走 JOB，
+            #     HTTP 必 2009 —— 我们 2026-09 已实测）。
+            from .m01_state import is_m_series
+
+            if is_m_series(getattr(self, "_ability", None)):
+                return self._api.set_charge_warm(level != 0)
+
             # ★ 2026-09-24 新增：电池保温
             #   App: controlType='2', batteryInsulation: "1"/"0"
             cmd_key = "remote_charge_control"

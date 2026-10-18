@@ -221,7 +221,7 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
 
     # ② 充电保温（M 系专属开关）
     _warm = _dig(res, "chargeSetting", "batteryWarmSwitch")
-    put("charge_insulation", _int01(_warm.get("switchState")))
+    put("battery_insulation", _int01(_warm.get("switchState")))
 
     # ③ 预约充电（M 系专属：开关 + 起止时间）
     _appt = _dig(res, "chargeSetting", "appointmentTime")

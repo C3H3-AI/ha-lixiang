@@ -447,45 +447,6 @@ SIGNALS: dict[str, SignalSpec] = {
     #   数据由 real-time-state 提供（m01_state.py 已补映射）：
     #     batteryWarmSwitch.switchState / appointmentTime.{chargeOnOff,startTime,endTime}
     #   L 系无对应 VSS 路径 → 用 requires="platform:1" 门控，只有理想ONE 会建。
-    "charge_insulation": SignalSpec(
-        key="charge_insulation",
-        path="",
-        name="充电保温",
-        freq=Freq.HIGH,
-        icon="mdi:heat-wave",
-        category="充电桩",
-        platforms=frozenset({"switch"}),
-        requires="platform:1",
-    ),
-    "charge_appointment": SignalSpec(
-        key="charge_appointment",
-        path="",
-        name="预约充电",
-        freq=Freq.HIGH,
-        icon="mdi:clock-outline",
-        category="充电桩",
-        platforms=frozenset({"switch"}),
-        requires="platform:1",
-    ),
-    "charge_appointment_start": SignalSpec(
-        key="charge_appointment_start",
-        path="",
-        name="预约充电开始时间",
-        freq=Freq.MID,
-        icon="mdi:clock-start",
-        category="充电桩",
-        requires="platform:1",
-    ),
-    "charge_appointment_end": SignalSpec(
-        key="charge_appointment_end",
-        path="",
-        name="预约充电结束时间",
-        freq=Freq.MID,
-        icon="mdi:clock-end",
-        category="充电桩",
-        requires="platform:1",
-    ),
-
     "upperlimit_continue": SignalSpec(
         key="upperlimit_continue",
         path="",
