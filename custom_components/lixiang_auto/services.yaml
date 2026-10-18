@@ -319,6 +319,21 @@ get_iot2_jwt:
       selector:
         text:
 
+probe_send_command:
+  name: 探测 M 系车控通道（不会动到车）
+  description: >-
+    用服务端「一定不存在」的 cmdKey 调 send-command，据此区分两种情形：
+    通道已通（只是 cmdKey 不对）还是入口就被拒（需换授权）。
+    本服务不会让车辆产生任何动作。用于诊断理想 ONE 的远程车控。
+  fields:
+    entry_id:
+      name: 配置条目 ID
+      description: 可选；省略则取第一个已加载的条目。
+      required: false
+      example: "01M56Q90"
+      selector:
+        text:
+
 probe_gfm_face:
   name: 诊断 验证 JWT 是否被长连接网关接受
   description: >-

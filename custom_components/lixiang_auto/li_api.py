@@ -1338,6 +1338,45 @@ class LiApiClient:
         r = self._signed_call_travel("GET", path, "", self._travel_bearer())
         return (r or {}).get("data") or {}
 
+    def probe_send_command(self) -> dict:
+        """★ 2026-10-19：M 系车控通道探测（**不会动到车**）。
+
+        手法：用【一定不存在】的 cmdKey 调 send-command：
+          · 返回「命令不存在」类错误 → **通道本身通了**（只是 cmdKey 不对）→ 换键即可
+          · 返回 100035 / access_denied     → **入口就拒** → 得换授权方式
+        两者区分开，就能确定「改 cmdKey」还是「改授权」，不必盲改。
+
+        ★ 为什么安全：__PROBE__ 这个 cmdKey 在服务端不存在，
+          服务端不会执行任何动作，只返回错误 —— 车辆不会有反应。
+
+        同时探测 M 系官方 cmdKey 里**最无害**的一条（remote_veh_search 寻车），
+        但**只取返回码不下发结果**（poll=False）。
+        """
+        out: dict = {"vin": self._vin, "platform": None, "probes": []}
+        try:
+            vs = self.get_vehicles() or []
+            for v in vs:
+                if str(v.get("vin") or "") == self._vin:
+                    out["platform"] = v.get("vehicleType")
+                    out["modelId"] = v.get("modelId")
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+        for key, note in (("__PROBE_NOT_EXIST__", "不存在的键（安全）"),
+                          ("remote_veh_search", "M 系官方：获取车辆位置")):
+            try:
+                r = self.send_vehicle_command(key, {}, poll=False)
+                out["probes"].append({"cmdKey": key, "note": note,
+                                      "ok": r.get("ok"),
+                                      "resultCode": r.get("resultCode"),
+                                      "msg": str(r.get("msg"))[:120],
+                                      "raw": json.dumps(r.get("raw"),
+                                                        ensure_ascii=False)[:220]})
+            except Exception as err:  # noqa: BLE001
+                out["probes"].append({"cmdKey": key, "note": note,
+                                      "error": f"{type(err).__name__}: {str(err)[:160]}"})
+        return out
+
     def get_iot2_jwt(self) -> dict:
         """换取长连接用的 iot2 JWT（KMS 软签，软件 Ed25519 顶替 SE）。
 
