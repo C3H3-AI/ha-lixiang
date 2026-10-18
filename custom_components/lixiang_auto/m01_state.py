@@ -436,4 +436,31 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     put("month_avg_elec_energy", _num(_mtd.get("avgElecEnergy")))
     put("month_avg_fuel_energy", _num(_mtd.get("avgFuelEnergy")))
 
+    # ── 其它 M 系状态（2026-10-18 补齐）────────────────────────
+    #
+    # ★ 依据 ONE 实车 real-time-state 响应（2026-10-17 采样）：
+    #   wheelWarmStatus   = {"warmOnOff":"0", ...}    → 方向盘/座椅加热总开关
+    #   ringLightStatus   = {"status":"1", ...}        → 环形灯
+    #   remoteStartStatus = {"startStatus":"0", ...}   → 远程启动状态
+    _whl = _dig(res, "wheelWarmStatus")
+    put("wheel_heat_switch", _int01(_whl.get("warmOnOff")))
+
+    _ring = _dig(res, "ringLightStatus")
+    put("ring_light_status", _int01(_ring.get("status")))
+
+    _rs = _dig(res, "remoteStartStatus")
+    put("remote_start_state", _int01(_rs.get("startStatus")))
+
+    # ★ versionSupport：App 自己的功能支持表（1=支持 / 0=不支持）。
+    #   ONE 实车实测 15 项 —— 据此判断某功能【这台车】到底有没有，
+    #   比「App 静态能力表有没有这条标签」更准（那是全局表，这是本车实际上报）。
+    #   ONE 实测：acAppointment=1 / energyCostV2=1 / familyKey=1 /
+    #            independentTemperatureCtrl=1 / rapidTemCtrl=1 / taskMaster=1
+    #            chargingRecord=0 / energyCost=0 / wakeupHu=0 / rapidVent=0
+    _vs = res.get("versionSupport")
+    if isinstance(_vs, dict):
+        for _k, _v in _vs.items():
+            if isinstance(_v, (int, bool)):
+                put("support_" + _k, int(_v))
+
     return out

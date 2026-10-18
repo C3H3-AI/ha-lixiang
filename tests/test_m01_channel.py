@@ -310,6 +310,20 @@ class TestM01Mapping:
         assert m["charge_appointment_start"]["value"] == "23:00"
         assert m["charge_appointment_end"]["value"] == "06:00"
 
+        # ★ 其它 M 系状态（2026-10-18 补齐）
+        res["wheelWarmStatus"] = {"warmOnOff": "0"}
+        res["ringLightStatus"] = {"status": "1"}
+        res["remoteStartStatus"] = {"startStatus": "0"}
+        res["versionSupport"] = {"acAppointment": 1, "wakeupHu": 0, "energyCostV2": 1}
+        m3 = map_realtime_state(res)
+        assert m3["wheel_heat_switch"]["value"] == 0, "方向盘/座椅加热总开关"
+        assert m3["ring_light_status"]["value"] == 1, "环形灯状态"
+        assert m3["remote_start_state"]["value"] == 0, "远程启动状态"
+        # versionSupport = App 的本车功能支持表（1/0）
+        assert m3["support_acAppointment"]["value"] == 1, "支持预约空调"
+        assert m3["support_wakeupHu"]["value"] == 0, "本车不支持远程唤醒(实测 0)"
+        assert m3["support_energyCostV2"]["value"] == 1
+
         # ★ 整车锁状态：isLock=1（已落锁）→ 我方 lock_main 取反写 0（locked）
         res["doorSwitchStatus"] = {"mainDoor": {"isOpen": "0", "isLock": "1"}}
         m2 = map_realtime_state(res)
