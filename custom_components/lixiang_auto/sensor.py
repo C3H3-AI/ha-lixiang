@@ -633,7 +633,19 @@ class LiCarSensor(CoordinatorEntity, RestoreSensor):
         #  修法：在平台出口统一拦截 —— **数值型 sensor 拿到非数值就返回 None**
         #  （HA 对 None 显示 unknown，且不做数值转换，不抛异常）；
         #  字符串型 sensor 保持原样（「未知」之类本就是合法展示值）。
-        if getattr(self.entity_description, "state_class", None) is not None:
+        #   ★ 2026-10-18 二次修正：判据不能只看 state_class！
+        #     HA 的规则是【实体声明了 native_unit_of_measurement 就按数值处理】，
+        #     与 state_class 无关。实测漏网案例：
+        #       range_total_cltc / range_total_wltc（总续航 CLTC/WLTC）
+        #         → unit="km"、state_class=None
+        #         → 理想ONE 不上报输入信号 → _sum_range 返回 None
+        #         → 实测车主日志里 `Unexpected error updating listener` 仍在刷
+        _ed = self.entity_description
+        _numeric = (
+            getattr(_ed, "state_class", None) is not None
+            or getattr(_ed, "native_unit_of_measurement", None) is not None
+        )
+        if _numeric:
             if _out is None or isinstance(_out, str):
                 try:
                     float(str(_out).split()[0])

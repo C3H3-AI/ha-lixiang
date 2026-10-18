@@ -253,7 +253,7 @@ class TestNumericSensorNeverCrashesListener:
         src = (PKG / "sensor.py").read_text(encoding="utf-8")
         i = src.find("render_value(key, val, sig, data)")
         assert i > 0, "找不到 render_value 调用点"
-        tail = src[i:i + 1400]
+        tail = src[i:i + 2600]
         assert "state_class" in tail, "sensor 出口必须按 state_class 分流"
         assert "return None" in tail, "数值型拿到非数值必须返回 None（不能返回字符串）"
 
@@ -261,10 +261,39 @@ class TestNumericSensorNeverCrashesListener:
         """字符串型 sensor 不得被误伤（「未知」「已关闭」是合法展示值）。"""
         src = (PKG / "sensor.py").read_text(encoding="utf-8")
         i = src.find("render_value(key, val, sig, data)")
-        tail = src[i:i + 1400]
+        tail = src[i:i + 2600]
         # 判定必须以 state_class 为前提，而不是无条件拦截
-        assert 'getattr(self.entity_description, "state_class", None) is not None' in tail, (
-            "拦截必须限定在声明了 state_class 的 sensor 上，字符串型保持原样")
+        # ★ 2026-10-18 二次修正：判据不能只看 state_class ——
+        #   HA 的规则是【声明了 native_unit_of_measurement 就按数值处理】。
+        #   漏网案例：range_total_cltc/wltc（unit="km"、state_class=None）
+        #   → 理想ONE 无输入信号 → _sum_range 返回 None → 仍会抛 ValueError。
+        assert "native_unit_of_measurement" in tail, (
+            "守卫判据必须同时考虑 unit —— HA 对「有单位的实体」按数值处理，"
+            "与 state_class 无关（range_total_cltc 就是 unit=km / state_class=None）")
+
+    def test_two_description_sources_are_covered(self):
+        """★ sensor 有【两套】实体描述来源，守卫必须都覆盖。
+
+        ① `sensor.SENSOR_DESCRIPTIONS`（手写）
+        ② `signals.specs_for("sensor")`（自动生成，含 range_total_cltc/wltc）
+
+        只覆盖第一套会漏掉第二套 —— 这正是 range_total_cltc 崩溃逃逸的原因。
+        （本机无 HA 运行环境，用文本断言；语义由 test_m01_channel 的
+          map_realtime_state 用例 + 变异测试保证。）
+        """
+        sensor_src = (PKG / "sensor.py").read_text(encoding="utf-8")
+        signals_src = (PKG / "signals.py").read_text(encoding="utf-8")
+
+        # 第二套来源确实存在，且包含 range_total_cltc
+        assert 'specs_for("sensor")' in sensor_src, "sensor 应有第二套描述来源"
+        assert '"range_total_cltc"' in signals_src, "应有 range_total_cltc（自动生成的实体）"
+        # 它带单位但没有 state_class —— 正是「只看 state_class」会漏的形态
+        i = signals_src.find('"range_total_cltc"')
+        seg = signals_src[i:i + 400]
+        assert 'unit="km"' in seg, "range_total_cltc 应带单位 km"
+        assert 'state_class' not in seg, (
+            "range_total_cltc 不应声明 state_class —— "
+            "这正是必须同时看 unit 的原因（否则守卫漏它）")
 
     def test_numeric_sensor_entity_sets_are_declared(self):
         """确认确实存在一批 state_class sensor（回归时的前提）。"""
