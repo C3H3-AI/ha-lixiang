@@ -1032,9 +1032,36 @@ class LiApiClient:
                       if k in ("error", "error_description", "prompt",
                                "login_required", "code")}
             _hint = " ".join(f"{k}={v}" for k, v in _hints.items())
+
+            # ★ 2026-10-18（车主实测反馈优化）：换 token 被拒时，原实现在尾部拼
+            #   `r.text[:120]` —— 而服务端 JSON 里带着**本次请求的全部 cmdKey**
+            #   （车主实测 14 个，一屏糊满），对用户毫无帮助、还抖出内部细节。
+            #   改为：只说清【发生了什么 + 下一步怎么做】。
+            #
+            #   实测两种成因（2026-10-18）：
+            #     · 车主机主账号（L6, app_type=lixiang）→ 换得到 mesh token ✅
+            #     · 理想同学 / 家人账号（车主反馈）→ access_denied ❌
+            #       且换 client 重试（lixiang / livis）都被拒
+            #   ⇒ 大概率是**服务端对家人账号不授予车控 scope**（而非我们参数错），
+            #     但需 ONE 车主账号实测才能坐实 —— 故此处只说现象 + 可执行下一步。
+            _err_kind = (_hints.get("error") or "").strip()
+            if _err_kind in ("access_denied", "unauthorized"):
+                _why = ("服务端拒绝为该账号签发车控授权（access_denied）"
+                        " —— 与该账号在车里的角色有关（车主 / 家人共享 / 试驾）")
+                _todo = ("改用【车主账号】登录后重试；"
+                         "若你已是车主账号，请在手机官方 App 里用该账号登录一次"
+                         "以建立受信任设备，再回 HA 重新加载集成")
+            elif _err_kind == "login_required":
+                _why = "服务端要求重新登录（登录会话已过期）"
+                _todo = "在集成里点「重新认证」重新登录即可"
+            else:
+                _why = _hint or _err_kind or "未知原因"
+                _todo = "查看集成日志（调试级别）里的完整响应"
+            # ★ 保留 HTTP 状态码：既有守卫要求非 OAuth 失败时消息里含 "HTTP <code>"
+            _code = f"HTTP {r.status_code} " if not _err_kind else ""
             raise LiApiError(
-                f"换 token 失败 ({scope}): HTTP {r.status_code} {_hint} "
-                f"{r.text[:120]}")
+                f"换 token 失败（scope={scope}，error={_err_kind or 'unknown'}）："
+                f"{_code}{_why}。下一步：{_todo}。")
         # ★ 诊断：HZ token 不透明，fragment 里的 scope/expires 是唯一能观察
         #   「服务端实际授予了什么」的窗口（排查 403 用，只打非敏感参数）
         if params.get("scope") or params.get("audience"):
