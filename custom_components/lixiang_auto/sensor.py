@@ -614,7 +614,32 @@ class LiCarSensor(CoordinatorEntity, RestoreSensor):
                 key in (data.get("vss") or {}),
                 ((data.get("vss") or {}).get(key) or {}).get("computed"),
                 len((data.get("vss") or {})))
-        return render_value(key, val, sig, data)
+        _out = render_value(key, val, sig, data)
+
+        # ★★ 2026-10-18 修「数值型 sensor 把 HA 监听器搞崩」（实测 396 次/6h）
+        #
+        #  现象：HA 日志刷 `Unexpected error updating listener ... for
+        #  lixiang_auto`，栈是
+        #      components/sensor/__init__.py:730  numerical_value = int(value)
+        #      ValueError: invalid literal for int() with base 10: '未知'
+        #  → 整个 coordinator 的 listener 崩掉，**那一轮所有实体都不刷新**。
+        #
+        #  根因：`render_value()` 对「无数据」返回字符串 STATE_UNKNOWN（"unknown"）；
+        #  而**声明了 state_class 的 sensor**（本文件 43 个：电量/功率/里程/温度…）
+        #  在 HA 里会 int()/float() 它的值 → 字符串必然抛 ValueError。
+        #  M 系（理想ONE）不上报这些信号 → 全部落到 "unknown" → 稳定复现；
+        #  X 系上车有值，所以此前没暴露。
+        #
+        #  修法：在平台出口统一拦截 —— **数值型 sensor 拿到非数值就返回 None**
+        #  （HA 对 None 显示 unknown，且不做数值转换，不抛异常）；
+        #  字符串型 sensor 保持原样（「未知」之类本就是合法展示值）。
+        if getattr(self.entity_description, "state_class", None) is not None:
+            if _out is None or isinstance(_out, str):
+                try:
+                    float(str(_out).split()[0])
+                except (ValueError, IndexError, TypeError):
+                    return None
+        return _out
 
     @property
     def native_value(self):

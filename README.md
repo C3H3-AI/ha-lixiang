@@ -271,6 +271,53 @@ type: custom:lixiang-overview-card
 四轮胎压（kPa→bar，低压标黄）+ 车内温度/空调，可展开 WLTC 续航、充电电压电流、
 剩余充电时间、电池包电压、本月里程、累计充电量等。响应式：宽屏三栏、窄屏并排、手机单栏。
 
+#### 🚗 多车账号：每辆车放一张卡，并给每张卡指定 `vin`
+
+**一张卡 = 一辆车。** 账号里有多辆车（如 L6 + 理想 ONE）时，
+请为**每辆车各放一张卡**，并给每张卡写上 `vin`：
+
+```yaml
+type: custom:lixiang-overview-card
+vin: HLX32XXXXXXXXXXXX     # L6 这张卡只看 L6
+---
+type: custom:lixiang-overview-card
+vin: LW433XXXXXXXXXXX     # 理想 ONE 这张卡只看 ONE
+```
+
+**为什么必须写 `vin`**（2026-10-18 修复的真实问题）：
+
+卡片默认按**中文名**自动匹配实体（零配置）。但两辆车的实体**中文名完全相同**
+（都叫「车辆位置」「车锁」…），于是会出现**绑定歧义**：
+
+```
+不写 vin → 卡片可能拿到【另一辆】车的实体
+         → 那辆车没有位置数据 → 「车辆位置」整段不显示（地图空白）
+         → 表现：删掉一辆车就正常，删掉又坏
+```
+
+写了 `vin` 后，卡片只认领**该车**的实体，绑定精确、不会串车。
+
+> 💡 不写 `vin` 也能用（会按「哪个实体有值」自动消歧），
+> 但**多车场景强烈建议写** ✓ —— 消歧是启发式，不如显式指定可靠。
+
+**其他卡片同理**：`lixiang-app-home` / `lixiang-charge-page` /
+`lixiang-bindings-card` 多车时也都建议写 `vin`。
+
+##### 进一步精确：手动指定实体
+
+`vin` 之外的兜底（自动发现失败时）：
+
+```yaml
+type: custom:lixiang-overview-card
+vin: LW433XXXXXXXXXXX
+entities:
+  battery: sensor.lixiang_理想ONE_电池电量
+  range_total: sensor.lixiang_理想ONE_总续航
+  tracker: device_tracker.lixiang_理想ONE_车辆位置
+```
+
+字段名见上文「零配置：自动发现实体」的规则（`battery` / `range_total` / `tracker` …）。
+
 #### 也可以只用单个页面（高级用法）
 
 若你只想在现有 dashboard 里放某一页（例如只要充电页）：
@@ -389,6 +436,65 @@ logger:
 设备页面有「下载诊断」按钮，会导出脱敏的 JSON（不含密码/密钥/位置）。
 
 ### 常见问题
+
+**Q: 地图不显示？（国内网络环境的已知问题）**
+
+A: 本项目的**所有卡片地图都直接拉高德瓦片**（`webrd0*.is.autonavi.com`），
+不依赖 Home Assistant 的地图服务。2026-10-18 起，总览卡也改为同一套实现。
+
+**如果你曾经看到地图空白**，原因是它当时用的是 HA 官方 `<ha-map>`，
+其瓦片走 HA 代理 `/api/map_tiles` → 上游 OpenStreetMap（`tile.openstreetmap.org`）。
+
+**⚠️ 国内 DNS 污染**（这是本项目无法在代码层修复的问题）：
+
+```
+OSM 的真实 IP   ：151.101.193.91 等（Fastly CDN）
+国内 DNS 返回   ：108.160.166.49 / 2a03:2880:…（★ 都是假 IP，不属于 OSM ★）
+结果            ：Errno 101 Network unreachable
+                → HA 地图代理 502 → 地图整段空白
+```
+
+**怎么确认是不是这个问题**（浏览器 F12 → Network）：
+
+| 请求 | 结果 | 结论 |
+|---|---|---|
+| `/api/map_tiles/tilejson.json` | **502** | HA 地图代理挂了（就是本问题）|
+| `webrd0*.is.autonavi.com/appmaptile` | **200** | 高德正常 → 本项目的卡片应该能用 |
+
+**为什么"车控卡有地图、总览卡没有"**：
+
+车控「位置页」一直是自己拉高德瓦片（正常）；总览卡此前用 HA 官方 `<ha-map>`（受污染影响）。
+2026-10-18 已统一为高德，两张卡行为一致。
+
+**如果你用的是自建地图瓦片服务**（避免依赖高德）：
+
+```yaml
+type: custom:lixiang-overview-card
+show_map: false        # 或直接关掉地图段
+```
+
+**Q: 账号里有两辆车，卡片数据串了 / 地图不显示？**
+
+A: **一张卡只对应一辆车。** 两辆车时：
+
+1. **每辆车放一张卡**，并给每张卡写上 `vin`：
+
+   ```yaml
+   type: custom:lixiang-overview-card
+   vin: HLX32XXXXXXXXXXXX
+   ---
+   type: custom:lixiang-overview-card
+   vin: LW433XXXXXXXXXXX
+   ```
+
+2. 为什么：卡片默认按**中文名**匹配实体，而两辆车的实体中文名**完全相同**
+   （都叫「车辆位置」「车锁」…）→ 匹配会**串车** → 拿到没有位置数据的
+   另一辆车 → **「车辆位置」整段不显示（地图空白）**。
+   典型现象：**删掉一辆车就正常，删掉又坏**。
+
+3. 写了 `vin` 后卡片只认领该车的实体，绑定精确 ✓（2026-10-18 已修复）。
+
+详见上文「🚗 多车账号」章节。
 
 **Q: 提示"需要短信验证"**
 A: 正常流程，按上面「首次登录需要验证」操作。

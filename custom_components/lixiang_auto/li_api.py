@@ -1032,9 +1032,62 @@ class LiApiClient:
                       if k in ("error", "error_description", "prompt",
                                "login_required", "code")}
             _hint = " ".join(f"{k}={v}" for k, v in _hints.items())
+
+            # ★ 2026-10-18（车主实测反馈优化）：换 token 被拒时，原实现在尾部拼
+            #   `r.text[:120]` —— 而服务端 JSON 里带着**本次请求的全部 cmdKey**
+            #   （车主实测 14 个，一屏糊满），对用户毫无帮助、还抖出内部细节。
+            #   改为：只说清【发生了什么 + 下一步怎么做】。
+            #
+            #   实测两种成因（2026-10-18）：
+            #     · 车主机主账号（L6, app_type=lixiang）→ 换得到 mesh token ✅
+            #     · 理想同学 / 家人账号（车主反馈）→ access_denied ❌
+            #       且换 client 重试（lixiang / livis）都被拒
+            #   ⇒ 大概率是**服务端对家人账号不授予车控 scope**（而非我们参数错），
+            #     但需 ONE 车主账号实测才能坐实 —— 故此处只说现象 + 可执行下一步。
+            _err_kind = (_hints.get("error") or "").strip()
+            if _err_kind in ("access_denied", "unauthorized"):
+                # ★ 2026-10-18 二次修正（依据车主实测日志 + 本机对照实测）：
+                #   先前写的「与账号角色有关」【是错的】—— 实测【车主账号】
+                #   （日志：vehicleType=owned roleId=1）同样被拒；而**完全相同的
+                #   代码 + 相同的 scope 格式**在 L6（X 系车主）上换到 1884 字符 JWT。
+                #   ⇒ 真因是【这套「cmdKey:VIN」scope 属于 X 系，M 系不认】。
+                #   按是否 M 系给两种准确说法，避免继续误导用户。
+                # ★ 判据用 get_vehicles()（已调过、无额外网络开销）：
+                #   M 系 modelId 前缀 1002043… / modelName 含 M01
+                #   （不依赖 ability —— LiApiClient 上没有该属性）
+                _is_m = False
+                try:
+                    _vs = self.get_vehicles() or []
+                    for _v in _vs:
+                        if str(_v.get("vin") or "") != self._vin:
+                            continue
+                        _mid = str(_v.get("modelId") or "")
+                        _mn = str(_v.get("modelName") or "")
+                        _is_m = _mid.startswith("1002043") or "M01" in _mn
+                        break
+                except Exception:  # noqa: BLE001
+                    _is_m = False
+                if _is_m:
+                    _why = ("服务端拒绝为【理想ONE（M 系）】签发这套车控授权"
+                            "（access_denied）—— 本集成现有的车控 scope 属于 L/X 系，"
+                            "M 系的授权体系尚未适配")
+                    _todo = ("该车型的远程车控正在适配中；"
+                             "只读数据（电量/续航/位置/充电状态等）不受影响，可正常使用")
+                else:
+                    _why = "服务端拒绝为该账号签发车控授权（access_denied）"
+                    _todo = ("请确认集成为最新版本；若是家人/授权账号，"
+                             "远程车控受服务端角色限制（与官方 App 一致）")
+            elif _err_kind == "login_required":
+                _why = "服务端要求重新登录（登录会话已过期）"
+                _todo = "在集成里点「重新认证」重新登录即可"
+            else:
+                _why = _hint or _err_kind or "未知原因"
+                _todo = "查看集成日志（调试级别）里的完整响应"
+            # ★ 保留 HTTP 状态码：既有守卫要求非 OAuth 失败时消息里含 "HTTP <code>"
+            _code = f"HTTP {r.status_code} " if not _err_kind else ""
             raise LiApiError(
-                f"换 token 失败 ({scope}): HTTP {r.status_code} {_hint} "
-                f"{r.text[:120]}")
+                f"换 token 失败（scope={scope}，error={_err_kind or 'unknown'}）："
+                f"{_code}{_why}。下一步：{_todo}。")
         # ★ 诊断：HZ token 不透明，fragment 里的 scope/expires 是唯一能观察
         #   「服务端实际授予了什么」的窗口（排查 403 用，只打非敏感参数）
         if params.get("scope") or params.get("audience"):

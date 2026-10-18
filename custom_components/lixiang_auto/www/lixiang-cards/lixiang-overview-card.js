@@ -12,6 +12,64 @@
  * 只读展示卡：不发送任何车辆控制指令。
  */
 const CARD_TAG = "lixiang-overview-card";
+
+/* ── 车辆位置小地图：自绘高德瓦片 ────────────────────────────────
+ * ★ 2026-10-18 改用自绘，替换 HA 官方 <ha-map>。
+ *   原因：ha-map 的瓦片走 HA 代理 /api/map_tiles，上游不可达时整块空白
+ *   （实测：该网络环境只解析到 IPv6 且无 IPv6 出口 → 代理 502 → 地图不显示）；
+ *   车控「位置页」自己拉高德瓦片一直正常 → 统一成同一套实现。
+ *   坐标系要点（位置页踩过）：经纬度换出的是【瓦片坐标系里的小数】(如 27394.7)，
+ *   车辆相对该瓦片左上角的像素偏移 = 小数部分 × 256；
+ *   早前把整个 cx（两万多）当像素用 → left ≈ -1400 万 px → 瓦片全跑出屏幕。
+ */
+const _lonlatToTile = (lat, lon, z) => {
+  const n = 2 ** z;
+  return [((lon + 180) / 360) * n,
+          ((1 - Math.asinh(Math.tan((lat * Math.PI) / 180)) / Math.PI) / 2) * n];
+};
+const _amapTile = (tx, ty, z) => {
+  const s = (((tx + ty) % 4) + 4) % 4 + 1;      // 高德 4 节点轮询
+  // ★ style=8：实测高德已下线 style=6（深色）→ 404；style=8 可用
+  //   （与车控「位置页」保持一致；实测 200 / 17012 字节）
+  return `https://webrd0${s}.is.autonavi.com/appmaptile`
+       + `?lang=zh_cn&size=1&scale=1&style=8&x=${tx}&y=${ty}&z=${z}`;
+};
+const _renderTileMap = (box, lat, lon, z, opt) => {
+  const W = (opt && opt.w) || box.clientWidth || 320;
+  const H = (opt && opt.h) || box.clientHeight || 190;
+  const [fx, fy] = _lonlatToTile(lat, lon, z);
+  const cx = Math.floor(fx), cy = Math.floor(fy);
+  const offX = (fx - cx) * 256, offY = (fy - cy) * 256;
+  const cpx = W / 2, cpy = H / 2, n = 2 ** z;
+  const want = [];
+  for (let tx = cx - Math.ceil((cpx - offX) / 256);
+       tx <= cx + Math.ceil((W - cpx + offX) / 256); tx++) {
+    for (let ty = cy - Math.ceil((cpy - offY) / 256);
+         ty <= cy + Math.ceil((H - cpy + offY) / 256); ty++) {
+      if (tx < 0 || ty < 0 || tx >= n || ty >= n) continue;
+      want.push({ k: tx + "_" + ty, tx, ty,
+        left: Math.round(cpx - offX + (tx - cx) * 256),
+        top:  Math.round(cpy - offY + (ty - cy) * 256) });
+    }
+  }
+  const have = new Map();
+  box.querySelectorAll("img[data-k]").forEach((im) => have.set(im.dataset.k, im));
+  for (const w of want) {
+    const im = have.get(w.k);
+    const url = _amapTile(w.tx, w.ty, z);
+    if (im) {
+      im.style.left = w.left + "px"; im.style.top = w.top + "px";
+      if (im.getAttribute("src") !== url) im.src = url;
+      have.delete(w.k);
+    } else {
+      const el = document.createElement("img");
+      el.dataset.k = w.k; el.src = url;
+      el.style.left = w.left + "px"; el.style.top = w.top + "px";
+      box.appendChild(el);
+    }
+  }
+  have.forEach((im) => im.remove());
+};
 const BUILTIN_ICON_BASE = "/lixiang_auto/lixiang-icons";
 const DEFAULT_ICON_BASE = "/local/lixiang-icons";   // 用户自定义优先
 
@@ -103,7 +161,12 @@ const STYLE = `
   .details { border-top:1px solid #ffffff0c; }
   /* ★ 2026-10-17 车辆位置（复用 HA 官方 ha-map，见 _mapHtml） */
   .mapsec { padding:0 26px 14px; }
-  .mapsec .lxmap { display:block; height:190px; border-radius:14px; overflow:hidden; }
+  .mapsec .lxmap { display:block; height:190px; border-radius:14px; overflow:hidden;
+                   position:relative; background:#0d1520; }
+  /* 自绘高德瓦片（2026-10-18 替换 ha-map，见 _renderTileMap 注释） */
+  .mapsec .lxmap .tiles { position:absolute; inset:0; overflow:hidden; }
+  .mapsec .lxmap .tiles img { position:absolute; width:256px; height:256px;
+                             max-width:none; user-select:none; pointer-events:none; }
   @container (max-width: 520px) { .mapsec { padding:0 14px 12px; } .mapsec .lxmap { height:160px; } }
   .details summary { font-size:11px; color:#bac7d7; padding:11px 26px; cursor:pointer;
                      user-select:none; }
@@ -472,15 +535,17 @@ class LixiangOverviewCard extends __Base {
         </div>
       </details>`;
     if (!this._artDone) { this._artDone = true; this._loadArt(); }
-    this._wireMap();   // ★ 每次渲染都要重新喂（innerHTML 重建后 ha-map 是新元素）
+    this._wireMap();   // ★ 每次渲染都要重新喂（innerHTML 重建后瓦片容器是新元素）
     this._paintArt();  // ★ 同理：车图 <img> 也是每次重画新建的，必须重新贴 src
   }
 
-  /** 车辆位置地图（★ 2026-10-17 车主建议）
+  /** 车辆位置地图
    *
-   * 用 **HA 官方 `ha-map`**（2026.8.3 实测属性：entities / paths / layers /
-   * auto-fit / zoom / theme-mode / cluster-markers，底层 leaflet），
-   * 不自己接瓦片 —— 主题、缩放、标记聚合全部跟随 HA，也免维护。
+   * ★ 2026-10-18 由 HA 官方 `ha-map` 改为**自绘高德瓦片**：
+   *   ha-map 的瓦片走 HA 代理 /api/map_tiles，上游不可达时整块空白
+   *   （实测部分网络环境只解析到 IPv6 且无 IPv6 出口 → 代理 502 → 地图不显示）。
+   *   车控「位置页」一直是自己拉高德瓦片（正常），故统一成同一套实现。
+   *   实现见文件头的 _lonlatToTile / _amapTile / _renderTileMap。
    *
    * * 照顾其它车主（重要）：
    *   · 卡片配置 `show_map: false` 可完全关闭
@@ -494,9 +559,13 @@ class LixiangOverviewCard extends __Base {
     const a = st && st.attributes ? st.attributes : null;
     const lat = a ? a.latitude : null, lon = a ? a.longitude : null;
     if (lat == null || lon == null) return "";
+    // ★ 2026-10-18：不再用 HA 官方 <ha-map>，改用与车控「位置页」一致的
+    //   **自绘高德瓦片**。原因：ha-map 瓦片走 HA 代理 /api/map_tiles，
+    //   上游不可达时整块空白（实测：该网络环境只解析到 IPv6 且无 IPv6 出口 →
+    //   代理 502 → 地图不显示）。改为只依赖高德，与车控卡行为一致。
     return `<section class="mapsec">
               <div class="section-label"><span>车辆位置</span></div>
-              <ha-map class="lxmap"></ha-map>
+              <div class="lxmap"><div class="tiles"></div></div>
             </section>`;
   }
 
@@ -544,15 +613,18 @@ class LixiangOverviewCard extends __Base {
 
   /** 给 ha-map 注入 hass 与实体（innerHTML 之后调用） */
   _wireMap() {
-    const m = this._body && this._body.querySelector("ha-map");
-    if (!m) return;
-    const eid = this._eid("tracker");
-    if (!eid) return;
-    m.hass = this._hass;    // ★ 本卡是 this._hass（没有 hass getter）
-    m.entities = [{ entity_id: eid }];
-    m.autoFit = true;
-    m.zoom = 15;
-    m.themeMode = "auto";
+    // ★ 2026-10-18：自绘高德瓦片（与车控「位置页」同一套实现，见 base.js）
+    const box = this._body && this._body.querySelector(".lxmap .tiles");
+    if (!box) return;
+    const st = this._st("tracker");
+    const a = st && st.attributes ? st.attributes : null;
+    const lat = a ? Number(a.latitude) : NaN;
+    const lon = a ? Number(a.longitude) : NaN;
+    if (!isFinite(lat) || !isFinite(lon)) { box.innerHTML = ""; return; }
+    _renderTileMap(box, lat, lon, 15, {
+      w: box.clientWidth || 320,
+      h: box.clientHeight || 190,
+    });
   }
 
   /* 车图：config.image > 侧视 > 横版 > 竖版（后端 /lixiang_auto/car-image.json） */
