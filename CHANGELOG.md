@@ -4,6 +4,78 @@
 
 ---
 
+## [1.6.0-beta.4] — 2026-10-19
+
+> **预发布（Beta）**：理想 ONE 车控改走正确通道 + 传感器大幅补齐 + 一个
+> **影响所有车主**的崩溃修复。
+
+### ★ 本版核心：理想 ONE 车控改走 `send-command`（只用 MESH）
+
+**此前 ONE 的所有车控都失败** —— 因为它们都走 `cmd/send`，那需要
+**MESH + VAT 两个 token**，而服务端不向 M 系签发 VAT（实测 `access_denied`）。
+
+**改为**：M 系走官方指定的 `send-command`，**只用 MESH**（ONE 拿得到 ✅）。
+
+**依据链（三条独立证据，非推测）**：
+
+1. `subTokenData`（APK 内置 `m01config.json` 的**权威 token 配置表**）：
+   - `httpLiMeshServiceV2.scope` 含 `veh-ctrl:cmd-send`（= MESH）
+   - `VAT.scope` 全是 X 系 cmdKey ⇒ **VAT 属于 cmd/send 专用**
+2. `MControlKeyConst`（M 系 cmdKey 常量表，smali 静态字段初始值）
+   ＋ `BaseAppWidget.H(String, boolean)` 是真正的下发入口
+3. L6 实测：`send-command` 仅带 MESH → `100035`（X 系不开放），
+   **不是「token 无效」** ⇒ MESH 就够了，不需要 VAT
+
+**一处改，全平台受益**：分派点在 `send_command` 内
+（lock / cover / climate / fan / button 都调它），不用改 5 个文件。
+
+**验证**：L6（X 系）`_use_send_command_channel() = False`（不受影响 ✅）；
+模拟 ONE（`modelId 1002043…`）= `True` ✅，cmdKey 正确转换为
+`remote_central_lock_lock` ✅。
+
+### ✨ 传感器大幅补齐（ONE 的响应 150 字段：42 → 71）
+
+沿用 signals.py 里**已有**的键名（不重造）：
+
+| 补的 | 实测来源 |
+|---|---|
+| 充电电压 / 电流 | `chargeStatus.voltage=377.0 / current=0.0` |
+| **车外温度**（新键）| `temperatureStatus.outdoorTemperature=17.5` |
+| 四座加热通风档位 | `seatStatus.{fl,fr,rl,rr}SeatHeatVent` |
+| 副驾/两后门锁 | `doorSwitchStatus.<门>.isLock`（此前只有主驾）|
+
+### 🔧 诊断服务 `probe_send_command`
+
+用**服务端一定不存在**的 cmdKey 探测（**不会动到车**）：
+- 返回「命令不存在」→ 通道已通（只是 cmdKey 不对）
+- 返回 `100035` / `access_denied` → 入口就拒（需换授权）
+
+用于确认 ONE 车控的真实状态（HACS 用户点一次即可）。
+
+### 🐛 任务大师 120009：更正为「缺参数」（不是不支持）
+
+- ONE 的 `versionSupport.taskMaster = 1` → 服务端明确说**支持**
+- `120009 = AG_SYSTEM_MISS_PARAM` = **系统缺少参数**
+- 同样代码在 L6 上正常（实测 44 条任务）
+⇒ 只做**拉长退避**降噪，**不放弃**（保留修复空间）
+
+### 🐛 数值型 sensor 守卫补上 unit
+
+> 详见 beta.3；本条是**影响所有车主**的崩溃修复。
+
+### ✅ Tests
+
+- 全量 **2417 passed, 9 skipped**
+- 新增断言：M 系车控分派（4）、传感器覆盖（4）、任务大师处理（3）
+- 测试机 0 ERROR · 崩溃 listener 0 次
+
+### ⚠️ 已知限制
+
+- **理想 ONE 车控：代码已改、依据充分，但等真车实测确认**
+  （ONE 车主账号当前卡在短信风控，需先在手机 App 登录一次）
+- 家人 / 授权账号的远程车控受服务端角色限制（与官方 App 一致）
+- 长连接（LiMesh/NDN）尚未接入
+
 ## [1.6.0-beta.3] — 2026-10-18
 
 > **预发布（Beta）**：修一个**影响所有车主**的崩溃 bug + 理想 ONE 车控诊断。

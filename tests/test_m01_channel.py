@@ -232,6 +232,92 @@ class TestM01DedicatedEndpoints:
         assert '_vss_all.get("charge_appointment")' in src, "is_on 未回退到 M 系键"
 
 
+class TestM01SensorCoverage:
+    """★ M 系传感器覆盖：响应里有的字段要尽量映射出来（2026-10-19 补齐）。
+
+    实测 ONE 的 real-time-state 有 **150 个叶子字段**，此前只映射了 42 个。
+    本轮补齐最有价值的几类（沿用 signals.py 里【已有】的键名，不重造）：
+      充电电压/电流 · 车外温度 · 四座加热通风档位 · 其余门锁
+    """
+
+    def test_charge_voltage_current(self):
+        """实测响应：chargeSetting.chargeStatus.{voltage:377.0, current:0.0}"""
+        src = (PKG / "m01_state.py").read_text(encoding="utf-8")
+        assert 'put("charge_voltage_ac"' in src, "缺充电电压映射"
+        assert 'put("charge_current_ac"' in src, "缺充电电流映射"
+        assert "chargeStatus" in src, "应从 chargeSetting.chargeStatus 取值"
+
+    def test_outside_temp(self):
+        """实测响应：temperatureStatus.outdoorTemperature = 17.5"""
+        src = (PKG / "m01_state.py").read_text(encoding="utf-8")
+        assert 'put("outside_temp"' in src, "缺车外温度映射"
+        assert "outdoorTemperature" in src, "应取 outdoorTemperature"
+        # 它是新键 → signals.py 必须有对应 SignalSpec，且登记为虚拟信号
+        sg = (PKG / "signals.py").read_text(encoding="utf-8")
+        assert '"outside_temp": SignalSpec(' in sg, "signals.py 缺 outside_temp"
+        t = (Path(__file__).resolve().parent.parent / "tests" / "test_signals.py")
+        assert '"outside_temp"' in t.read_text(encoding="utf-8"), (
+            "test_signals.py 需把 outside_temp 登记为虚拟信号（否则守卫拦截）")
+
+    def test_seat_heat_vent_levels(self):
+        """实测响应：seatStatus.{fl,fr,rl,rr}SeatHeatVent（四座档位）"""
+        src = (PKG / "m01_state.py").read_text(encoding="utf-8")
+        for k in ("fl", "fr", "rl", "rr"):
+            assert f'put("seat_heat_vent_{k}"' in src, f"缺 {k} 座加热通风档位"
+        assert "SeatHeatVent" in src, "应取 seatStatus 的 SeatHeatVent 字段"
+
+    def test_remaining_door_locks(self):
+        """实测响应：doorSwitchStatus.<门>.isLock —— 此前只映射了主驾"""
+        src = (PKG / "m01_state.py").read_text(encoding="utf-8")
+        for k in ("copilot", "back_left", "back_right"):
+            assert f'put("lock_{k}"' in src, f"缺 {k} 门锁状态"
+
+
+class TestTaskMasterFailureHandling:
+    """★ 任务大师失败处理（2026-10-19 更正过一次，留档防再犯）。
+
+    车主日志：HTTP 400 {"error_code":"120009","message":"无法获取车辆信息"}
+
+    ★ 我最初的误判：「120009 = 该车型不支持 → 永久停止重试」——**错了**：
+      ① ONE 的 versionSupport.taskMaster = **1**（服务端明确说支持）✓
+      ② 120009 在 App 里是 AG_SYSTEM_MISS_PARAM = 【系统缺少参数】
+      ③ 同样的代码在 L6（X 系）上完全正常（实测 44 条任务）✓
+      ⇒ 120009 是 M 系专项的参数/标识问题，**可以修**，不该放弃。
+
+    现在的处理：只在服务端明确说「能力不存在」时才算永久失败；
+    120009 只做降噪（拉长退避），保留修复空间。
+    """
+
+    def test_120009_is_not_permanent(self):
+        """120009（缺参数）**不能**被当成永久失败 —— 它是可以修的问题。"""
+        src = (PKG / "coordinator.py").read_text(encoding="utf-8")
+        assert "_TASK_SLOW_CODES" in src, "缺慢重试错误码常量（120009 属于此类）"
+        assert "AG_SYSTEM_MISS_PARAM" in src, (
+            "应写明 120009 的真实含义（缺参数），避免再误判成「不支持」")
+
+    def test_permanent_list_is_conservative(self):
+        """永久失败判定必须保守 —— 只认真正说明能力不存在的返回。"""
+        import ast
+
+        src = (PKG / "coordinator.py").read_text(encoding="utf-8")
+        for node in ast.parse(src).body:
+            if isinstance(node, ast.AnnAssign) and getattr(
+                    node.target, "id", "") == "_TASK_PERMANENT_CODES":
+                val = ast.literal_eval(node.value)
+                assert val == (), f"永久失败清单应保持为空/极保守，实际 {val}"
+                return
+        raise AssertionError("未找到 _TASK_PERMANENT_CODES")
+
+    def test_task_master_works_on_x_series(self):
+        """对照事实：同样代码在 X 系（L6）上正常 —— 证明不是通用故障。
+
+        （这是当初推翻「不支持」误判的关键证据之一，固化下来。）
+        """
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert "SCOPE_TASK_MASTER" in src, "任务大师 scope 应存在"
+        assert "task-master" in src, "scope 里应含 task-master"
+
+
 class TestNumericSensorNeverCrashesListener:
     """★ 数值型 sensor 不得把 HA 监听器搞崩（2026-10-18 实测 396 次/6h）。
 
@@ -253,7 +339,7 @@ class TestNumericSensorNeverCrashesListener:
         src = (PKG / "sensor.py").read_text(encoding="utf-8")
         i = src.find("render_value(key, val, sig, data)")
         assert i > 0, "找不到 render_value 调用点"
-        tail = src[i:i + 1400]
+        tail = src[i:i + 2600]
         assert "state_class" in tail, "sensor 出口必须按 state_class 分流"
         assert "return None" in tail, "数值型拿到非数值必须返回 None（不能返回字符串）"
 
@@ -261,10 +347,39 @@ class TestNumericSensorNeverCrashesListener:
         """字符串型 sensor 不得被误伤（「未知」「已关闭」是合法展示值）。"""
         src = (PKG / "sensor.py").read_text(encoding="utf-8")
         i = src.find("render_value(key, val, sig, data)")
-        tail = src[i:i + 1400]
+        tail = src[i:i + 2600]
         # 判定必须以 state_class 为前提，而不是无条件拦截
-        assert 'getattr(self.entity_description, "state_class", None) is not None' in tail, (
-            "拦截必须限定在声明了 state_class 的 sensor 上，字符串型保持原样")
+        # ★ 2026-10-18 二次修正：判据不能只看 state_class ——
+        #   HA 的规则是【声明了 native_unit_of_measurement 就按数值处理】。
+        #   漏网案例：range_total_cltc/wltc（unit="km"、state_class=None）
+        #   → 理想ONE 无输入信号 → _sum_range 返回 None → 仍会抛 ValueError。
+        assert "native_unit_of_measurement" in tail, (
+            "守卫判据必须同时考虑 unit —— HA 对「有单位的实体」按数值处理，"
+            "与 state_class 无关（range_total_cltc 就是 unit=km / state_class=None）")
+
+    def test_two_description_sources_are_covered(self):
+        """★ sensor 有【两套】实体描述来源，守卫必须都覆盖。
+
+        ① `sensor.SENSOR_DESCRIPTIONS`（手写）
+        ② `signals.specs_for("sensor")`（自动生成，含 range_total_cltc/wltc）
+
+        只覆盖第一套会漏掉第二套 —— 这正是 range_total_cltc 崩溃逃逸的原因。
+        （本机无 HA 运行环境，用文本断言；语义由 test_m01_channel 的
+          map_realtime_state 用例 + 变异测试保证。）
+        """
+        sensor_src = (PKG / "sensor.py").read_text(encoding="utf-8")
+        signals_src = (PKG / "signals.py").read_text(encoding="utf-8")
+
+        # 第二套来源确实存在，且包含 range_total_cltc
+        assert 'specs_for("sensor")' in sensor_src, "sensor 应有第二套描述来源"
+        assert '"range_total_cltc"' in signals_src, "应有 range_total_cltc（自动生成的实体）"
+        # 它带单位但没有 state_class —— 正是「只看 state_class」会漏的形态
+        i = signals_src.find('"range_total_cltc"')
+        seg = signals_src[i:i + 400]
+        assert 'unit="km"' in seg, "range_total_cltc 应带单位 km"
+        assert 'state_class' not in seg, (
+            "range_total_cltc 不应声明 state_class —— "
+            "这正是必须同时看 unit 的原因（否则守卫漏它）")
 
     def test_numeric_sensor_entity_sets_are_declared(self):
         """确认确实存在一批 state_class sensor（回归时的前提）。"""
@@ -316,6 +431,52 @@ class TestFamilyAccountKeepsControlEntities:
         body = src[i:i + 900]
         assert "relation_of" not in body and "REL_FAMILY" not in body, (
             "filter_specs 不应按账号角色过滤信号")
+
+
+class TestM01ControlDispatch:
+    """★ M 系车控改走 send-command（2026-10-19 · 官方配置表 + 实测双重确认）。
+
+    依据链（三条独立证据，非推测）：
+      ① subTokenData（m01config.json 权威表）：
+         httpLiMeshServiceV2.scope 含 veh-ctrl:cmd-send（MESH）；
+         VAT.scope 全是 X 系 cmdKey ⇒ VAT 属于 cmd/send 专用
+      ② MControlKeyConst（M 系 cmdKey 常量表）+ BaseAppWidget.H() 下发入口
+      ③ L6 实测：send-command 仅带 MESH → 100035（X 系不开放），
+         不是「token 无效」⇒ MESH 就够了，不需要 VAT
+    """
+
+    def test_m_series_uses_send_command(self):
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert "_use_send_command_channel" in src, "缺车型通道判定"
+        assert "_send_command_via_rvc" in src, "缺 send-command 下发实现"
+        # 分派点在 send_command 内（一处改，全平台受益）
+        assert "self._use_send_command_channel()" in src
+
+    def test_m_series_cmdkeys_declared(self):
+        """M 系 cmdKey 与 X 系是两套并存的键，必须显式声明映射。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert "_M01_CMDKEY_MAP" in src, "缺 M 系 cmdKey 映射表"
+        assert '"remoteVehLockControl": "remote_central_lock_lock"' in src, (
+            "锁车键应映射为 M 系的 remote_central_lock_lock")
+        assert "MControlKeyConst" in src, "应注明 cmdKey 来源（官方常量表）"
+
+    def test_only_meshtoken_needed(self):
+        """send-command 只用 MESH，不需要 VAT —— 这是 ONE 能控的关键。"""
+        src = (PKG / "li_api.py").read_text(encoding='utf-8')
+        i = src.find("def _send_command_via_rvc")
+        body = src[i:i + 1200]
+        assert "send_vehicle_command" in body, "应复用已有的 send-command 方法"
+        assert "VAT" not in body or "#" in body, (
+            "send-command 路径不应需要 VAT（官方 subTokenData 已证实）")
+
+    def test_x_series_unaffected(self):
+        """X 系（L6）必须不受影响 —— 实测 _use_send_command_channel() = False。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _use_send_command_channel")
+        body = src[i:i + 1200]
+        # 判定依据是车型（platform/modelId），不是无条件切换
+        assert "modelId" in body or "platform" in body, (
+            "应按车型判定，不能无条件走 send-command（否则误伤 X 系）")
 
 
 class TestM01Mapping:

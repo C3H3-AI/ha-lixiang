@@ -36,6 +36,7 @@ class TestSignalTable:
                 #    DoorLockStatus.FrontTrunkDoor 一个前备箱状态路径，
                 #    同一路径不能声明两次）
                 assert key in ("online_status", "stat_days",
+                                 "outside_temp",   # ★ 2026-10-19 车外温度（M 系由 m01_state 提供）
                                "stat_mileage", "stat_elec_mileage",
                                "door_front_trunk", "range_total_cltc", "range_total_wltc",
                                # ★ 2026-10-02：HTTP 派生信号（coordinator 低频拉取）
@@ -222,7 +223,7 @@ class TestFreqEquivalence:
     # ★ 2026-09-24：手工补充的信号（不在 gen_signals 生成源里）
     #   它们的 freq 是人工设定的，不适用"旧前缀规则"的等价性检查
     MANUAL_KEYS = {
-        "virtual_key_auth", "vehicle_accounts", "provision_complete",
+        "outside_temp", "outside_temp", "virtual_key_auth", "vehicle_accounts", "provision_complete",
         "provision_finish", "maint_engine_level2",
         "seat_l_door_interference", "seat_r_door_interference",
         "fridge_reserve", "xmode", "ac_temp_color", "charge_calibration",
@@ -419,6 +420,7 @@ class TestDescriptionEquivalence:
         # ★ 2026-09-24：新增信号不在旧 _mk 表里（那表已废弃，不用于创建实体）
         #   这些是【新增】的，不是"多余"的
         NEW_KEYS = {
+              "outside_temp",   # ★ 2026-10-19 车外温度（M 系由 m01_state 提供）
             "charge_power",                     # ★ 2026-10-14：派生（V×A，官方 4 项指标之二）
             "online_status",                    # 虚拟信号
             "virtual_key_auth", "vehicle_accounts",
