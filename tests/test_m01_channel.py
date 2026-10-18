@@ -187,6 +187,51 @@ class TestM01ChargeButtons:
             "button.py 有 raise _label 没带 `from err`（异常链断了）")
 
 
+class TestM01DedicatedEndpoints:
+    """★ M 系专属的【专用同步端点】（不走 cmd/send、不走 JOB 长连接）。
+
+    权威依据（官方 M 系代码 `NetApiConst` + M 系配置表）：
+      · 电池保温/充电保温 SetChargeInsulation → chargeWarmSwitch
+        POST /ssp-as-mobile-api/v1-0/vehicles/battery-warm-switch
+        body {vin, switchState:"1"/"0"}
+      · 预约充电 SetChargeAppointment → chargeAppointmentUpdate
+        POST /ssp-as-mobile-api/v1-0/vehicles/charge-appointment-update
+    两项在 X 系配置表里【都没有】 → 理想ONE 专属。
+    原实现对所有车型都用 remote_charge_control（JOB）→ HTTP 必 2009（已实测），
+    也就是 ONE 上这两个开关此前【必然不可用】。
+    """
+
+    def test_endpoints_defined(self):
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert "EP_BATTERY_WARM" in src, "缺电池保温端点常量"
+        assert "EP_CHARGE_APPOINTMENT" in src, "缺预约充电端点常量"
+        assert "def set_charge_warm(" in src, "缺 set_charge_warm"
+        assert "def set_charge_appointment(" in src, "缺 set_charge_appointment"
+
+    def test_dispatch_by_platform_in_switch(self):
+        src = (PKG / "switch.py").read_text(encoding="utf-8")
+        assert "set_charge_warm(level != 0)" in src, "电池保温未按车型分派到 M 系端点"
+        assert "set_charge_appointment(level != 0)" in src, "预约充电未按车型分派到 M 系端点"
+        # 开关实体必须能拿到 ability（否则无法按车型分派）
+        assert "self._ability = ability" in src, "LiCarSwitch 未保存 ability"
+
+    def test_appointment_preserves_schedule(self):
+        """★ 只改开关位时必须带回当前模式/起止时间，否则会清掉用户预约。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def set_charge_appointment(")
+        assert i > 0
+        body = src[i:i + 1400]
+        assert "reserveStartTime" in body, "必须回带预约开始时间"
+        assert "NewReserveFinishTime" in body, "必须回带预约结束时间"
+        assert "def set_last_vss(" in src, "必须有回填最近一帧信号的入口"
+
+    def test_m_series_state_key_fallback(self):
+        """ONE 的预约充电状态键是 charge_appointment（不是 X 系的 scheduled_charge_switch）。"""
+        src = (PKG / "switch.py").read_text(encoding="utf-8")
+        assert "charge_appointment" in src, "缺少 M 系预约充电状态键回退"
+        assert '_vss_all.get("charge_appointment")' in src, "is_on 未回退到 M 系键"
+
+
 class TestFamilyAccountKeepsControlEntities:
     """★ 家人/授权账号【仍然要建】车控实体 —— 不要"好心"过滤掉。
 

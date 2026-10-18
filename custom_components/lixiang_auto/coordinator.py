@@ -862,6 +862,11 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
                         _mapped_m = None
                     data["vss"] = dict(_mapped_m or {})
                     data["vss_polled_at"] = now
+                    # ★ 2026-10-18：回填给 li_api —— 「预约充电开关」这类同步写
+                    #   接口要读当前模式/时间，只改开关位（否则会清掉用户预约）。
+                    _api_m = getattr(self, "li_api", None)
+                    if _api_m is not None and hasattr(_api_m, "set_last_vss"):
+                        _api_m.set_last_vss(data["vss"])
                     if _mapped_m:
                         self._absent_count.clear()
                         # ★ 2026-10-17：「在线状态」实体读的是**顶层** vehicle_status

@@ -182,6 +182,8 @@ EP_RVC_RESULT = (
 EP_CHARGE_THRESHOLD = "/ssp-as-mobile-api/v1-0/vehicles/charge-threshold-update"
 EP_BATTERY_WARM = "/ssp-as-mobile-api/v1-0/vehicles/battery-warm-switch"
 EP_AC_APPOINTMENT = "/ssp-as-mobile-api/v1-0/vehicles/ac-appointment-update"
+#: ★ 2026-10-18：预约充电（M 系专属，取证自 NetApiConst.chargeAppointmentUpdate）
+EP_CHARGE_APPOINTMENT = "/ssp-as-mobile-api/v1-0/vehicles/charge-appointment-update"
 EP_SVM_TAKE_PHOTO = "/ssp-as-mobile-api/v1-0/vehicles/svm/take-photo"
 EP_OTA_UPGRADE = "/ssp-as-mobile-api/v1-0/vehicles/ota/upgrade"
 EP_MAINT_PLAN = "/ssp-as-mobile-api/v1-0/vehicles/maint/plan/"
@@ -728,6 +730,10 @@ class LiApiClient:
         self._identity_dirty = False      # 身份有变更待回写 entry
         self._sig_recover_ts = 0.0        # 签名错误自愈的冷却时间戳
         self._app_token = str(app_token) if app_token is not None else ""
+        # ★ 2026-10-18：缓存最近一帧信号，供「预约充电开关」这类需要
+        #   "读当前模式/时间 → 只改开关位" 的同步写接口使用
+        #   （否则会把用户已设的预约时间清空）。
+        self._last_vss: dict = {}
         # ★ 主 Bearer（PAKE 登录后的 access_token）—— travel 等接口需要（App 抓包 x-chj-token = APP-xxx）
         # ★ 2026-10-10：main_bearer 也要能从 entry 复用（此前恒为空 →
         #   travel/充电 首次调用必然密码重登）
@@ -878,6 +884,10 @@ class LiApiClient:
         # ★ 2026-10-10：老条目的内置身份在此迁移（此时 Bearer 最新鲜）。
         #   非老条目（已派生/手填）直接跳过，不产生额外请求。
         self._migrate_identity_if_needed("login")
+
+    def set_last_vss(self, vss: dict | None) -> None:
+        """coordinator 每轮轮询后回填最近一帧信号（供同步写接口读当前值）。"""
+        self._last_vss = vss or {}
 
     def _notify_token_update(self) -> None:
         """把最新 token 交给回调（由集成侧写入 config entry 持久化）。
@@ -2314,6 +2324,38 @@ class LiApiClient:
             EP_BATTERY_WARM,
             {"vin": self._vin, "switchState": "1" if enable else "0"},
             ("充电保温 → 开启" if enable else "充电保温 → 关闭"))
+
+    def set_charge_appointment(self, enable: bool) -> dict:
+        """设置**预约充电**开关（M 系专属：只改开关，保留当前模式与时间）。
+
+        端点（官方 M 系 `NetApiConst.chargeAppointmentUpdate`）：
+            POST /ssp-as-mobile-api/v1-0/vehicles/charge-appointment-update
+        请求体字段（沿用我们已实证的 controlType='3' 那套命名）：
+            statusControlRequest / controlType="3"
+            OrderChargingSwitch: "1"/"0"
+            OrderChargingMode / reserveStartTime / NewReserveFinishTime / isContinue
+            —— 开关切换时后几项要**带当前值**，否则服务端会清掉原预约。
+
+        状态来源：real-time-state 的
+            `chargeSetting.appointmentTime.{chargeOnOff,startTime,endTime,isContinue}`
+            （m01_state 已映射到 charge_appointment / _start / _end）。
+
+        ★ 只有 M 系（理想ONE）走这个端点；X 系无此功能
+          （M 系配置表有 SetChargeAppointment，X 系表没有）。
+        """
+        vss = (getattr(self, "_last_vss", None) or {})
+        _appt = ((vss.get("charge_appointment") or {}).get("value"))
+        _st = ((vss.get("charge_appointment_start") or {}).get("value")) or "00:00"
+        _et = ((vss.get("charge_appointment_end") or {}).get("value")) or "00:00"
+        return self._sync_update(
+            EP_CHARGE_APPOINTMENT,
+            {"vin": self._vin,
+             "statusControlRequest": 255,
+             "controlType": "3",
+             "OrderChargingSwitch": "1" if enable else "0",
+             "reserveStartTime": _st,
+             "NewReserveFinishTime": _et},
+            ("预约充电 → 开启" if enable else "预约充电 → 关闭"))
 
     def set_ac_appointment(self, body: dict) -> dict:
         """预约空调。
