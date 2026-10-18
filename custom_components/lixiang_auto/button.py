@@ -72,6 +72,27 @@ BUTTONS = (
      "mobileVehSvm", {"vehImage": "veh_svm_image"}, True),
 )
 
+# ★ 2026-10-18：充电启停（**仅 M 系 / 理想ONE**）—— cmdKey 与发送通道都和 X 系不同
+#
+#   权威依据（官方配置表，不是推测）：
+#     · M 系 assets/2025/LXMVehicleConfig2025.json
+#         开始充电 StartCharging → cmdKey = remote_charging_start
+#         停止充电 StopCharging → cmdKey = remote_charging_stop
+#         sendUrl = /ssp-as-mobile-api/v3-0/remote-vehicle-control/send-command
+#           → 走【send-command】通道（M 系权威车控通道，不是 JOB 长连接）
+#     · X 系 assets/2025/LXXVehicleConfig2025.json
+#         开始/停止充电 cmdKey 均为 remote_charge_control
+#           → 走 JOB(LiNdn) 长连接，**HTTP 必返 2009**
+#           （我们 2026-09 已实测 remote_charge_control → 2009 不可控）
+#
+#   → 只给 M 系建；L 系建了也必然 2009，不建（不给「点了没用」的实体）。
+#   ★ 发送路径也不同：M 系必须走 send-command（li_api.send_vehicle_command），
+#     不能用 cmd/send —— 故单独一个实体类，不复用 LiCarButton。
+M_SERIES_CHARGE_BUTTONS = (
+    ("charge_start", "开始充电", "mdi:play-circle", "remote_charging_start"),
+    ("charge_stop", "停止充电", "mdi:stop-circle", "remote_charging_stop"),
+)
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -94,6 +115,18 @@ async def async_setup_entry(
     async_add_entities([
         LiCarButton(coordinator, li_api, device_info, vin, *spec) for spec in BUTTONS
     ])
+
+    # ★ M 系（理想ONE）专属：充电启停 —— cmdKey 不同，且必须走 send-command 通道
+    try:
+        from .m01_state import is_m_series
+
+        if is_m_series(_d.get("ability")):
+            async_add_entities([
+                LiM01ChargeButton(coordinator, li_api, device_info, vin, *spec)
+                for spec in M_SERIES_CHARGE_BUTTONS
+            ])
+    except Exception as _err:  # noqa: BLE001
+        _LOGGER.debug("M 系充电按钮判定失败（忽略）: %s", _err)
 
 
 class LiCarButton(CoordinatorEntity, ButtonEntity):
@@ -161,3 +194,60 @@ class LiCarButton(CoordinatorEntity, ButtonEntity):
             from .li_api import label_command_error as _label
             raise _label(getattr(self, "_attr_name", None) or self._cmd_key, err) from err
         await self.coordinator.async_request_refresh()
+
+
+class LiM01ChargeButton(CoordinatorEntity, ButtonEntity):
+    """理想 ONE（M 系）专属：开始 / 停止充电。
+
+    ★ 为什么必须单独一个类（不复用 LiCarButton）：
+      M 系充电启停**不走 cmd/send**，而是走官方配置表指定的
+      `/ssp-as-mobile-api/v3-0/remote-vehicle-control/send-command`
+      （M 系权威车控通道），cmdKey 也不同（remote_charging_start / _stop）。
+      而 L 系的 remote_charge_control 走 JOB(LiNdn) 长连接 → HTTP 必返 2009
+      （我们 2026-09 已实测），所以**只给 M 系建**。
+
+    依据：assets/2025/LXMVehicleConfig2025.json（M 系 70 条权威配置表）。
+    """
+
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, li_api, device_info, vin: str,
+                 key: str, name: str, icon: str, command_key: str) -> None:
+        # ★ 必须调 super().__init__(coordinator)：
+        #   CoordinatorEntity 在里面设置 coordinator_context 等内部状态，
+        #   漏掉会 AttributeError: no attribute 'coordinator_context'
+        #   （与 LiCarButton 保持一致）
+        super().__init__(coordinator)
+        self._api = li_api
+        self._rid = route_id_of_vin(vin)
+        self._attr_unique_id = f"{DOMAIN}_{self._rid}_m01_{key}"
+        self._attr_device_info = device_info
+        self._attr_name = name
+        self._attr_icon = icon
+        self._command_key = command_key
+        self._last_result: dict | None = None
+
+    async def async_press(self) -> None:
+        """下发充电启停（M 系 send-command 通道）并等待结果。"""
+        try:
+            res = await self.hass.async_add_executor_job(
+                self._api.send_vehicle_command, self._command_key, {}, True, 30.0)
+            self._last_result = res
+            _LOGGER.info("车控 %s 已执行: %s", self._command_key, res)
+            if not (res or {}).get("ok"):
+                _fail = (res or {}).get("msg") or "下发失败"
+                raise _label(getattr(self, "_attr_name", None) or "车控", _fail) from err
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.error("车控 %s 失败: %s", self._command_key, err)
+            raise _label(getattr(self, "_attr_name", None) or "车控", err) from err
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        attrs: dict = {
+            "通道": "send-command（M 系权威车控通道，非 cmd/send）",
+            "cmdKey": self._command_key,
+        }
+        if self._last_result is not None:
+            attrs["结果"] = self._last_result.get("msg") or ""
+            attrs["operationId"] = self._last_result.get("operationId") or ""
+        return attrs

@@ -109,6 +109,15 @@ APP_PUBLIC_PREFIXES = (
     "020026d02bf8",   # MAIN_DEVICE_KEY_ID（理想汽车 App）
     "02003dbe871b",   # LIVIS_DEVICE_KEY_ID（理想同学）
     "aabbccdd",       # 测试占位符（tests/test_key_suite.py）
+    # ★ 2026-10-18：KMS 软签【出厂兜底密钥】keyId（App 公共常量，
+    #   明文存在于旧版 libfOpenGLUtils.so VA 0x1d29c，所有用户共用）
+    "23002f48",       # 出厂兜底密钥 A 的 keyId（kms_softsig.KEY_A_ID）
+    # ★ RFC 8032 官方向量 seed（公开测试向量，非真实密钥）
+    "9d61b19d",       # RFC8032 TEST 1（kms_softsig 单测）
+    "4ccd089b",       # RFC8032 TEST 2（kms_softsig 单测）
+    "d75a9801",       # RFC8032 TEST 1 公钥
+    "3d4017c3",       # RFC8032 TEST 2 公钥
+    "302e0201",       # Ed25519 私钥 DER 前缀（RFC 8410 固定头，非密钥）
 )
 
 

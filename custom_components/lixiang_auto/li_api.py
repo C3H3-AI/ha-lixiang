@@ -144,6 +144,9 @@ CHANNEL_NOTICE = 1          # 通知类别
 CHANNEL_OTHER_2 = 2
 CHANNEL_OTHER_4 = 4
 
+#: ★ 2026-10-17：KMS 软签换长连接 JWT（见 kms_softsig 模块）
+KMS_JWT_EP = "/bcs-kms-jwt/jwt/iot2/v1-0/"
+
 EP_CMD_SEND = "/ssp-vehicle-control-service/ssp-vehicle-control/cmd/send"
 EP_CMD_RESULT = "/ssp-vehicle-control-service/ssp-vehicle-control/cmd-result"
 EP_WAKEUP = "/iot-connect-manager-service/v2/wakeup"
@@ -179,6 +182,8 @@ EP_RVC_RESULT = (
 EP_CHARGE_THRESHOLD = "/ssp-as-mobile-api/v1-0/vehicles/charge-threshold-update"
 EP_BATTERY_WARM = "/ssp-as-mobile-api/v1-0/vehicles/battery-warm-switch"
 EP_AC_APPOINTMENT = "/ssp-as-mobile-api/v1-0/vehicles/ac-appointment-update"
+#: ★ 2026-10-18：预约充电（M 系专属，取证自 NetApiConst.chargeAppointmentUpdate）
+EP_CHARGE_APPOINTMENT = "/ssp-as-mobile-api/v1-0/vehicles/charge-appointment-update"
 EP_SVM_TAKE_PHOTO = "/ssp-as-mobile-api/v1-0/vehicles/svm/take-photo"
 EP_OTA_UPGRADE = "/ssp-as-mobile-api/v1-0/vehicles/ota/upgrade"
 EP_MAINT_PLAN = "/ssp-as-mobile-api/v1-0/vehicles/maint/plan/"
@@ -209,6 +214,32 @@ def _as_text(value) -> str:
       这里只判 None；其余值（含 0 / False / 空串）都正常转成字符串。
     """
     return "" if value is None else str(value)
+
+
+def _control_permission_hint(api_self) -> str:
+    """车控失败时，若【确定不是车主账号】→ 给出准确原因（否则返回 ""）。
+
+    ★ 2026-10-18（理想ONE 家人账号实测发现的【误导】）：
+      家人账号（`vehicleType=authorized` / `vehicleRoleId=15`）发车控时，
+      `cmd/send` 返回的是 **HTTP 503「服务暂时不可用」** ——
+      但真实原因不是服务端故障，而是**服务端按账号角色拒绝**
+      （同一辆车走 `send-command` 通道会明确报 `241000 用户没有权限`）。
+
+      若不改述，用户会以为「等会儿再试」——实际上等也没用，必须换车主账号。
+      这与 App 一致：App 对家人账号同样不开放车控。
+    """
+    try:
+        from .vehicle_role import REL_OWNER, relation_of
+
+        veh = api_self.get_vehicles() or []
+        rel = relation_of(veh[0] if veh else None)
+        if rel in (None, 0, REL_OWNER):
+            return ""            # 车主 / 无法判定 → 不猜，保持原错误
+        return ("当前是【家人/授权账号】，服务端按角色限制不允许远程车控"
+                "（用车主账号即可；App 对家人账号同样不开放车控）。"
+                "注：cmd/send 对此返回 HTTP 503「服务暂时不可用」，并非服务端故障。")
+    except Exception:  # noqa: BLE001
+        return ""
 
 
 def _first_of(payload, *names: str):
@@ -699,6 +730,10 @@ class LiApiClient:
         self._identity_dirty = False      # 身份有变更待回写 entry
         self._sig_recover_ts = 0.0        # 签名错误自愈的冷却时间戳
         self._app_token = str(app_token) if app_token is not None else ""
+        # ★ 2026-10-18：缓存最近一帧信号，供「预约充电开关」这类需要
+        #   "读当前模式/时间 → 只改开关位" 的同步写接口使用
+        #   （否则会把用户已设的预约时间清空）。
+        self._last_vss: dict = {}
         # ★ 主 Bearer（PAKE 登录后的 access_token）—— travel 等接口需要（App 抓包 x-chj-token = APP-xxx）
         # ★ 2026-10-10：main_bearer 也要能从 entry 复用（此前恒为空 →
         #   travel/充电 首次调用必然密码重登）
@@ -849,6 +884,10 @@ class LiApiClient:
         # ★ 2026-10-10：老条目的内置身份在此迁移（此时 Bearer 最新鲜）。
         #   非老条目（已派生/手填）直接跳过，不产生额外请求。
         self._migrate_identity_if_needed("login")
+
+    def set_last_vss(self, vss: dict | None) -> None:
+        """coordinator 每轮轮询后回填最近一帧信号（供同步写接口读当前值）。"""
+        self._last_vss = vss or {}
 
     def _notify_token_update(self) -> None:
         """把最新 token 交给回调（由集成侧写入 config entry 持久化）。
@@ -1245,6 +1284,108 @@ class LiApiClient:
         path = f"/ssp-as-mobile-api/v3-0/vehicles/{self._vin}/real-time-state"
         r = self._signed_call_travel("GET", path, "", self._travel_bearer())
         return (r or {}).get("data") or {}
+
+    def get_iot2_jwt(self) -> dict:
+        """换取长连接用的 iot2 JWT（KMS 软签，软件 Ed25519 顶替 SE）。
+
+        ★ 2026-10-17 落地自 `docs/方向A_KMS软签打通_20261017.md`（队友逆向）。
+          官方在手机本地用 SE 安全区签名换 JWT；我们用 **App SO 里的出厂兜底密钥**
+          做软件 Ed25519，服务端照收（实测 `code:0` + 30 天有效期）。
+
+        返回 `{"ok": bool, "jwt": str, "code": ..., "msg": ..., "raw": dict}`
+        —— 失败时 `ok=False` 并带服务端原始 code/msg，**不抛异常**
+          （诊断性质，且错误码本身有排查价值，见 kms_softsig 模块说明）。
+        """
+        import json as _json
+
+        from .kms_softsig import build_kms_body, summarize_jwt
+
+        device_id = self._xdev or self._device_id
+        body, message = build_kms_body(device_id)
+        payload = _json.dumps(body, separators=(",", ":"), ensure_ascii=False)
+        try:
+            resp = self._signed_call("POST", KMS_JWT_EP, payload, self._main_bearer)
+        except Exception as err:  # noqa: BLE001
+            return {"ok": False, "jwt": "", "code": None,
+                    "msg": f"请求失败: {err}", "raw": {}}
+
+        code = resp.get("code")
+        data = resp.get("data") or {}
+        jwt = str(data.get("jwt") or "") if isinstance(data, dict) else ""
+        out: dict = {
+            "ok": code == 0 and bool(jwt),
+            "jwt": jwt,
+            "code": code,
+            "msg": _as_text(resp.get("msg") or resp.get("message")),
+            "raw": resp,
+            "device_id": device_id,
+        }
+        if jwt:
+            out["summary"] = summarize_jwt(jwt)
+        _LOGGER.info(
+            "KMS 软签换 iot2 JWT: code=%s ok=%s%s",
+            code, out["ok"],
+            (f"（有效期 {out['summary'].get('valid_seconds', 0) // 86400} 天）"
+             if out.get("summary") else ""),
+        )
+        return out
+
+    def probe_gfm_face(self) -> dict:
+        """用刚换到的 JWT 查长连接接入点 —— **验证 JWT 是否真被网关接受**。
+
+        端点与请求头取自队友的实测（`docs/方向A_KMS软签打通_20261017.md` §5.3/§5.4）：
+            POST https://api-app-cnhz2n01-b.lixiang.com
+                 /li-ndn-gfm/gfm-server/v2-0/nfd-face?device_id=<deviceId>&device_type=MOBILE
+        注意头名 `x-chj-kms-verify-type` 的值是字面量 `KMS-JWT`（不是 MOBILE）。
+
+        只读：拿到的只是「有哪些 NFD 可以连」，**不会真的建连**。
+        """
+        import json as _json
+
+        import requests
+
+        from .kms_softsig import gfm_face_headers, gfm_face_url
+
+        minted = self.get_iot2_jwt()
+        out: dict = {"jwt_ok": minted.get("ok"), "jwt_code": minted.get("code"),
+                     "jwt_msg": minted.get("jwt_msg") or minted.get("msg")}
+        if not minted.get("ok"):
+            out["error"] = "JWT 未取到，无法验证网关"
+            return out
+
+        device_id = self._xdev or self._device_id
+        url = gfm_face_url(device_id)
+        try:
+            r = requests.post(
+                url,
+                headers={**gfm_face_headers(device_id, minted["jwt"]),
+                         "Content-Type": "application/json",
+                         "x-chj-key": self._key_id,
+                         "X-CHJ-TOKEN": self._app_token},
+                data=_json.dumps({}, separators=(",", ":")), timeout=20,
+                verify=False)  # noqa: S501 —— 该域证书链与本地 CA 不匹配
+        except Exception as err:  # noqa: BLE001
+            out["error"] = f"GFM 请求失败: {err}"
+            return out
+
+        try:
+            j = r.json()
+        except Exception:  # noqa: BLE001
+            out["http_status"] = r.status_code
+            out["body"] = r.text[:300]
+            return out
+
+        data = j.get("data")
+        out["http_status"] = r.status_code
+        out["code"] = j.get("code")
+        out["msg"] = j.get("msg")
+        out["faces"] = len(data) if isinstance(data, list) else 0
+        if isinstance(data, list) and data:
+            out["sample"] = data[0]
+        out["accepted"] = (r.status_code == 200 and j.get("code") == 0 and out["faces"] > 0)
+        _LOGGER.info("GFM 接入点查询: HTTP %s code=%s faces=%d accepted=%s",
+                     r.status_code, j.get("code"), out["faces"], out.get("accepted"))
+        return out
 
     def probe_realtime_state(self) -> dict:
         """诊断：探测「老平台车型（如理想ONE / M01）」的 real-time-state 通道。
@@ -2160,6 +2301,62 @@ class LiApiClient:
             {"vin": self._vin, "switchState": 1 if on else 0},
             f"电池保温 → {'开' if on else '关'}")
 
+    def set_charge_warm(self, enable: bool) -> dict:
+        """设置**充电保温**（电池加热）开关。
+
+        端点（官方 M 系 NetApiConst.chargeWarmSwitch）：
+            POST /ssp-as-mobile-api/v1-0/vehicles/battery-warm-switch
+        请求体：{vin, switchState}
+            switchState: "0"=关闭  "1"=开启
+
+        ★ **理想 ONE（M 系）专属功能** —— 权威依据：
+            ① M 系配置表 assets/2025/LXMVehicleConfig2025.json 有
+               `SetChargeInsulation`（充电保温），而 X 系 LXXVehicleConfig2025.json
+               **没有这一条** → 只有 M 系有此功能。
+            ② 官方 M 系代码 `NetApiConst.chargeWarmSwitch` 给出上面的端点。
+            ③ 状态来源：real-time-state 的
+               `chargeSetting.batteryWarmSwitch.switchState`（m01_state 已映射
+               到 `charge_insulation` signal）。
+
+        这是**同步** API —— 不需要 JOB 长连接，也不需要轮询。
+        """
+        return self._sync_update(
+            EP_BATTERY_WARM,
+            {"vin": self._vin, "switchState": "1" if enable else "0"},
+            ("充电保温 → 开启" if enable else "充电保温 → 关闭"))
+
+    def set_charge_appointment(self, enable: bool) -> dict:
+        """设置**预约充电**开关（M 系专属：只改开关，保留当前模式与时间）。
+
+        端点（官方 M 系 `NetApiConst.chargeAppointmentUpdate`）：
+            POST /ssp-as-mobile-api/v1-0/vehicles/charge-appointment-update
+        请求体字段（沿用我们已实证的 controlType='3' 那套命名）：
+            statusControlRequest / controlType="3"
+            OrderChargingSwitch: "1"/"0"
+            OrderChargingMode / reserveStartTime / NewReserveFinishTime / isContinue
+            —— 开关切换时后几项要**带当前值**，否则服务端会清掉原预约。
+
+        状态来源：real-time-state 的
+            `chargeSetting.appointmentTime.{chargeOnOff,startTime,endTime,isContinue}`
+            （m01_state 已映射到 charge_appointment / _start / _end）。
+
+        ★ 只有 M 系（理想ONE）走这个端点；X 系无此功能
+          （M 系配置表有 SetChargeAppointment，X 系表没有）。
+        """
+        vss = (getattr(self, "_last_vss", None) or {})
+        _appt = ((vss.get("charge_appointment") or {}).get("value"))
+        _st = ((vss.get("charge_appointment_start") or {}).get("value")) or "00:00"
+        _et = ((vss.get("charge_appointment_end") or {}).get("value")) or "00:00"
+        return self._sync_update(
+            EP_CHARGE_APPOINTMENT,
+            {"vin": self._vin,
+             "statusControlRequest": 255,
+             "controlType": "3",
+             "OrderChargingSwitch": "1" if enable else "0",
+             "reserveStartTime": _st,
+             "NewReserveFinishTime": _et},
+            ("预约充电 → 开启" if enable else "预约充电 → 关闭"))
+
     def set_ac_appointment(self, body: dict) -> dict:
         """预约空调。
 
@@ -2266,15 +2463,29 @@ class LiApiClient:
             except LiApiError as err:  # 唤醒失败不阻断 (车辆可能已在线)
                 _LOGGER.debug("唤醒失败(忽略, 继续下发): %s", err)
 
-        resp = self.send_command_raw(command_key, command_data)
+        try:
+            resp = self.send_command_raw(command_key, command_data)
+        except LiApiError as err:
+            # ★ 2026-10-18：家人/授权账号发车控 → cmd/send 返回 HTTP 503，
+            #   但真实原因是【服务端按角色拒绝】（同一辆车走 send-command 通道
+            #   明确报 241000 用户没有权限）。不改述会让用户干等 —— 必须说清。
+            _hint = _control_permission_hint(self)
+            if _hint:
+                raise LiCommandError(
+                    f"命令下发失败 ({command_key})：{_hint}｜原始错误：{err}",
+                    request_id="", result_code=None,
+                ) from err
+            raise
         request_id = resp.get("requestId") or resp.get("data", {}).get("requestId") or ""
 
         # cmd/send 自身可能在响应里直接带业务错误
         rc = resp.get("resultCode")
         if rc not in (None, 0):
+            _hint = _control_permission_hint(self)
             raise LiCommandError(
                 f"命令下发被拒 ({command_key}): resultCode={rc} "
-                f"msg={resp.get('resultMsg') or resp.get('message')}",
+                f"msg={resp.get('resultMsg') or resp.get('message')}"
+                + (f"｜{_hint}" if _hint else ""),
                 request_id=request_id, result_code=rc,
             )
 

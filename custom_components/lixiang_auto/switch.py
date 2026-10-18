@@ -146,6 +146,18 @@ def _state_signal_present(coordinator, state_key: str | None) -> bool:
     if not state_key:
         return True
     vss = (getattr(coordinator, "data", None) or {}).get("vss") or {}
+    # ★ 2026-10-18：M 系（理想ONE）的预约充电状态键不同
+    #   （`charge_appointment`，来自 real-time-state）→ 主键缺失时也认它，
+    #   否则 M 系这台车会被判成"不上报"而跳过实体。
+    if state_key == "scheduled_charge_switch" and "charge_appointment" in vss:
+        return True
+    # ★ 2026-10-18：M 系（理想ONE）首次 setup 时 coordinator 还没跑完第一轮
+    #   轮询 → data["vss"] 为空 → 状态门控会误判「这台车不上报」而永久跳过
+    #   预约充电 / 电池保温 这类【M 系专属】开关。
+    #   对策：这两个键【只有 M 系会有】（X 系配置表里没有），
+    #   因此首次 setup 一律放行；is_on 取不到值时显示 unknown（不谎报 off）。
+    if state_key in ("scheduled_charge_switch", "battery_insulation"):
+        return True
     sig = vss.get(state_key) or {}
     return sig.get("value") is not None
 
@@ -306,7 +318,8 @@ async def async_setup_entry(
         _LOGGER.info("车型不支持, 跳过开关: %s", skipped)
 
     async_add_entities([
-        LiCarSwitch(coordinator, li_api, device_info, vin, *spec[:5])
+        LiCarSwitch(coordinator, li_api, device_info, vin, *spec[:5],
+                          ability=_d.get("ability"))
         for spec in specs
     ])
 
@@ -342,11 +355,13 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
 
     def __init__(self, coordinator, li_api, device_info, vin: str,
                  suffix: str, name: str, icon: str,
-                 state_key: str, control_type: str) -> None:
+                 state_key: str, control_type: str, ability=None) -> None:
         super().__init__(coordinator)
         self._api = li_api
         self._state_key = state_key
         self._control_type = control_type
+        self._ability = ability
+        self._ability = ability
         self._attr_name = name
         self._attr_icon = icon
         self._rid = route_id_of_vin(vin)
@@ -370,7 +385,13 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
         """
         import time as _t
 
-        sig = (self.coordinator.data or {}).get("vss", {}).get(self._state_key)
+        _vss_all = (self.coordinator.data or {}).get("vss", {})
+        sig = _vss_all.get(self._state_key)
+        # ★ 2026-10-18：M 系（理想ONE）的预约充电状态键是 `charge_appointment`
+        #   （来自 real-time-state 的 chargeSetting.appointmentTime.chargeOnOff），
+        #   而 X 系是 `scheduled_charge_switch`（VSS 路径）→ 主键取不到时回退。
+        if sig is None and self._control_type == "__SCHEDULED__":
+            sig = _vss_all.get("charge_appointment")
         vss_val: bool | None = None
 
         if sig and sig.get("value") is not None:
@@ -593,6 +614,17 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
              （这两个不存在）→ 返回 2009。已于 2026-09-24 修正。
         """
         if self._control_type == "__SCHEDULED__":
+            # ★ 预约充电开关 —— **M 系分派**（理想ONE 专属，2026-10-18）
+            #   权威依据：官方 M 系 NetApiConst.chargeAppointmentUpdate
+            #     POST /ssp-as-mobile-api/v1-0/vehicles/charge-appointment-update
+            #     （M 系配置表有 SetChargeAppointment，X 系表没有 → ONE 专属）
+            #   ★ 只改开关位：模式/起止时间由 li_api 从最近一帧 vss 读出带回，
+            #     否则服务端会把用户已设的预约清空。
+            from .m01_state import is_m_series
+
+            if is_m_series(getattr(self, "_ability", None)):
+                return self._api.set_charge_appointment(level != 0)
+
             # ★ 预约充电开关：
             #   App 是把「开关 + 模式 + 时间区间」打包下发的：
             #     controlType='3', OrderChargingSwitch, OrderChargingMode,
@@ -617,6 +649,33 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
                 "isContinue": "0",
             }
         elif self._control_type == "__INSULATION__":
+            # ★ 电池保温（充电保温）—— **按车型分派**（2026-10-18）
+            #   M 系（理想ONE 专属）：官方 NetApiConst.chargeWarmSwitch
+            #     POST /ssp-as-mobile-api/v1-0/vehicles/battery-warm-switch
+            #     body {vin, switchState:"1"/"0"}（同步端点，不需 JOB 长连接）
+            #   X 系：无此端点，仍走 remote_charge_control（JOB → HTTP 必 2009）
+            from .m01_state import is_m_series
+
+            if is_m_series(getattr(self, "_ability", None)):
+                return self._api.set_charge_warm(level != 0)
+
+            # ★ 电池保温（充电保温）—— **按车型分派**（2026-10-18）
+            #
+            #   权威依据：官方 M 系代码 `NetApiConst.chargeWarmSwitch`
+            #     → POST /ssp-as-mobile-api/v1-0/vehicles/battery-warm-switch
+            #       body {vin, switchState:"1"/"0"}
+            #     且 M 系配置表有 `SetChargeInsulation`，X 系表**没有这一条**
+            #       → 这是【理想 ONE 专属】：M 系走这个**同步端点**，
+            #         不需要 JOB 长连接，也不该落到下面的 2009 路径。
+            #
+            #   X 系（L 系列）无此端点，仍走原来的
+            #     cmdKey=remote_charge_control + controlType='2'（走 JOB，
+            #     HTTP 必 2009 —— 我们 2026-09 已实测）。
+            from .m01_state import is_m_series
+
+            if is_m_series(getattr(self, "_ability", None)):
+                return self._api.set_charge_warm(level != 0)
+
             # ★ 2026-09-24 新增：电池保温
             #   App: controlType='2', batteryInsulation: "1"/"0"
             cmd_key = "remote_charge_control"
