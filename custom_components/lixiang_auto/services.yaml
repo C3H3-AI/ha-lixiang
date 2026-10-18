@@ -302,6 +302,38 @@ delete_task:
       selector:
         text:
 
+get_iot2_jwt:
+  name: 诊断 换取长连接 JWT（KMS 软签）
+  description: >-
+    用 App SO 里的【出厂兜底密钥】做软件 Ed25519 签名，向
+    `/bcs-kms-jwt/jwt/iot2/v1-0/` 换取长连接（LiMesh / GFM）用的 iot2 JWT。
+    官方在手机本地用 SE 安全区签名，我们用软件顶替，服务端同样接受
+    （实测 code=0，JWT 有效期 30 天）。
+    只读：只做签名与一次兑换请求，**不建任何长连接**。
+    返回里的 jwt 会截断到 40 字符，完整 token 不写日志。
+  fields:
+    entry_id:
+      name: 条目
+      description: 指定条目（留空 = 第一个已连接的条目）
+      required: false
+      selector:
+        text:
+
+probe_gfm_face:
+  name: 诊断 验证 JWT 是否被长连接网关接受
+  description: >-
+    先换一枚 iot2 JWT，再带 `x-chj-kms-verify-type: KMS-JWT` 等头查询
+    长连接接入点 `/li-ndn-gfm/gfm-server/v2-0/nfd-face`，
+    验证「这枚 JWT 网关认不认」。返回可连的 NFD 清单。
+    只读：只查接入点，**不建连、不订阅、不发任何车控**。
+  fields:
+    entry_id:
+      name: 条目
+      description: 指定条目（留空 = 第一个已连接的条目）
+      required: false
+      selector:
+        text:
+
 dump_realtime_state:
   name: 诊断 real-time-state（老平台车型实时通道）
   description: >-

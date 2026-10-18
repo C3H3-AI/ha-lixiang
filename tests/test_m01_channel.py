@@ -94,6 +94,188 @@ class TestM01Channel:
         assert is_m_series(None) is False
 
 
+class TestFamilyAccountControlHint:
+    """★ 家人/授权账号发车控 —— 错误必须说清是【权限】而非【服务故障】。
+
+    实测（2026-10-18）：ONE 家人账号走 `cmd/send` 返回 **HTTP 503
+    「服务暂时不可用」**，但真实原因是服务端按角色拒绝（同一辆车走
+    `send-command` 通道明确报 `241000 用户没有权限`）。
+
+    若原样透传 503，用户会以为「等会儿再试」——实际上等也没用，必须换车主账号。
+    App 做法一致：对家人账号不开放车控。
+    """
+
+    def test_role_detection_matches_app(self):
+        """角色判定必须复刻 App（authorized + roleId 15 → 家人共享）。"""
+        from vehicle_role import REL_FAMILY_SHARED, REL_OWNER, relation_of
+
+        assert relation_of({"vehicleType": "authorized",
+                            "vehicleRoleId": 15}) == REL_FAMILY_SHARED
+        assert relation_of({"vehicleType": "owned",
+                            "vehicleRoleId": 11}) == REL_OWNER
+
+    def test_hint_mentions_permission_and_503(self):
+        """提示语要点明【权限】且戳穿 503 伪装（文本断言，跳过 HA 依赖）。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _control_permission_hint")
+        assert i > 0, "缺 _control_permission_hint"
+        body = src[i:i + 1800]
+        assert "家人" in body and "授权账号" in body, "必须点明家人/授权账号"
+        assert "503" in body, "必须说明 503 是伪装而非真故障"
+        assert "REL_OWNER" in body, "车主不得被加提示"
+
+    def test_hint_text_is_actionable(self):
+        """★ 行为级：提示语必须【可操作】—— 让用户知道换车主账号，而不是干等。
+
+        直接从源码取提示语原文做内容断言（比"关键字存在"更强）：
+        li_api 需 HA 环境，这里只验证消息本身的正确性。
+        """
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _control_permission_hint")
+        body = src[i:i + 2000]
+        assert "车主账号" in body, "必须给出解法：换车主账号"
+        assert "并非服务端故障" in body, "必须否定『服务故障』这个误解"
+        assert "App 对家人账号" in body, "应说明与 App 一致（家人账号同样不可控）"
+
+
+    def test_hint_wired_into_send_command(self):
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert "_control_permission_hint(self)" in src, "必须挂到 send_command 的失败路径"
+        # 必须包住 send_command_raw（家人账号的失败来自 HTTP 503，不是 resultCode）
+        assert "resp = self.send_command_raw(command_key, command_data)" in src
+
+
+class TestM01ChargeButtons:
+    """★ 充电启停：只有 M 系（理想ONE）能建，且必须走 send-command 通道。
+
+    权威依据（官方配置表，不是推测）：
+      · M 系 LXMVehicleConfig2025.json
+          StartCharging → cmdKey=remote_charging_start
+          StopCharging  → cmdKey=remote_charging_stop
+          sendUrl=/ssp-as-mobile-api/v3-0/remote-vehicle-control/send-command
+      · X 系 LXXVehicleConfig2025.json
+          开始/停止充电 cmdKey 均为 remote_charge_control
+          → 走 JOB(LiNdn) 长连接，HTTP 必返 2009（我们 2026-09 实测）
+    """
+
+    def test_cmdkeys_from_official_table(self):
+        src = (PKG / "button.py").read_text(encoding="utf-8")
+        assert "remote_charging_start" in src, "开始充电 cmdKey 应为 remote_charging_start"
+        assert "remote_charging_stop" in src, "停止充电 cmdKey 应为 remote_charging_stop"
+
+    def test_gated_to_m_series_only(self):
+        """必须按 is_m_series 门控 —— L 系建了也必然 2009。"""
+        src = (PKG / "button.py").read_text(encoding="utf-8")
+        assert "is_m_series" in src, "充电按钮必须按车型门控（L 系不可控）"
+        assert "M_SERIES_CHARGE_BUTTONS" in src
+
+    def test_uses_send_command_channel(self):
+        """必须走 send_vehicle_command（send-command），不是 cmd/send。"""
+        src = (PKG / "button.py").read_text(encoding="utf-8")
+        i = src.find("class LiM01ChargeButton")
+        assert i > 0, "缺 LiM01ChargeButton 实体类"
+        body = src[i:i + 2000]
+        assert "send_vehicle_command" in body, "必须用 send-command 通道（M 系权威）"
+        assert "send_command(" not in body, "不能用 cmd/send（M 系充电走 send-command）"
+
+    def test_raise_label_keeps_exception_chain(self):
+        """既有守卫：每个 raise _label(...) 必须 `from err`（单行）。"""
+        src = (PKG / "button.py").read_text(encoding="utf-8")
+        lines = [l for l in src.splitlines() if "raise _label(" in l]
+        assert lines
+        assert all(l.rstrip().endswith("from err") for l in lines), (
+            "button.py 有 raise _label 没带 `from err`（异常链断了）")
+
+
+class TestM01DedicatedEndpoints:
+    """★ M 系专属的【专用同步端点】（不走 cmd/send、不走 JOB 长连接）。
+
+    权威依据（官方 M 系代码 `NetApiConst` + M 系配置表）：
+      · 电池保温/充电保温 SetChargeInsulation → chargeWarmSwitch
+        POST /ssp-as-mobile-api/v1-0/vehicles/battery-warm-switch
+        body {vin, switchState:"1"/"0"}
+      · 预约充电 SetChargeAppointment → chargeAppointmentUpdate
+        POST /ssp-as-mobile-api/v1-0/vehicles/charge-appointment-update
+    两项在 X 系配置表里【都没有】 → 理想ONE 专属。
+    原实现对所有车型都用 remote_charge_control（JOB）→ HTTP 必 2009（已实测），
+    也就是 ONE 上这两个开关此前【必然不可用】。
+    """
+
+    def test_endpoints_defined(self):
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert "EP_BATTERY_WARM" in src, "缺电池保温端点常量"
+        assert "EP_CHARGE_APPOINTMENT" in src, "缺预约充电端点常量"
+        assert "def set_charge_warm(" in src, "缺 set_charge_warm"
+        assert "def set_charge_appointment(" in src, "缺 set_charge_appointment"
+
+    def test_dispatch_by_platform_in_switch(self):
+        src = (PKG / "switch.py").read_text(encoding="utf-8")
+        assert "set_charge_warm(level != 0)" in src, "电池保温未按车型分派到 M 系端点"
+        assert "set_charge_appointment(level != 0)" in src, "预约充电未按车型分派到 M 系端点"
+        # 开关实体必须能拿到 ability（否则无法按车型分派）
+        assert "self._ability = ability" in src, "LiCarSwitch 未保存 ability"
+
+    def test_appointment_preserves_schedule(self):
+        """★ 只改开关位时必须带回当前模式/起止时间，否则会清掉用户预约。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def set_charge_appointment(")
+        assert i > 0
+        body = src[i:i + 1400]
+        assert "reserveStartTime" in body, "必须回带预约开始时间"
+        assert "NewReserveFinishTime" in body, "必须回带预约结束时间"
+        assert "def set_last_vss(" in src, "必须有回填最近一帧信号的入口"
+
+    def test_m_series_state_key_fallback(self):
+        """ONE 的预约充电状态键是 charge_appointment（不是 X 系的 scheduled_charge_switch）。"""
+        src = (PKG / "switch.py").read_text(encoding="utf-8")
+        assert "charge_appointment" in src, "缺少 M 系预约充电状态键回退"
+        assert '_vss_all.get("charge_appointment")' in src, "is_on 未回退到 M 系键"
+
+
+class TestFamilyAccountKeepsControlEntities:
+    """★ 家人/授权账号【仍然要建】车控实体 —— 不要"好心"过滤掉。
+
+    这是 2026-10-18 查证后的【反直觉】结论，写下来防止以后有人做反：
+
+      直觉：家人账号用不了车控 → 那就别建实体（免得点了报错）。
+      实测官方 App：**并不这么做**。
+
+    App 的真实做法（assets/index.vehicle.js 实证）：
+      · `isOwner()` / `isFamily()` 都存在，但 **`isCarOwner()` 调用数为 0**
+        → 车控【不是】按"是否车主"来显隐的。
+      · `isFamily()` 只用于隐藏少量【设置/维保】入口
+        （如「车辆保养」页右上角的按钮），车控按钮本身不隐藏。
+      · 所以家人账号在 App 里【能看到】车控，点了 → 服务端拒绝并提示无权限。
+
+    → 我们建实体 = 与 App 一致；真正该修的是【报错文案】
+       （cmd/send 对家人账号返回 HTTP 503「服务暂时不可用」，
+        会让人干等；已由 _control_permission_hint 改述为权限原因）。
+    """
+
+    def test_control_platforms_not_gated_by_role(self):
+        """车控实体的创建入口不得按 relation / 是否车主做过滤。"""
+        import re
+
+        for fn in ("switch.py", "lock.py", "cover.py", "button.py"):
+            src = (PKG / fn).read_text(encoding="utf-8")
+            # 只看代码，不看注释
+            code = "\n".join(l for l in src.splitlines()
+                              if not l.strip().startswith("#"))
+            assert not re.search(r"relation_of\(|REL_FAMILY|is_owner", code), (
+                f"{fn} 里出现了【按角色过滤】车控的逻辑 —— "
+                "这与 App 不一致（App 对家人账号同样显示车控，点了才提示无权限）。"
+                "若确有必要，请先复核 App 行为再改，并同步更新本测试。")
+
+    def test_filter_specs_ignores_relation(self):
+        """filter_specs 的过滤依据是能力声明，不是账号角色。"""
+        src = (PKG / "features.py").read_text(encoding="utf-8")
+        i = src.find("def filter_specs")
+        assert i > 0
+        body = src[i:i + 900]
+        assert "relation_of" not in body and "REL_FAMILY" not in body, (
+            "filter_specs 不应按账号角色过滤信号")
+
+
 class TestM01Mapping:
     """real-time-state → signal-key 映射的正确性（用实车真值）。"""
 
@@ -116,7 +298,37 @@ class TestM01Mapping:
             "locationStatus": {"lat": "36.100939", "lon": "103.739979",
                                "alt": "1472.1", "dir": "190.7"},
         }
+        # ★ ONE 专属（官方配置表差集确认）：充电阈值 / 充电保温 / 预约充电
+        res["chargeSetting"]["chargingTarget"] = {"target": "90"}
+        res["chargeSetting"]["batteryWarmSwitch"] = {"switchState": "1"}
+        res["chargeSetting"]["appointmentTime"] = {
+            "chargeOnOff": 1, "startTime": "23:00", "endTime": "06:00"}
         m = map_realtime_state(res)
+        assert m["charge_limit"]["value"] == 90.0, "充电阈值（M 系 SetChargeLimit）"
+        assert m["battery_insulation"]["value"] == 1, "充电保温（M 系专属开关）"
+        assert m["charge_appointment"]["value"] == 1, "预约充电（M 系专属开关）"
+        assert m["charge_appointment_start"]["value"] == "23:00"
+        assert m["charge_appointment_end"]["value"] == "06:00"
+
+        # ★ 其它 M 系状态（2026-10-18 补齐）
+        res["wheelWarmStatus"] = {"warmOnOff": "0"}
+        res["ringLightStatus"] = {"status": "1"}
+        res["remoteStartStatus"] = {"startStatus": "0"}
+        res["versionSupport"] = {"acAppointment": 1, "wakeupHu": 0, "energyCostV2": 1}
+        m3 = map_realtime_state(res)
+        assert m3["wheel_heat_switch"]["value"] == 0, "方向盘/座椅加热总开关"
+        assert m3["ring_light_status"]["value"] == 1, "环形灯状态"
+        assert m3["remote_start_state"]["value"] == 0, "远程启动状态"
+        # versionSupport = App 的本车功能支持表（1/0）
+        assert m3["support_acAppointment"]["value"] == 1, "支持预约空调"
+        assert m3["support_wakeupHu"]["value"] == 0, "本车不支持远程唤醒(实测 0)"
+        assert m3["support_energyCostV2"]["value"] == 1
+
+        # ★ 整车锁状态：isLock=1（已落锁）→ 我方 lock_main 取反写 0（locked）
+        res["doorSwitchStatus"] = {"mainDoor": {"isOpen": "0", "isLock": "1"}}
+        m2 = map_realtime_state(res)
+        assert m2["lock_main"]["value"] == 0, (
+            "isLock=1(已落锁) 必须取反为 0 —— lock.py 里 0 才代表 locked")
         assert m["battery_level"]["value"] == 79.0
         assert m["range_elec_cltc"]["value"] == 123.0
         assert m["range_fuel_cltc"]["value"] == 202.0

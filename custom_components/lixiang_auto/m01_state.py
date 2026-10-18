@@ -204,6 +204,36 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     cst = _dig(res, "chargeSetting", "chargeStatus")
     put("charge_status", _num(cst.get("chargeStatus")))
 
+    # ★★★ 2026-10-18：理想ONE【专属】的 3 项功能 —— 权威清单 LXMVehicleConfig2025.json
+    #   与 X 系表比对后确认只有 M 系有：SetChargeLimit（充电阈值）/
+    #   SetChargeInsulation（充电保温）/ SetChargeAppointment（预约充电）。
+    #   数据【本来就在 real-time-state 里】，此前没映射 → ONE 上这三项全 unknown。
+    #
+    #   实测（2026-10-17，ONE 家人账号）：
+    #     chargingTarget    = {"target": "100"}                      → 充电阈值
+    #     batteryWarmSwitch = {"switchState": "0"}                   → 充电保温
+    #     appointmentTime   = {"chargeOnOff":0, "startTime":"23:00",
+    #                          "endTime":"06:00", "isContinue":true} → 预约充电
+
+    # ① 充电阈值（与 X 系「充电上限」同义 → 复用 charge_limit，number 实体直接可用）
+    _tgt = _dig(res, "chargeSetting", "chargingTarget")
+    put("charge_limit", _num(_tgt.get("target")))
+
+    # ② 充电保温（M 系专属开关）
+    _warm = _dig(res, "chargeSetting", "batteryWarmSwitch")
+    put("battery_insulation", _int01(_warm.get("switchState")))
+
+    # ③ 预约充电（M 系专属：开关 + 起止时间）
+    _appt = _dig(res, "chargeSetting", "appointmentTime")
+    if _appt:
+        put("charge_appointment", _int01(_appt.get("chargeOnOff")))
+        _st = _raw(_appt.get("startTime"))
+        _et = _raw(_appt.get("endTime"))
+        if isinstance(_st, str) and _st.strip():
+            put("charge_appointment_start", _st.strip())
+        if isinstance(_et, str) and _et.strip():
+            put("charge_appointment_end", _et.strip())
+
     # ★ 2026-10-12 新增：未达充电上限继续充电（**仅 M 系有**，见 signals.py）
     #   官方车型定义里这条能力只存在于 M01A/M01B（L 系整条标签不存在），
     #   所以实体侧用 requires="version:upperLimitCharging" 门控。
@@ -307,6 +337,27 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
         for src, key in _DOOR_MAP.items():
             put(key, _int01(_dig(doors, src).get("isOpen") or doors.get(src)))
 
+        # ★ 2026-10-18：整车【锁车状态】—— 此前只映射了 isOpen（门开合），
+        #   漏了 isLock（门锁）→ 理想ONE 的 `lock.车锁` 实体永远 unknown。
+        #
+        #   实测响应：doorSwitchStatus.mainDoor = {"isOpen":"0", "isLock":"1"}
+        #
+        #   ★ 语义与取值（有据，非猜）：
+        #     · 我方 lock.py：`lock_main` 且 `int(value) == 0 → locked`（0 = 已落锁）
+        #     · 官方语义：Vehicle.Body.DoorLockStatus.MainDoor，
+        #       semantics = Semantics.LOCKED（值表示"是否落锁"）
+        #     · 该次采样时车辆【离线/休眠】—— 休眠的车必然是落锁的，
+        #       而响应 isLock="1" → 可判定 **isLock=1 表示"已落锁"**
+        #     → 因此需【取反】写入：1 → 0（locked），0 → 1（unlocked）
+        #   ⚠️ 若后续拿到"解锁"状态的样本，请复核此取反（本项目规则：据实修正）。
+        _lock_raw = _int01(_dig(doors, "mainDoor").get("isLock"))
+        if _lock_raw is None:
+            _md = doors.get("mainDoor")
+            if isinstance(_md, dict):
+                _lock_raw = _int01(_md.get("isLock"))
+        if _lock_raw is not None:
+            put("lock_main", 1 - _lock_raw)          # ★ 取反：1(落锁) → 0(locked)
+
     # 车窗 + 天窗（★ App 侧：windowSwitchStatus.<窗>.openStatus，类型是 String）
     wins = res.get("windowSwitchStatus")
     if isinstance(wins, dict):
@@ -384,5 +435,32 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     put("month_save_money", _num(_mtd.get("saveMoney")))
     put("month_avg_elec_energy", _num(_mtd.get("avgElecEnergy")))
     put("month_avg_fuel_energy", _num(_mtd.get("avgFuelEnergy")))
+
+    # ── 其它 M 系状态（2026-10-18 补齐）────────────────────────
+    #
+    # ★ 依据 ONE 实车 real-time-state 响应（2026-10-17 采样）：
+    #   wheelWarmStatus   = {"warmOnOff":"0", ...}    → 方向盘/座椅加热总开关
+    #   ringLightStatus   = {"status":"1", ...}        → 环形灯
+    #   remoteStartStatus = {"startStatus":"0", ...}   → 远程启动状态
+    _whl = _dig(res, "wheelWarmStatus")
+    put("wheel_heat_switch", _int01(_whl.get("warmOnOff")))
+
+    _ring = _dig(res, "ringLightStatus")
+    put("ring_light_status", _int01(_ring.get("status")))
+
+    _rs = _dig(res, "remoteStartStatus")
+    put("remote_start_state", _int01(_rs.get("startStatus")))
+
+    # ★ versionSupport：App 自己的功能支持表（1=支持 / 0=不支持）。
+    #   ONE 实车实测 15 项 —— 据此判断某功能【这台车】到底有没有，
+    #   比「App 静态能力表有没有这条标签」更准（那是全局表，这是本车实际上报）。
+    #   ONE 实测：acAppointment=1 / energyCostV2=1 / familyKey=1 /
+    #            independentTemperatureCtrl=1 / rapidTemCtrl=1 / taskMaster=1
+    #            chargingRecord=0 / energyCost=0 / wakeupHu=0 / rapidVent=0
+    _vs = res.get("versionSupport")
+    if isinstance(_vs, dict):
+        for _k, _v in _vs.items():
+            if isinstance(_v, (int, bool)):
+                put("support_" + _k, int(_v))
 
     return out

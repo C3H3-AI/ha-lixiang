@@ -4,6 +4,100 @@
 
 ---
 
+## [1.6.0-beta.2] — 2026-10-18
+
+> **预发布（Beta）**：理想 ONE 深度补齐 —— 车控通道修正 + 本车功能支持表。
+> 请 ONE 车主继续实测反馈。
+
+### ✨ Added — 理想 ONE 专属功能（官方配置表差集确认，非推测）
+
+对比官方两份权威配置表定位到 **ONE 专属 3 项**（X 系表里没有）：
+
+| 功能 | 官方依据 | 说明 |
+|---|---|---|
+| **充电阈值** | M 系表 `SetChargeLimit` | 复用 `charge_limit`（充电上限 number）|
+| **充电保温** | M 系表 `SetChargeInsulation` | 新增 switch + 专用端点 |
+| **预约充电** | M 系表 `SetChargeAppointment` | 开关 + 起止时间 |
+
+**同时新增「开始充电 / 停止充电」按钮** —— 依据官方
+`assets/2025/LXMVehicleConfig2025.json`：`remote_charging_start` / `remote_charging_stop`。
+
+### ✨ Added — 本车功能支持表（`versionSupport`）
+
+`real-time-state` 里带 App 自己上报的**本车功能支持表** ✓（1=支持 / 0=不支持）✓，
+已映射为 `support_*` 信号。实测 ONE 15 项：
+
+```
+支持(1): acAppointment · energyCostV2 · familyKey · independentTemperatureCtrl
+        rapidTemCtrl · taskMaster · autoParking · bluetoothCtrlTailGate
+不支持(0): chargingRecord · energyCost · wakeupHu · rapidVent · enableCalibrate
+```
+
+★ 价值：这是**这台车实际上报**的能力 ✓，比「App 静态能力表有没有这条标签」更准 ✓。
+由此判定**唤醒车辆 / 充电记录**这台车不支持 ✓ → 按项目既有原则不做「盲开关」✓。
+
+### 🐛 Fixed — 三个此前**必然不可用**的车控（M 系走错通道）
+
+官方 M 系配置表给出了这些功能的 `sendUrl`，而我们此前对**所有车型**都用
+`remote_charge_control`（走 JOB 长连接 → **HTTP 必返 2009** ✓ 已实测 ✓）：
+
+| 功能 | 之前 | 现在（M 系）| 官方端点 |
+|---|---|---|---|
+| 充电启停 | ❌ 2009 | ✅ `send-command` | `remote_charging_start/stop` |
+| 电池保温 | ❌ 2009 | ✅ 同步端点 | `POST /vehicles/battery-warm-switch` |
+| 预约充电 | ❌ 2009 | ✅ 同步端点 | `POST /vehicles/charge-appointment-update` |
+
+**X 系（L6）行为不变** ✓（仍走原路径 ✓ —— 那个端点它们本来就没有 ✓）。
+
+★ **顺带纠正一处过时注释**：`button.py` 里「充电类走 LiNdn 长连接、HTTP 不支持」
+  只对 **X 系**成立 ✓，不能套到 M 系 ✓。
+
+### 🐛 Fixed — 理想 ONE 车锁状态
+
+此前只映射门开合（`isOpen`），漏了门锁（`isLock`）→ `lock.车锁` 永远 unknown。
+实测：`unknown → locked` ✓（语义依据写在代码注释里 ✓）。
+
+### 🐛 Fixed — 家人/授权账号车控报错不再误导
+
+家人账号（`vehicleType=authorized` / `vehicleRoleId=15`）发车控时，
+`cmd/send` 返回 **HTTP 503「服务暂时不可用」** —— 但真实原因是**服务端按角色拒绝**
+（同一辆车走 `send-command` 会明确报 `241000 用户没有权限`）。
+
+原样透传会让用户干等 ✓。现在改为：
+
+> 「当前是【家人/授权账号】，服务端按角色限制不允许远程车控
+> （用车主账号即可；App 对家人账号同样不开放车控）。
+> 注：cmd/send 对此返回 HTTP 503，并非服务端故障。」
+
+### 🐛 Fixed — 首次 setup 时 M 系开关被永久跳过
+
+首次 setup 时 coordinator 还没跑完第一轮轮询 → `data["vss"]` 为空 →
+状态门控误判「这台车不上报」而**永久跳过**预约充电 / 电池保温。
+这两个键只有 M 系会有 → 首次 setup 放行 ✓（取不到值时显示 unknown ✓ 不谎报 off ✓）。
+
+### 🔧 工具
+
+- **KMS 软签换长连接 iot2 JWT**（`lixiang_auto.get_iot2_jwt`）：用 App SO 里的
+  出厂兜底密钥做软件 Ed25519，顶替 SE 安全区 —— 服务端同样接受
+  （实测 `code=0`，430 字节 / 30 天）。**纯 Python 实现，不新增依赖**。
+  ⚠️ 诊断用途，**当前版本不建长连接**。
+- `lixiang_auto.probe_gfm_face`：用该 JWT 查长连接接入点，验证网关认不认。
+- `scripts/li-release.sh` 支持 `--prerelease`。
+
+### ⚠️ 已知限制（不是 bug）
+
+- **家人/授权账号不能远程车控**：服务端按角色限制（见上）。数据读取不受影响 ✓。
+- 理想 ONE 的 **WLTC 续航 / 本月油耗 / 陪伴里程 / 冰箱模式 / 预约空调**
+  该车型不上报 → 保持 unknown ✓（冰箱/预约空调状态不可读，不做「盲开关」✓）。
+- 长连接（LiMesh/NDN）**尚未接入** ✓ —— JWT 已能拿到 ✓，但 NDN 握手格式未解出 ✓。
+
+### ✅ Tests
+
+- 全量 **2401 passed, 9 skipped**（新增 `test_m01_channel.py` 21 条 + `test_kms_softsig.py` 15 条）
+- 变异测试多处验证断言真能失败
+- 测试机双车并存（L6 208 实体 + ONE 167 实体）· 0 ERROR
+- 理想 ONE 实测：映射 47 → **65** 个有真实值
+
 ## [1.6.0-beta.1] — 2026-10-17
 
 > **预发布（Beta）**：新增 **理想 ONE（M01 / 老平台）实时数据支持**。

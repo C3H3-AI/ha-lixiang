@@ -206,4 +206,8 @@ def test_manifest_version_unchanged():
 
     m = json.loads((CC / "manifest.json").read_text(encoding="utf-8"))
     # 只断言版本格式合法，不断言具体值（避免与发布流程耦合）
-    assert re.match(r"^\d+\.\d+\.\d+$", m["version"]), "版本号格式异常"
+    # ★ 2026-10-17：允许 semver 预发布后缀（如 1.6.0-beta.1）——
+    #   本项目要发「先给 ONE 车主试」的 Beta，版本号必然带 -beta.N。
+    #   仍然禁止的是「随手改版本号」（本测试不锁具体值，只锁格式）。
+    assert re.match(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$", m["version"]), (
+        f"版本号格式异常: {m['version']!r}")

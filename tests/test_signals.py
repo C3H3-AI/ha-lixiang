@@ -70,7 +70,11 @@ class TestSignalTable:
                                "month_avg_fuel_energy",
                                  # ★ 2026-10-14：充电功率（官方 4 项指标之二）
                                  #   派生 = 输入电压 × 输入电流；车辆侧无独立充电功率信号
-                                 "charge_power"), \
+                                             "charge_power",
+                                             # ★ 2026-10-18：理想ONE 专属（官方配置表差集确认）
+                                             #   充电保温 / 预约充电(开关+起止时间)，值由 m01_state 注入
+                                             "charge_insulation", "charge_appointment",
+                                             "charge_appointment_start", "charge_appointment_end"), \
                     f"{key}: 空路径但不是已知虚拟信号"
 
     def test_alias_signals_resolve(self):
@@ -448,6 +452,9 @@ class TestDescriptionEquivalence:
             #     ③ LiAutoXSignal.json：CLTCWLTC 描述「续航显示工况」，
             #          datatype=string, default="1", type=actuator
             "range_total_cltc", "range_total_wltc", "range_display_mode",
+            # ★ 2026-10-18：理想ONE 专属（官方配置表差集确认，非推测）
+            "charge_insulation", "charge_appointment",
+            "charge_appointment_start", "charge_appointment_end",
         }
         extra = new - old - NEW_KEYS
         missing = old - new
