@@ -232,6 +232,48 @@ class TestM01DedicatedEndpoints:
         assert '_vss_all.get("charge_appointment")' in src, "is_on 未回退到 M 系键"
 
 
+class TestNumericSensorNeverCrashesListener:
+    """★ 数值型 sensor 不得把 HA 监听器搞崩（2026-10-18 实测 396 次/6h）。
+
+    现象：HA 日志刷 `Unexpected error updating listener ... for lixiang_auto`，
+         栈为 `components/sensor/__init__.py:730 int(value)` →
+         `ValueError: invalid literal for int(): '未知'` → **整个 coordinator
+         的 listener 崩掉，那一轮所有实体都不刷新**。
+
+    根因：`render_value()` 对无数据返回字符串 STATE_UNKNOWN；
+         而声明了 `state_class` 的 sensor 在 HA 里会 int()/float() 它的值。
+         M 系（理想ONE）不上报这些信号 → 全部落到 "unknown" → 稳定复现；
+         X 系有值，所以此前没暴露。
+
+    修法：sensor 平台出口统一拦截 —— 数值型拿到非数值返回 None
+         （HA 显示 unknown，且不做数值转换）。
+    """
+
+    def test_guard_present_at_platform_exit(self):
+        src = (PKG / "sensor.py").read_text(encoding="utf-8")
+        i = src.find("render_value(key, val, sig, data)")
+        assert i > 0, "找不到 render_value 调用点"
+        tail = src[i:i + 1400]
+        assert "state_class" in tail, "sensor 出口必须按 state_class 分流"
+        assert "return None" in tail, "数值型拿到非数值必须返回 None（不能返回字符串）"
+
+    def test_guard_only_affects_numeric_sensors(self):
+        """字符串型 sensor 不得被误伤（「未知」「已关闭」是合法展示值）。"""
+        src = (PKG / "sensor.py").read_text(encoding="utf-8")
+        i = src.find("render_value(key, val, sig, data)")
+        tail = src[i:i + 1400]
+        # 判定必须以 state_class 为前提，而不是无条件拦截
+        assert 'getattr(self.entity_description, "state_class", None) is not None' in tail, (
+            "拦截必须限定在声明了 state_class 的 sensor 上，字符串型保持原样")
+
+    def test_numeric_sensor_entity_sets_are_declared(self):
+        """确认确实存在一批 state_class sensor（回归时的前提）。"""
+        import re
+
+        src = (PKG / "sensor.py").read_text(encoding="utf-8")
+        assert "SensorStateClass.MEASUREMENT" in src, "应有数值型 sensor 存在"
+
+
 class TestFamilyAccountKeepsControlEntities:
     """★ 家人/授权账号【仍然要建】车控实体 —— 不要"好心"过滤掉。
 
