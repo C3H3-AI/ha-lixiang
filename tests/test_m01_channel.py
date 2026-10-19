@@ -20,6 +20,7 @@
 油量 28%、车内 22℃、档位 P、位置/车门/车窗/座椅/空调全部正确）。
 """
 from __future__ import annotations
+import re
 
 from pathlib import Path
 
@@ -383,7 +384,6 @@ class TestNumericSensorNeverCrashesListener:
 
     def test_numeric_sensor_entity_sets_are_declared(self):
         """确认确实存在一批 state_class sensor（回归时的前提）。"""
-        import re
 
         src = (PKG / "sensor.py").read_text(encoding="utf-8")
         assert "SensorStateClass.MEASUREMENT" in src, "应有数值型 sensor 存在"
@@ -411,7 +411,6 @@ class TestFamilyAccountKeepsControlEntities:
 
     def test_control_platforms_not_gated_by_role(self):
         """车控实体的创建入口不得按 relation / 是否车主做过滤。"""
-        import re
 
         for fn in ("switch.py", "lock.py", "cover.py", "button.py"):
             src = (PKG / fn).read_text(encoding="utf-8")
@@ -477,6 +476,60 @@ class TestM01ControlDispatch:
         # 判定依据是车型（platform/modelId），不是无条件切换
         assert "modelId" in body or "platform" in body, (
             "应按车型判定，不能无条件走 send-command（否则误伤 X 系）")
+
+
+class TestM01DispatchCriterionIsFactBased:
+    """★ 车型判据必须是【事实】，不能是猜的常量（2026-10-19 车主反馈暴露）。
+
+    背景：对方 2026-10-19 反馈 M 系车控 `fan/turn_on` 仍报 access_denied，
+    且提示「M 系尚未适配」。根因：**分派判据恒为 False**。
+    原判据 `modelId.startswith("1002043")` / `platform=="1"`：
+      · modelId 要靠 get_vehicles()，M 系车主往往取不到 ⇒ 恒 False
+      · platform 字段 get_vehicles() 根本不返回
+    ⇒ 判据形同虚设，M 系一直走 cmd/send ⇒ 一直 access_denied。
+    """
+
+    def test_no_hardcoded_modelid_prefix(self):
+        """不应再把 modelId 前缀当判据 —— 那是从未实测过的猜测。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _use_send_command_channel")
+        body = src[i:i + 2000]
+        # ★ 只在【可执行代码】里断言；注释里保留历史说明是有意的
+        #   （记录「这里曾经用过一个猜测值」对后来者有价值）。
+        # ★ 判据只看【可执行语句】：注释与 docstring 里保留历史说明是有意的
+        code = re.sub(r'""".*?"""', "", body, flags=re.S)
+        code = "\n".join(ln for ln in code.splitlines()
+                            if not ln.strip().startswith("#"))
+        assert "1002043" not in code, (
+            "车型判据不应依赖未实测的 modelId 前缀（代码里仍有残留）")
+
+    def test_uses_m01_only_response_fields(self):
+        """判据应是 real-time-state 里【M 系独有】的顶层字段（事实驱动）。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert "_M01_ONLY_FIELDS" in src, "缺 M 系独有字段清单"
+        i = src.find("def _use_send_command_channel")
+        body = src[i:i + 2000]
+        assert "_last_rts" in body, "判据应读取最近一帧 real-time-state"
+        # 清单里至少要有几个实测确认的字段
+        i2 = src.find("_M01_ONLY_FIELDS")
+        j2 = src.find(")", i2)
+        fields = src[i2:j2]
+        for f in ("versionSupport", "wheelWarmStatus", "ringLightStatus"):
+            assert f in fields, f"判据字段缺 {f}（实测 M 系响应里有）"
+
+    def test_realtime_state_is_cached(self):
+        """get_realtime_state 必须缓存，否则判据永远拿不到数据。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def get_realtime_state")
+        body = src[i:i + 900]
+        assert "self._last_rts" in body, "get_realtime_state 未写入 _last_rts"
+        assert "self._last_rts: dict = {}" in src, "缺 _last_rts 初始化"
+
+    def test_error_message_not_claiming_unadapted(self):
+        """文案不得再说「M 系尚未适配」—— 已经适配了，说法要如实。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert "M 系的授权体系尚未适配" not in src, (
+            "文案过时：M 系车控已改走 send-command，不能再说尚未适配")
 
 
 class TestM01Mapping:
