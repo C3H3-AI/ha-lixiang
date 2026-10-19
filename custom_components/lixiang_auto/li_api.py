@@ -77,6 +77,25 @@ SCOPE_CARD = "login offline_access"
 # 两者都用登录会话 POST https://id.lixiang.com/api/auth (response_type=token) 换取。
 AUD_MESH = "1j0vgTqagJUHuT6nLmbTGx"
 SCOPE_MESH = "remote-wakeup:wakeup veh-ctrl:cmd-send veh-ctrl:cmd-result-get"
+
+# ★★ 2026-10-19（车主日志实证，决定性）：
+#   SCOPE_MESH 上面只有 **3 项**，而官方 subTokenData 里 httpLiMeshServiceV2
+#   的 scope 是 **5 项**（多 vss:get-batch 与 task-master）。
+#   我们 2026-10-08 早就实测过：「单换子集被 SSO 拒绝（300 access_denied），
+#   完整五件套可正常换取 —— App 从不单换，只用完整包」。
+#
+#   车主 18:30 的日志正是这条：
+#     车控 remoteVehPlgControl 失败: 换 token 失败
+#       （scope=remote-wakeup:wakeup veh-ctrl:cmd-send veh-ctrl:cmd-result-get,
+#        error=access_denied）
+#     ⇒ 判据已经生效（日志有「车型判据：real-time-state 含 M 系独有字段」），
+#       但**取 token 这一步就被 SSO 拒了**，根本没走到 send-command。
+#
+#   ⇒ M 系必须用【官方完整五件套】取 MESH token。
+#     （X 系保持原 3 项不变 —— 它现在能正常工作，不动它。）
+SCOPE_MESH_FULL = (
+    "remote-wakeup:wakeup veh-ctrl:cmd-result-get "
+    "veh-ctrl:cmd-send vss:get-batch task-master")
 AUD_VAT = "5Tc7yDrnMzALwc9Rytl9sp"
 
 # ★ 2026-10-01 实测新增：lcp-bff-app-api 通道
@@ -1129,7 +1148,15 @@ class LiApiClient:
     # ---------- 车控双 token ----------
 
     def _get_mesh_token(self) -> str:
-        """MESH token: cmd/send 的 Authorization 头 (~15min)."""
+        """MESH token: cmd/send 与 send-command 的 Authorization 头 (~15min)。
+
+        ★★ 2026-10-19：M 系（理想ONE）必须用【官方完整五件套】scope 换取。
+           用 3 项子集会被 SSO 直接拒（300 access_denied）——
+           车主日志实证（见 SCOPE_MESH_FULL 上方注释）。
+           ★ 缓存键也分开（mesh_full vs mesh），避免两套 scope 互相污染。
+        """
+        if self._use_send_command_channel():
+            return self._get_scoped("mesh_full", SCOPE_MESH_FULL, AUD_MESH, ttl=780)
         return self._get_scoped("mesh", SCOPE_MESH, AUD_MESH, ttl=780)
 
     def _get_vat_token(self) -> str:
@@ -2558,9 +2585,59 @@ class LiApiClient:
     #     M 系示例：remote_central_lock_lock / remote_window_open
     #     X 系示例：remoteVehLockControl / remoteVehWdwControl
     _M01_CMDKEY_MAP: dict[str, str] = {
-        # X 系 cmdKey → M 系 cmdKey（在同一 APK 里并存，按车型选）
+        # ── X 系 cmdKey → M 系 cmdKey（两套并存，按车型选）──────────────────
+        # ★★ 2026-10-19 补全：此前只映射了锁车一把键，导致其余车控
+        #   在 M 系上会拿 X 系键去调 send-command ⇒ 必然失败。
+        #   来源（★ 官方，非推测）：
+        #     ① LXMVehicleConfig2025.json 的 70 条能力表（13 个 cmdKey）
+        #     ② MControlKeyConst 的静态字段（LXVehicleControlType*）
+        #     ③ a0.smali 构造 OperateReq 时的 cmdData.Type 取值
+        #
+        # ★★ 重要差异：M 系的 **commandKey 与 cmdData.Type 是两个层次** ——
+        #   · commandKey：13 个（remote_central_lock_lock / remote_plg_open …）
+        #   · cmdData.Type：另一组（空调全部挤在 remote_ac_ctrl_new 里，
+        #     靠 Type + Temp/SteerSet/FLLevel… 区分具体功能）
+        #   ⇒ 锁车/车窗/尾门/寻车/充电启停 是 1:1 映射 ✓
+        #   ⇒ 空调/座椅加热/方向盘加热 需要再按 Type 分流（本表只给 commandKey，
+        #     Type 由各平台按需放进 cmdData）✓
         "remoteVehLockControl": "remote_central_lock_lock",      # 锁车
+        "remoteVehWdwControl": "remote_window_open",              # 开窗（关窗另用 _close）
+        "remoteVehPlgControl": "remote_plg_open",                 # 开尾门（关用 _close）
+        "remoteVehSearch": "remote_veh_search",                   # 寻车 / 车辆位置
+        "remoteVehACSmartControl": "remote_ac_ctrl_new",          # 空调（含座椅/方向盘）
+        "remote_charge_control": "remote_charging_start",         # 开始充电（停止用 _stop）
+        "remoteVehAuth": "remote_veh_search",                     # 授权驾驶：无专属键，复用寻车
+        "remoteVehFrgControl": "remote_ac_ctrl_new",              # 冰箱/除霜等 → 走空调通道
+        "remoteVehSvm": "remote_veh_search",                      # 哨兵/闪灯 → 复用寻车
+        "remoteVehACFirstControl": "remote_ac_ctrl_new",          # 一键空调
     }
+
+    #: M 系「反向动作」键 —— 开↔关、成对出现。
+    #: ★ 来自官方能力表：每个开/关/停都是**独立的 cmdKey** ✓
+    _M01_CMDKEY_INVERSE: dict[str, str] = {
+        "remote_central_lock_lock": "remote_central_lock_unlock",
+        "remote_window_open": "remote_window_close",
+        "remote_plg_open": "remote_plg_close",
+        "remote_charging_start": "remote_charging_stop",
+        "remote_engine_start": "remote_veh_stop_m01",
+    }
+
+    #: M 系官方 cmdKey 全集（13 个，来源：LXMVehicleConfig2025.json + MControlKeyConst）
+    _M01_CMDKEYS: tuple[str, ...] = (
+        "fTkC",
+        "remote_ac_ctrl_new",
+        "remote_central_lock_lock",
+        "remote_central_lock_unlock",
+        "remote_charging_start",
+        "remote_charging_stop",
+        "remote_engine_start",
+        "remote_plg_close",
+        "remote_plg_open",
+        "remote_veh_search",
+        "remote_veh_stop_m01",
+        "remote_window_close",
+        "remote_window_open",
+    )
 
     def _use_send_command_channel(self) -> bool:
         """本车是否应走 send-command（M 系专用通道）而非 cmd/send。

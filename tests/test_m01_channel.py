@@ -532,6 +532,69 @@ class TestM01DispatchCriterionIsFactBased:
             "文案过时：M 系车控已改走 send-command，不能再说尚未适配")
 
 
+class TestM01MeshScopeIsOfficialFullPackage:
+    """★★ 2026-10-19 车主日志实证的决定性 bug：M 系取 token 就被 SSO 拒。
+
+    日志原文：
+      车控 remoteVehPlgControl 失败: 换 token 失败
+        （scope=remote-wakeup:wakeup veh-ctrl:cmd-send veh-ctrl:cmd-result-get,
+         error=access_denied）
+
+    根因：`SCOPE_MESH` 只有 **3 项**，而官方 subTokenData 里
+    `httpLiMeshServiceV2.scope` 是 **5 项**（多 vss:get-batch + task-master）。
+    我们 2026-10-08 早就实测过：**单换子集被 SSO 拒绝，完整五件套才行**
+    （App 从不单换，只用完整包）。⇒ 3 项直接被拒，根本没走到 send-command。
+    """
+
+    def test_full_scope_has_exactly_official_five(self):
+        """SCOPE_MESH_FULL 必须严格等于官方 5 项（顺序无关）。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("SCOPE_MESH_FULL = (")
+        assert i > 0, "缺 SCOPE_MESH_FULL"
+        j = src.find(")", i)
+        blob = src[i:j]
+        official = {"remote-wakeup:wakeup", "veh-ctrl:cmd-result-get",
+                    "veh-ctrl:cmd-send", "vss:get-batch", "task-master"}
+        for item in official:
+            assert item in blob, f"完整包缺 {item}"
+        # 恰好 5 项
+        assert len([x for x in official if x in blob]) == 5
+
+    def test_mesh_token_branches_on_m_series(self):
+        """_get_mesh_token 必须对 M 系用完整包，X 系保持原 3 项。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _get_mesh_token")
+        body = src[i:i + 900]
+        assert "SCOPE_MESH_FULL" in body, "M 系必须用完整五件套"
+        assert "SCOPE_MESH" in body, "X 系保持原 scope"
+        assert "_use_send_command_channel()" in body, "应按车型分流"
+        # 缓存键必须分开，避免两套 scope 互相污染
+        assert "mesh_full" in body, "完整包应用独立缓存键"
+
+    def test_scope_mesh_unchanged_for_x_series(self):
+        """★ 防误伤：SCOPE_MESH 仍是原 3 项（L6 现在靠它正常工作）。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert ('SCOPE_MESH = "remote-wakeup:wakeup veh-ctrl:cmd-send '
+                'veh-ctrl:cmd-result-get"') in src, (
+            "SCOPE_MESH 被改动 ⇒ 可能影响 L6")
+
+
+class TestM01TravelQueryGated:
+    """★ M 系没有行程服务（恒返 100035），要前置拦截，不能刷 WARNING。
+
+    车主日志：10 秒内 13 条「行程查询失败(2026-10 单月): code=100035」。
+    """
+
+    def test_travel_handler_guards_m_series(self):
+        src = (PKG / "__init__.py").read_text(encoding="utf-8")
+        i = src.find("async def _handle_get_travel")
+        assert i > 0
+        body = src[i:i + 3000]
+        assert "is_m_series" in body, (
+            "行程查询未对 M 系前置拦截 ⇒ 会一直刷 WARNING")
+        assert "无行程服务" in body, "应给出明确结论而不是反复报错"
+
+
 class TestNoDuplicatedDetectionLogic:
     """★ 同一个判断不得在两处各写一遍（2026-10-19 自查发现）。
 

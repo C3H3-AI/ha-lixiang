@@ -996,6 +996,20 @@ def _async_register_services(hass: HomeAssistant) -> None:
             if target_vin and (entry.data.get(CONF_VIN) or "") != target_vin:
                 continue
             try:
+                # ★★ 2026-10-19（车主日志实证）：M 系（理想ONE）**没有行程服务**，
+                #   调它恒返 code=100035「服务暂时不可用」。车主日志里 10 秒刷了 13 条
+                #   WARNING —— 既吵又无意义。⇒ 前置拦截，不打网络、不刷 WARNING。
+                _ab = (d or {}).get("ability")
+                if _ab is not None:
+                    from .m01_state import is_m_series  # noqa: PLC0415
+                    if is_m_series(_ab):
+                        result[entry.data.get(CONF_VIN) or eid] = {
+                            "kind": "不支持", "data": None,
+                            "note": "理想ONE（M 系）无行程服务（服务端恒返 100035）",
+                        }
+                        _LOGGER.info(
+                            "行程查询跳过：该车为 M 系（理想ONE），服务端未开通行程服务")
+                        continue
                 if year and month:
                     r = await hass.async_add_executor_job(
                         api.get_travel_monthly, int(year), int(month))
