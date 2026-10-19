@@ -651,6 +651,46 @@ class TestM01CmdDataRule:
             assert f'"{k}"' in src[i:i + 800], f"官方 cmdKey 缺 {k}"
 
 
+class TestM01TokenFallback:
+    """★★ M 系取 token 的兜底路径（2026-10-19 车主日志驱动）。
+
+    车主日志：
+      车控失败: 换 token 失败（scope=remote-wakeup:wakeup veh-ctrl:cmd-send
+                                veh-ctrl:cmd-result-get, error=access_denied）
+
+    两条可能的授权路径（都需要覆盖，因为静态定不了）：
+      ① MESH 完整五件套 —— 官方 subTokenData 的 scope（首选）
+      ② 主 Bearer —— send-command 与 real-time-state 同属
+         `/ssp-as-mobile-api/v3-0/` 命名空间，而后者在 ONE 上实测可用
+    ⇒ MESH 取不到时退回主 Bearer，不能直接抛异常让车控失败。
+    """
+
+    def test_mesh_failure_falls_back_to_main_bearer(self):
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _get_mesh_token")
+        j = src.find("\n    def ", i + 10)
+        body = src[i:(j if j > i else i + 1800)]
+        assert "_travel_bearer()" in body, (
+            "M 系取 MESH 失败时应退回主 Bearer（否则车控直接失败）")
+        assert "except Exception" in body, "兜底必须有 try/except"
+
+    def test_fallback_is_documented_with_reason(self):
+        """兜底必须有依据说明，不能是瞎试。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _get_mesh_token")
+        body = src[i:i + 1800]
+        assert "ssp-as-mobile-api" in body or "real-time-state" in body, (
+            "应写明依据：send-command 与 real-time-state 同命名空间")
+
+    def test_x_series_still_simple(self):
+        """★ 防误伤：X 系不应走这套兜底（它现在 3 项 scope 正常）。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _get_mesh_token")
+        body = src[i:i + 1800]
+        # X 系那一支必须是简单直返，不带 try
+        assert 'self._get_scoped("mesh", SCOPE_MESH, AUD_MESH, ttl=780)' in body
+
+
 class TestNoDuplicatedDetectionLogic:
     """★ 同一个判断不得在两处各写一遍（2026-10-19 自查发现）。
 

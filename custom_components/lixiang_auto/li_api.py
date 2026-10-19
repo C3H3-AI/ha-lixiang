@@ -1156,7 +1156,20 @@ class LiApiClient:
            ★ 缓存键也分开（mesh_full vs mesh），避免两套 scope 互相污染。
         """
         if self._use_send_command_channel():
-            return self._get_scoped("mesh_full", SCOPE_MESH_FULL, AUD_MESH, ttl=780)
+            try:
+                return self._get_scoped(
+                    "mesh_full", SCOPE_MESH_FULL, AUD_MESH, ttl=780)
+            except Exception as err:  # noqa: BLE001
+                # ★★ 2026-10-19 兜底（重要）：
+                #   send-command 与 real-time-state 同属 `/ssp-as-mobile-api/v3-0/`
+                #   命名空间；而 real-time-state 用的是【主 Bearer】(x-chj-token)
+                #   —— 这一点在 ONE 上已实测成功（只读数据正常）。
+                #   若 MESH 取不到（access_denied），退回主 Bearer 试一次：
+                #   这是有依据的备选，不是瞎试。
+                _LOGGER.debug(
+                    "MESH(完整五件套) 换取失败(%s)，退回主 Bearer 试 send-command",
+                    type(err).__name__)
+                return self._travel_bearer()
         return self._get_scoped("mesh", SCOPE_MESH, AUD_MESH, ttl=780)
 
     def _get_vat_token(self) -> str:
