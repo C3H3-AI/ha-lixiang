@@ -734,6 +734,8 @@ class LiApiClient:
         #   "读当前模式/时间 → 只改开关位" 的同步写接口使用
         #   （否则会把用户已设的预约时间清空）。
         self._last_vss: dict = {}
+        # ★ 2026-10-19：最近一帧 real-time-state（M 系车型指纹来源）
+        self._last_rts: dict = {}
         # ★ 主 Bearer（PAKE 登录后的 access_token）—— travel 等接口需要（App 抓包 x-chj-token = APP-xxx）
         # ★ 2026-10-10：main_bearer 也要能从 entry 复用（此前恒为空 →
         #   travel/充电 首次调用必然密码重登）
@@ -1053,8 +1055,9 @@ class LiApiClient:
                 #   ⇒ 真因是【这套「cmdKey:VIN」scope 属于 X 系，M 系不认】。
                 #   按是否 M 系给两种准确说法，避免继续误导用户。
                 # ★ 判据用 get_vehicles()（已调过、无额外网络开销）：
-                #   M 系 modelId 前缀 1002043… / modelName 含 M01
-                #   （不依赖 ability —— LiApiClient 上没有该属性）
+                #   ★ 2026-10-19：这条判据（modelId 前缀 / modelName 含 M01）
+                #     **未实测**且 modelId 往往取不到 ⇒ 只作兜底提示用；
+                #     车控通道分派已改用「real-time-state 独有字段」这个事实判据。
                 _is_m = False
                 try:
                     _vs = self.get_vehicles() or []
@@ -1068,11 +1071,16 @@ class LiApiClient:
                 except Exception:  # noqa: BLE001
                     _is_m = False
                 if _is_m:
-                    _why = ("服务端拒绝为【理想ONE（M 系）】签发这套车控授权"
-                            "（access_denied）—— 本集成现有的车控 scope 属于 L/X 系，"
-                            "M 系的授权体系尚未适配")
-                    _todo = ("该车型的远程车控正在适配中；"
-                             "只读数据（电量/续航/位置/充电状态等）不受影响，可正常使用")
+                    # ★ 2026-10-19 更新：M 系车控已适配（改走 send-command，只用 MESH）。
+                    #   走到这里说明**仍然**被拒 —— 即便如此，也不是"尚未适配"，
+                    #   而是该车/该账号的具体限制。措辞必须如实，不要误导车主。
+                    _why = ("服务端拒绝了该 M 系车型（理想ONE）的这次车控授权"
+                            "（access_denied）")
+                    _todo = ("本集成对 M 系车控已改走官方 send-command 通道（仅需 MESH）。"
+                             "若仍失败，请核对：① 集成是否为最新版本；"
+                             "② 该账号是否为【车主本人】（家人/授权账号受服务端角色限制，"
+                             "与官方 App 一致）；③ 日志里 probe_send_command 的结果。"
+                             "只读数据（电量/续航/位置/充电状态等）不受影响。")
                 else:
                     _why = "服务端拒绝为该账号签发车控授权（access_denied）"
                     _todo = ("请确认集成为最新版本；若是家人/授权账号，"
@@ -1336,6 +1344,11 @@ class LiApiClient:
         """
         path = f"/ssp-as-mobile-api/v3-0/vehicles/{self._vin}/real-time-state"
         r = self._signed_call_travel("GET", path, "", self._travel_bearer())
+        # ★ 2026-10-19：缓存最近一帧，供车型判据使用。
+        #   M 系响应的顶层字段是【只有 M 系才有】的车型指纹 ⇒ 事实判据，
+        #   不依赖取不到的 modelId / platform。
+        self._last_rts = (r or {}).get("data") or {}
+        return self._last_rts
         return (r or {}).get("data") or {}
 
     def probe_send_command(self) -> dict:
@@ -2529,6 +2542,17 @@ class LiApiClient:
             policy=POLICY_RESULT,
         )
 
+    # ★ M 系（real-time-state）响应里【独有】的顶层字段 —— 用作车型指纹。
+    #   来源：理想ONE 实测响应 vs L6(VSS) 响应逐字段比对。
+    #   这些字段 X 系响应里不存在 ⇒ 命中即 M 系 ⇒ 不会误判 X 系。
+    #   ★ 相比"猜 modelId 前缀"，这是**事实判据**：接口已在线使用。
+    _M01_ONLY_FIELDS: tuple[str, ...] = (
+        "versionSupport", "wheelWarmStatus", "ringLightStatus",
+        "remoteStartStatus", "vehPowerMode", "otaUpgradeInfo",
+        "vehOnlineStatus", "rearviewMirrorFoldStatus", "caseCoverStatus",
+        "seatStatus", "airConditioningStatus", "chargeSetting",
+    )
+
     # M 系（理想 ONE）专用 cmdKey —— 官方 MControlKeyConst 常量表
     #
     # ★ 来源（REA 静态读取 smali 静态字段初始值，逐条核对）：
@@ -2546,25 +2570,38 @@ class LiApiClient:
     def _use_send_command_channel(self) -> bool:
         """本车是否应走 send-command（M 系专用通道）而非 cmd/send。
 
-        判据：车型 platform == '1'（M 系 / 理想 ONE）。
-        ★ 不靠猜：platform 来自服务端 get_vehicles() 的返回。
+        ★★ 2026-10-19 更正（原实现有严重缺陷）：
+          原判据是 `modelId.startswith("1002043")` 或 `platform=="1"`，
+          但**这两个值都取不到 / 未实测**：
+            · modelId 要靠 get_vehicles()，而 M 系车主的会话能拉
+              real-time-state 却可能拉不到该接口 ⇒ 判据恒为 False
+            · platform 字段 get_vehicles() 根本不返回
+          ⇒ 实测表现：M 系车控**仍走 cmd/send** ⇒ 仍报 access_denied
+            （对方 2026-10-19 反馈 fan/turn_on 依然失败，且文案还是旧的）
+
+        ★ 现判据（**事实驱动，不猜**）：
+          用 `real-time-state` 响应里【M 系独有的顶层字段】做车型指纹。
+          集成本来就在拉这个接口（只读数据正常 ⇒ 已验证可用），
+          且这些字段 X 系响应里【不存在】⇒ 不会误判。
         """
-        try:
-            for v in (self.get_vehicles() or []):
-                if str(v.get("vin") or "") != self._vin:
-                    continue
-                if str(v.get("vehicleType") or "") == "" and str(
-                        v.get("platform") or "") == "":
-                    continue
-                # get_vehicles 里没有 platform 字段 → 回退用 modelId 前缀
-                mid = str(v.get("modelId") or "")
-                if mid.startswith("1002043"):
-                    return True          # M01B 车型（理想 ONE）实测 modelId
-                if str(v.get("platform") or "") == "1":
+        data = self._last_rts
+        if isinstance(data, dict):
+            for key in self._M01_ONLY_FIELDS:
+                if key in data:
+                    _LOGGER.debug(
+                        "车型判据：real-time-state 含 M 系独有字段 %s "
+                        "⇒ 走 send-command 通道", key)
                     return True
-            return False
+        # 兜底：能力表（若已加载）
+        try:
+            ab = getattr(self, "_ability", None)
+            if ab is not None:
+                from .m01_state import is_m_series
+                if is_m_series(ab):
+                    return True
         except Exception:  # noqa: BLE001
-            return False
+            pass
+        return False
 
     def _send_command_via_rvc(self, command_key: str,
                               command_data: dict | None,

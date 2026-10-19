@@ -4,6 +4,75 @@
 
 ---
 
+## [1.6.0-beta.5] — 2026-10-19
+
+> **预发布（Beta）**：★ 修复理想 ONE 车控「按车型分派」失效 ——
+> beta.4 里的分派判据是从未被实测过的猜测值，导致 M 系车控**根本没有走新通道**。
+
+### ★★ 核心：车型判据改为**事实驱动**（beta.4 的分派恒为 False）
+
+**beta.4 的判据**：
+
+```python
+modelId.startswith("1002043") or platform == "1"
+```
+
+**问题**（对方 2026-10-19 实机反馈暴露）：
+
+| 判据 | 实际情况 |
+|---|---|
+| `modelId` | 要靠 `get_vehicles()`，**M 系车主往往取不到** ⇒ 恒 False |
+| `platform` | `get_vehicles()` **根本不返回该字段** |
+
+⇒ **分派从未触发** ⇒ M 系一直走 `cmd/send` ⇒ 一直 `access_denied`
+⇒ 也就是说 beta.4 宣称的「M 系改走 send-command」**实际未生效**。
+
+**修复**：改用 `real-time-state` 响应里**只有 M 系才有**的顶层字段做车型指纹：
+
+```
+versionSupport · wheelWarmStatus · ringLightStatus · remoteStartStatus
+vehPowerMode · otaUpgradeInfo · vehOnlineStatus · seatStatus
+airConditioningStatus · chargeSetting · caseCoverStatus · rearviewMirrorFoldStatus
+```
+
+**为什么可靠**：
+
+1. 这些字段在 ONE 的实测响应里**确实存在**（逐字段核对）；
+2. 在 L6（X 系 VSS）响应里**不存在** ⇒ 不会误判 X 系；
+3. 集成本来就在拉这个接口（只读数据正常 ⇒ 已验证可用）。
+
+### 🐛 错误文案更正
+
+原文案称「M 系的授权体系尚未适配」—— **已经适配了，说法不实**。
+现改为如实说明：M 系已改走官方 `send-command`（仅需 MESH）；
+若仍失败，请核对 ① 版本 ② 账号是否车主本人 ③ `probe_send_command` 的结果。
+
+### ✅ 验证（真实 ONE 数据）
+
+```
+无数据          → False ✓（不误判）
+真实 ONE 响应  → True  ✓（12 个字段全命中）
+X 系形态响应   → False ✓（不误伤 X 系）
+```
+
+（过程中实测抓出一个真 bug：类属性漏写 `self.` 导致 `NameError` ⇒ 已修 ✓）
+
+### 🧪 测试
+
+- 全量 **2421 passed, 9 skipped**
+- 新增 4 条防回归：
+  - 判据里不得再出现猜的 `modelId`
+  - 必须用 M 系独有响应字段做判据
+  - `get_realtime_state()` 必须写入缓存（否则判据永远拿不到数据）
+  - 错误文案不得再声称「尚未适配」
+
+### ⚠️ 已知限制
+
+- **理想 ONE 车控：通道与判据均已改对，但仍待真机确认**
+  （若失败，请在「开发者工具 → 动作」调用 `lixiang_auto.probe_send_command`
+  并把结果反馈 —— 它能区分「通道已通，只差 cmdKey」与「入口即拒，需换授权」）
+- 家人 / 授权账号的远程车控受服务端角色限制（与官方 App 一致）
+
 ## [1.6.0-beta.4] — 2026-10-19
 
 > **预发布（Beta）**：理想 ONE 车控改走正确通道 + 传感器大幅补齐 + 一个
