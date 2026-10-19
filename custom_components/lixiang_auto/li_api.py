@@ -2623,6 +2623,9 @@ class LiApiClient:
         "remoteVehFrgControl": "remote_ac_ctrl_new",              # 冰箱/除霜等 → 走空调通道
         "remoteVehSvm": "remote_veh_search",                      # 哨兵/闪灯 → 复用寻车
         "remoteVehACFirstControl": "remote_ac_ctrl_new",          # 一键空调
+        # ★ 2026-10-20：哨兵 —— X 系 cmdKey 是 sentinelModeSetting；
+        #   M 系官方 commandKeyMap 里是 **"55.0"**（数字字符串）。
+        "sentinelModeSetting": "55.0",
     }
 
     #: M 系「反向动作」键 —— 开↔关、成对出现。
@@ -2641,6 +2644,11 @@ class LiApiClient:
     _M01_CMDDATA_KEYS: tuple[str, ...] = (
         "remote_ac_ctrl_new",   # 空调/座椅加热/S 方向盘：靠 Type/Temp/SteerSet/FLLevel
         "fTkC",                 # 前备箱开/关共用该键（官方 FrontTrunkOpen/Close 都映射它）
+        # ★ 2026-10-20 哨兵：官方 commandKeyMap → Sentry = "55.0"。
+        #   payload 沿用与 X 系同构的 {"sentinelSwitch":0/1, "timestap":毫秒}
+        #   （⚠️ timestap 是 App 的拼写，少一个 m，必须照抄）
+        #   ★ 属「同应用同概念」推论，非直接静态实证 —— 已在注释标明。
+        "55.0",
     )
 
     #: M 系官方 cmdKey 全集（13 个，来源：LXMVehicleConfig2025.json + MControlKeyConst）

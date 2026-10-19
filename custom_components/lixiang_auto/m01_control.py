@@ -306,30 +306,36 @@ NUMERIC_COMMAND_KEYS: dict[str, str] = {
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# ★ M 系「设置类」命令的参数体系（`MSubKeyConst` / `MParamsConst` 实证）
+# ★ M 系「子数据刷新」参数体系（`MSubKeyConst` / `MParamsConst` 实证）
 #
-#   MParamsConst：sub_key / interval_time        ← cmdData 的字段名
+#   MParamsConst：sub_key / interval_time
 #   MSubKeyConst：photo / charge / OTA / Healthy / Maintain / MinusScreen /
-#                 AcAppointment                  ← sub_key 的取值
+#                 AcAppointment
 #
-# 官方构造（VehicleControlDockingDelegate.smali 实证）：
-#   LinkedHashMap cmdData = {"sub_key": "MinusScreen"}
-# ⇒ 设置类命令的 cmdData 形如 {"sub_key": "<值>"}（可再加参数字段）。
+# ⚠️★ 更正（2026-10-20）：**sub_key 是【刷新子数据】用的，不是车控命令参数** ★
+#    证据：`LxMSubDataManager.smali`（42KB）里这些取值与
+#    `handleSubData step1/2/3`、`refresh params` 同现 —— 是**读数据**链路
+#    （刷新 photo/OTA/健康/保养 等子数据），不是下发命令。
+#    此前我一度以为数字键命令的 cmdData = {"sub_key": ...}，那是错的 ——
+#    那个 `{"sub_key":"MinusScreen"}` 出现在 `VehicleControlDockingDelegate`
+#    里，而该文件几乎全是 BLE / 厂商对接（oppo/vivo/honor/ble_params_origin），
+#    只提到过一次 LXVehicleControlTypeWakeUp，不是通用命令构造器。
+#    ⇒ 已撤回该推断，不再作为命令参数使用。
 #
-# ★★ 重要：上面 8 条数字键里，6 条我们**早就用专用 HTTP 端点实现了** ✔
-#    （比 send-command 更可靠，不依赖 cmdData 猜测）：
-#      50.0  拍照      → EP_SVM_TAKE_PHOTO      ✔
-#      60.0  唤醒      → EP_WAKEUP              ✔
-#      100.0 电池加热  → EP_BATTERY_WARM        ✔
-#      101.0 充电目标  → EP_CHARGE_THRESHOLD    ✔
-#      102.0 预约充电  → EP_CHARGE_APPOINTMENT  ✔
-#      104.0 预约空调  → EP_AC_APPOINTMENT      ✔
-#      103.0 预约OTA   → EP_OTA_UPGRADE         ✔
+# ★★ 真正的结论：数字键 8 条里 7 条本就用专用 HTTP 端点实现（更可靠）✔
+#      50.0  拍照     → EP_SVM_TAKE_PHOTO
+#      60.0  唤醒     → EP_WAKEUP
+#      100.0 电池加热 → EP_BATTERY_WARM
+#      101.0 充电目标 → EP_CHARGE_THRESHOLD
+#      102.0 预约充电 → EP_CHARGE_APPOINTMENT
+#      103.0 预约OTA  → EP_OTA_UPGRADE
+#      104.0 预约空调 → EP_AC_APPOINTMENT
 #    ⇒ 唯一真正缺的是 **55.0 哨兵模式**（无专用端点，cmdData 无静态证据）。
 # ══════════════════════════════════════════════════════════════════════════
 SUB_KEY_PARAM = "sub_key"
 INTERVAL_TIME_PARAM = "interval_time"
 
+#: ⚠️ 仅供「子数据刷新」参考 —— **不要当作车控命令的 cmdData**
 SUB_KEYS: dict[str, str] = {
     "photo": "photo",
     "charge": "charge",

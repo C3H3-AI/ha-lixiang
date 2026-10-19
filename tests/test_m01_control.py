@@ -317,3 +317,31 @@ class TestSettingCommandParams:
                        lambda: mc.build_ac_switch(on=True, temp=22.0)):
                 key, _ = fn()
                 assert key != mc.SENTRY_COMMAND_KEY
+
+
+class TestSentryCoverage:
+    """★ 哨兵模式补齐（M 系）。
+
+    · X 系：cmdKey = `sentinelModeSetting`
+    · M 系：官方 commandKeyMap → **"55.0"**（数字字符串）
+    · payload：沿用同构的 {"sentinelSwitch": 0/1, "timestap": 毫秒}
+      ⚠️ `timestap` 是 App 的拼写（少一个 m），必须照抄
+      ★ payload 属于「同应用同概念」推论，非直接静态实证 —— 已在源码注释标明
+    """
+
+    def test_li_api_maps_sentry_to_numeric_key(self):
+        src = (MOD / "li_api.py").read_text(encoding="utf-8")
+        assert '"sentinelModeSetting": "55.0"' in src, (
+            "M 系哨兵 cmdKey 应为 55.0（官方 commandKeyMap）")
+
+    def test_sentry_payload_not_stripped(self):
+        """哨兵需要带 cmdData ⇒ 必须在白名单里，否则会被清空。"""
+        src = (MOD / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("_M01_CMDDATA_KEYS")
+        j = src.find(")", i)
+        assert '"55.0"' in src[i:j], "哨兵须在 cmdData 白名单（否则参数被清空）"
+
+    def test_sentry_key_is_in_official_map(self):
+        """交叉校验：官方表里 Sentry 确实是 55.0。"""
+        assert mc.OFFICIAL_COMMAND_KEY_MAP.get(
+            "LXVehicleControlTypeSentry") == "55.0"
