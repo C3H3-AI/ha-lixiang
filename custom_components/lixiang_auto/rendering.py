@@ -55,6 +55,30 @@ except ImportError:  # pragma: no cover - 单测路径
 # 与 sensor.py 保持一致
 STATE_UNKNOWN = "unknown"
 
+# ★ M 系（理想ONE）充电状态文案 —— 来源：APK `index.vehicle.js` 的
+#   LXVehicleChargingStatus 官方枚举（2026-10-19 提取，15 项，非推测）。
+#   ★ 与 X 系【不是同一套】：X 系渲染只认归一化码（0/40/50/60/70/80/90/111），
+#     M 系塞的是这里的原始码 ⇒ 10 落进 else ⇒ 渲染成 None（车主报的"不对"）。
+#   ★ 实测 ONE 的 chargeStatus=10 = NotCharging（未充电）—— 语义完全吻合。
+_M01_CHARGE_TEXT = {
+    10: "未充电",
+    11: "插枪未充电",
+    20: "识别中",
+    30: "等待充电",
+    40: "电池加热中",
+    50: "充电中",
+    60: "充电完成",
+    70: "已停止充电",
+    80: "电池保温中",
+    81: "电池保持中",
+    90: "电池预热中",
+    111: "电池故障",
+    120: "拔枪后",
+    130: "已插枪",
+    140: "充电暂停",
+    141: "未知",
+}
+
 
 #: 里程统计的三个派生字段 → 上游 trip_total JSON 里的字段名（2026-09-28）
 _STAT_MILEAGE_FIELDS = {
@@ -180,6 +204,7 @@ def render_value(
             return o.get("currentVersion") or o.get("displayTargetVersion") or STATE_UNKNOWN
         except (ValueError, TypeError):
             return STATE_UNKNOWN
+
     if key == "charge_status":
         # ★ 2026-09-23 复刻 App 的 XChargeDataHandle.getChargeState()
         #   （smali:80-241）—— 不再自造枚举。
@@ -207,6 +232,15 @@ def render_value(
                 return int(v) if v is not None else None
             except (TypeError, ValueError):
                 return None
+
+        # ★★ 2026-10-19：M 系用【另一套枚举】（见 _M01_CHARGE_TEXT）。
+        #   m01_state 附带 __m01_charge = M 系原始码 ⇒ 走这张表；
+        #   没有该键（X 系）⇒ 继续走下面的 App 归一化逻辑。
+        #   ★ X 系只认归一化码（0/40/50/…），M 系是原始码（10 NotCharging…）
+        #     ⇒ 混用会落进 else 渲染成 None（车主 2026-10-19 报的"不对"）。
+        _m01 = _v("__m01_charge")
+        if _m01 is not None:
+            return _M01_CHARGE_TEXT.get(_m01, STATE_UNKNOWN)
 
         cs = _v("charge_status")
         # 预约充电判定（三条件同时满足）

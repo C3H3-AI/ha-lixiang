@@ -577,3 +577,62 @@ class TestXmodeSubSwitch:
         sig = {"value": raw}
         out = render_value("xmode", raw, sig, {"vss": {"xmode": sig}})
         assert out == "已关闭"
+
+
+class TestM01ChargeStatusEnum:
+    """★ M 系（理想ONE）充电状态用【另一套枚举】（车主 2026-10-19 报"不对"）。
+
+    现象：ONE 的 charge_status 显示为空（渲染成 None）。
+    根因：M 系塞的是**原始码**（实测 10），而渲染只认 X 系的**归一化码**
+    （0/40/50/60/70/80/90/111）⇒ 10 落进 else ⇒ None。
+
+    修复依据：APK `index.vehicle.js` 里的官方枚举 `LXVehicleChargingStatus`
+    （15 项，2026-10-19 提取，非推测）；实测 ONE 的 10 = NotCharging = 未充电。
+    """
+
+    def test_m01_enum_covers_all_15_official_values(self):
+        from rendering import _M01_CHARGE_TEXT
+
+        official = {10, 11, 20, 30, 40, 50, 60, 70, 80, 81, 90, 111, 120, 130,
+                    140, 141}
+        assert set(_M01_CHARGE_TEXT) == official, (
+            f"M 系枚举应覆盖官方 15 项，缺: {official - set(_M01_CHARGE_TEXT)}，"
+            f"多: {set(_M01_CHARGE_TEXT) - official}")
+
+    def test_m01_real_value_renders_text(self):
+        """★ 实测 ONE 的 chargeStatus=10 必须渲染成「未充电」，不是 None。"""
+        from rendering import render_value
+
+        data = {"vss": {"charge_status": {"value": 10},
+                        "__m01_charge": {"value": 10}}}
+        out = render_value("charge_status", 10, {"value": 10}, data)
+        assert out == "未充电", f"实测 10 应显示「未充电」，实际 {out!r}"
+        assert out is not None, "★ 这正是车主报的「不对」"
+
+    def test_m01_branching_states(self):
+        from rendering import render_value
+
+        for code, text in ((50, "充电中"), (60, "充电完成"),
+                           (70, "已停止充电"), (111, "电池故障")):
+            data = {"vss": {"charge_status": {"value": code},
+                            "__m01_charge": {"value": code}}}
+            got = render_value("charge_status", code, {"value": code}, data)
+            assert got == text, f"{code} 应为 {text}，实际 {got!r}"
+
+    def test_x_series_unaffected(self):
+        """★ X 系不带 __m01_charge ⇒ 必须继续走原 App 归一化逻辑。"""
+        from rendering import render_value
+
+        for code, text in ((3, "充电中"), (5, "已停止"), (2, "电池加热")):
+            data = {"vss": {"charge_status": {"value": code}}}
+            got = render_value("charge_status", code, {"value": code}, data)
+            assert got == text, f"X 系 {code} 应为 {text}，实际 {got!r}"
+
+    def test_m01_state_emits_raw_code(self):
+        """m01_state 必须同时给出原始码（渲染据此分流）。"""
+        from pathlib import Path
+        m01 = (Path(__file__).resolve().parent.parent
+               / "custom_components" / "lixiang_auto" / "m01_state.py")
+        src = m01.read_text(encoding="utf-8")
+        assert 'put("__m01_charge"' in src, (
+            "m01_state 未输出 __m01_charge ⇒ 渲染无法区分 M/X 系")

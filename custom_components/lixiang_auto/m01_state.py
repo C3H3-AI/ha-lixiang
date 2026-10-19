@@ -203,6 +203,9 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     # 充电状态（chargeSetting.chargeStatus）
     cst = _dig(res, "chargeSetting", "chargeStatus")
     put("charge_status", _num(cst.get("chargeStatus")))
+    # ★ 2026-10-19：附带 M 系【原始枚举码】，供 rendering 走官方映射表。
+    #   （X 系那套归一化码与 M 系不同：X=0/40/50/… ，M=10 NotCharging 等）
+    put("__m01_charge", _num(cst.get("chargeStatus")))
 
     # ★★★ 2026-10-18：理想ONE【专属】的 3 项功能 —— 权威清单 LXMVehicleConfig2025.json
     #   与 X 系表比对后确认只有 M 系有：SetChargeLimit（充电阈值）/
