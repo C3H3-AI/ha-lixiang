@@ -79,6 +79,21 @@ _M01_CHARGE_TEXT = {
     141: "未知",
 }
 
+# ★ M 系（理想ONE）电源模式文案 —— 来源：APK `index.vehicle.js` 的
+#   LXVehiclePowerModeStatus 官方枚举（2026-10-20 提取，非推测）：
+#     0 OFF · 1 LOCAL_ACC(ACC) · 2 LOCAL_ON(ON) · 3 INVALID
+#     · 4 REMOTE_ON(RemoteACC) · 5 ADAS_ON
+#   ★ 车主截图（2026-10-19 17:28:57）显示「电源模式 = 2」→ 实际是 ON（整车通电）
+_M01_POWER_MODE_TEXT = {
+    0: "熄火",
+    1: "ACC 通电",
+    2: "整车通电",
+    3: "无效",
+    4: "远程上电",
+    5: "智驾上电",
+}
+
+
 
 #: 里程统计的三个派生字段 → 上游 trip_total JSON 里的字段名（2026-09-28）
 _STAT_MILEAGE_FIELDS = {
@@ -175,6 +190,20 @@ def render_value(
         return None
 
     # ---- 特殊信号: 返回可读值 ----
+    # ★ 2026-10-20：M 系（理想ONE）电源模式 —— 车主截图暴露的裸值问题
+    #   官方枚举 LXVehiclePowerModeStatus（APK index.vehicle.js 实证）：
+    #     0 熄火 / 1 ACC 通电 / 2 整车通电 / 3 无效 / 4 远程上电 / 5 智驾上电
+    #   ★ 截图 17:28:57 显示「电源模式 = 2」→ 实际是"整车通电"
+    if key == "power_mode":
+        _raw = (data or {}).get("vss", {}).get("__m01_power_mode")
+        _rv = _raw.get("value") if isinstance(_raw, dict) else _raw
+        if _rv is not None:
+            try:
+                return _M01_POWER_MODE_TEXT.get(int(_rv), STATE_UNKNOWN)
+            except (TypeError, ValueError):
+                return STATE_UNKNOWN
+        return STATE_UNKNOWN if val is None else val
+
     if key == "location" and isinstance(val, str):
         try:
             loc = json.loads(val)

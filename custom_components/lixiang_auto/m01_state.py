@@ -421,6 +421,9 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     _pm = _raw(_dig(res, "vehPowerMode").get("powerMode"))
     if isinstance(_pm, str) and _pm.strip():
         put("power_mode", _pm.strip())
+        # ★ 2026-10-20：附带原始码供 rendering 走官方枚举
+        #   （车主截图显示「电源模式 = 2」裸值 —— 实际是"整车通电"）
+        put("__m01_power_mode", _pm.strip())
 
     #   B4. 远程启动状态（remoteStartStatus.startStatus: String）
     _rs = _raw(_dig(res, "remoteStartStatus").get("startStatus"))

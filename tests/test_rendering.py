@@ -636,3 +636,71 @@ class TestM01ChargeStatusEnum:
         src = m01.read_text(encoding="utf-8")
         assert 'put("__m01_charge"' in src, (
             "m01_state 未输出 __m01_charge ⇒ 渲染无法区分 M/X 系")
+
+
+class TestM01PowerMode:
+    """★ M 系电源模式（2026-10-20 车主截图暴露）。
+
+    截图：2026-10-19 17:28:57「电源模式 = 2」—— 裸数字，用户看不懂。
+    官方枚举 LXVehiclePowerModeStatus（APK index.vehicle.js 实证）：
+      0 熄火 / 1 ACC 通电 / 2 整车通电 / 3 无效 / 4 远程上电 / 5 智驾上电
+    """
+
+    def test_official_values(self):
+        from rendering import _M01_POWER_MODE_TEXT
+
+        assert _M01_POWER_MODE_TEXT[0] == "熄火"
+        assert _M01_POWER_MODE_TEXT[2] == "整车通电"
+        assert _M01_POWER_MODE_TEXT[5] == "智驾上电"
+
+    def test_screenshot_value_is_readable(self):
+        """★ 截图的 2 必须渲染成"整车通电"，不能还是 2。"""
+        from rendering import render_value
+
+        data = {"vss": {"power_mode": {"value": "2"},
+                        "__m01_power_mode": {"value": "2"}}}
+        out = render_value("power_mode", "2", {"value": "2"}, data)
+        assert out == "整车通电", f"实测 2 应显示「整车通电」，实际 {out!r}"
+        assert out is not None
+
+    def test_all_levels(self):
+        from rendering import render_value
+
+        for code, text in ((0, "熄火"), (1, "ACC 通电"), (3, "无效"),
+                           (4, "远程上电")):
+            data = {"vss": {"power_mode": {"value": code},
+                            "__m01_power_mode": {"value": code}}}
+            got = render_value("power_mode", code, {"value": code}, data)
+            assert got == text, f"{code} 应为 {text}，实际 {got!r}"
+
+    def test_x_series_unaffected(self):
+        """★ X 系不带 __m01_power_mode ⇒ 保持原样（裸值）。"""
+        from rendering import render_value
+
+        data = {"vss": {"power_mode": {"value": 2}}}
+        assert render_value("power_mode", 2, {"value": 2}, data) == 2
+
+    def test_m01_state_emits_raw(self):
+        from pathlib import Path
+
+        m01 = (Path(__file__).resolve().parent.parent
+               / "custom_components" / "lixiang_auto" / "m01_state.py")
+        src = m01.read_text(encoding="utf-8")
+        assert 'put("__m01_power_mode"' in src, (
+            "m01_state 未输出 __m01_power_mode ⇒ 渲染无法区分 M/X 系")
+
+    def test_branch_not_nested_in_charge_status(self):
+        """★ 防重复犯错：power_mode 分支必须是顶层，不能嵌在 charge_status 里。
+
+        （我第一次就把分支误插进了 charge_status 块 → power_mode 永远走不到）
+        """
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent.parent / "custom_components"
+               / "lixiang_auto" / "rendering.py").read_text(encoding="utf-8")
+        i_pm = src.find('if key == "power_mode":')
+        i_cs = src.find('if key == "charge_status":')
+        assert i_pm > 0 and i_cs > 0
+        assert i_pm < i_cs, (
+            "power_mode 分支应在 charge_status 之前（顶层特殊信号区），"
+            "否则 power_mode 永远走不到这个分支")
