@@ -463,7 +463,8 @@ class TestM01ControlDispatch:
         """send-command 只用 MESH，不需要 VAT —— 这是 ONE 能控的关键。"""
         src = (PKG / "li_api.py").read_text(encoding='utf-8')
         i = src.find("def _send_command_via_rvc")
-        body = src[i:i + 1200]
+        j = src.find("\n    def ", i + 10)
+        body = src[i:(j if j > i else i + 2500)]
         assert "send_vehicle_command" in body, "应复用已有的 send-command 方法"
         assert "VAT" not in body or "#" in body, (
             "send-command 路径不应需要 VAT（官方 subTokenData 已证实）")
@@ -593,6 +594,61 @@ class TestM01TravelQueryGated:
         assert "is_m_series" in body, (
             "行程查询未对 M 系前置拦截 ⇒ 会一直刷 WARNING")
         assert "无行程服务" in body, "应给出明确结论而不是反复报错"
+
+
+class TestM01CmdDataRule:
+    """★★ M 系的 cmdData 规则与 X 系不同（a0.smali / BaseAppWidget 实证）。
+
+    官方构造（BaseAppWidget 里锁车路径）：
+        new OperateReq; setCommandKey("remote_central_lock_lock");
+        → 直接 F(OperateReq) 发出去，**没有 setCommandData**
+
+    ⇒ 简单命令（锁/窗/尾门/寻车/充电启停）靠【独立的 cmdKey】区分动作，
+      **不需要 cmdData**。把 X 系的 {'plgPosi':'100'} / {'lockSw':'1'}
+      塞进去属于多余参数，可能被判非法。
+
+    只有两类 M 系命令确实要 cmdData：
+      ① remote_ac_ctrl_new —— 空调/座椅/方向盘全挤在这一个键，
+         靠 Type/Temp/SteerSet/FLLevel 区分（a0.d() 实证）
+      ② fTkC —— 前备箱开/关共用该键（MControlKeyConst 里都映射它）
+    """
+
+    def test_cmddata_keys_declared(self):
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert "_M01_CMDDATA_KEYS" in src, "缺 M 系 cmdData 白名单"
+        i = src.find("_M01_CMDDATA_KEYS")
+        j = src.find(")", i)
+        blob = src[i:j]
+        assert "remote_ac_ctrl_new" in blob, "空调必须允许 cmdData"
+        assert "fTkC" in blob, "前备箱必须允许 cmdData（开关共用 cmdKey）"
+
+    def test_simple_commands_strip_cmddata(self):
+        """锁车/车窗/后备箱等必须把 X 系 cmdData 清空。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _send_command_via_rvc")
+        j = src.find("\n    def ", i + 10)
+        body = src[i:(j if j > i else i + 3000)]
+        assert "_M01_CMDDATA_KEYS" in body, "下发时应按白名单决定是否带 cmdData"
+        assert "_data = {}" in body, "非白名单命令应清空 cmdData"
+
+    def test_lock_mapping_present(self):
+        """锁车键必须映射为 M 系独立 cmdKey（不是 X 系键）。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert '\"remoteVehLockControl\": \"remote_central_lock_lock\"' in src or \
+               '"remoteVehLockControl": "remote_central_lock_lock"' in src
+
+    def test_all_official_cmdkeys_declared(self):
+        """13 个官方 cmdKey 应完整声明（便于核对，防漏）。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("_M01_CMDKEYS")
+        assert i > 0, "缺官方 cmdKey 全集"
+        for k in ("fTkC", "remote_ac_ctrl_new", "remote_central_lock_lock",
+                  "remote_central_lock_unlock", "remote_charging_start",
+                  "remote_charging_stop", "remote_engine_start",
+                  "remote_plg_close", "remote_plg_open", "remote_veh_search",
+                  "remote_veh_stop_m01", "remote_window_close",
+                  "remote_window_open"):
+            assert f'"{k}"' in src[i:i + 800], f"官方 cmdKey 缺 {k}"
 
 
 class TestNoDuplicatedDetectionLogic:

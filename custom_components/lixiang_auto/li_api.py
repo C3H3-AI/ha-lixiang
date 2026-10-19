@@ -2622,6 +2622,14 @@ class LiApiClient:
         "remote_engine_start": "remote_veh_stop_m01",
     }
 
+    #: M 系里【需要 cmdData】的 cmdKey（其余一律传空 —— 靠独立 cmdKey 区分动作）
+    #:   ★ 依据：a0.smali 的 a0.d() 只给 remote_ac_ctrl_new 建 HashMap，
+    #:     BaseAppWidget 的锁车/车窗/后备箱路径只 setCommandKey 不 setCommandData。
+    _M01_CMDDATA_KEYS: tuple[str, ...] = (
+        "remote_ac_ctrl_new",   # 空调/座椅加热/S 方向盘：靠 Type/Temp/SteerSet/FLLevel
+        "fTkC",                 # 前备箱开/关共用该键（官方 FrontTrunkOpen/Close 都映射它）
+    )
+
     #: M 系官方 cmdKey 全集（13 个，来源：LXMVehicleConfig2025.json + MControlKeyConst）
     _M01_CMDKEYS: tuple[str, ...] = (
         "fTkC",
@@ -2701,7 +2709,24 @@ class LiApiClient:
         ★ 只用 MESH token —— 不需要 VAT（官方 subTokenData 已证实）。
         """
         key = self._M01_CMDKEY_MAP.get(command_key, command_key)
-        res = self.send_vehicle_command(key, command_data or {}, poll=poll)
+
+        # ★★ 2026-10-19（a0.smali 实证）：M 系的 cmdData 规则与 X 系【不同】
+        #   官方构造（BaseAppWidget 里锁车/车窗/后备箱的下发路径）：
+        #       new OperateReq; setCommandKey("remote_central_lock_lock");
+        #       → 直接 F(OperateReq) 发出去，**没有 setCommandData**
+        #   ⇒ 这些命令靠【独立的 cmdKey】区分动作，**不需要 cmdData**。
+        #   ⇒ 若把 X 系的 {'plgPosi':'100'} / {'lockSw':'1'} 塞进去，
+        #      属于多余参数，可能被服务端判非法。
+        #
+        #   只有两类 M 系命令确实需要 cmdData：
+        #     ① remote_ac_ctrl_new —— 空调/座椅/方向盘全都挤在这个键上，
+        #        靠 cmdData 的 Type/Temp/SteerSet/FLLevel… 区分（a0.d() 实证）
+        #     ② fTkC —— 前备箱开/关共用该键（MControlKeyConst 里
+        #        FrontTrunkOpen 与 FrontTrunkClose 都映射到 fTkC）
+        _data = dict(command_data or {})
+        if key not in self._M01_CMDDATA_KEYS:
+            _data = {}
+        res = self.send_vehicle_command(key, _data, poll=poll)
         # 形状对齐：send_command 返回 {...}、调用方读 resultCode / msg
         return {
             "ok": bool(res.get("ok")),
