@@ -169,6 +169,9 @@ class LiCarCoordinator(DataUpdateCoordinator[dict]):
         # ★ 2026-10-11：任务大师列表（HTTP 600s 一次；创建/启停后主动失效）
         #   间隔放宽的原因见 const.TASK_POLL_INTERVAL_SECONDS（单设备登录顶号）
         self._task_ts: dict[str, float] = {}
+        self._task_permanent: dict[str, str] = {}   # ★ 2026-10-19 补声明
+        #   （2026-10-18 引入「永久失败不再重试」时漏了初始化 ⇒ 13:39 日志报
+        #    AttributeError: no attribute '_task_permanent'）
         self._task_cache: dict[str, list] = {}
         self._task_error: dict[str, str] = {}   # route_id → 最近一次拉取错误
         # ★ 2026-10-11：任务条件/动作字典（服务端下发，见 task_dict.py）

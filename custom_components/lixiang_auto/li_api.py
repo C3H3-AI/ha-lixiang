@@ -1055,23 +1055,18 @@ class LiApiClient:
                 #   ⇒ 真因是【这套「cmdKey:VIN」scope 属于 X 系，M 系不认】。
                 #   按是否 M 系给两种准确说法，避免继续误导用户。
                 # ★ 判据用 get_vehicles()（已调过、无额外网络开销）：
-                #   ★ 2026-10-19：这条判据（modelId 前缀 / modelName 含 M01）
-                #     **未实测**且 modelId 往往取不到 ⇒ 只作兜底提示用；
-                #     车控通道分派已改用「real-time-state 独有字段」这个事实判据。
-                _is_m = False
+                # ★ 2026-10-19：与车控分派【用同一个可靠判据】——
+                #   之前这里自己抄了一份 modelId 前缀判据，而那份判据
+                #   未实测且 modelId 往往取不到 ⇒ 恒 False ⇒ 文案分错支。
+                #   教训：同一个判断在两处各写一遍，迟早只改一处。
                 try:
-                    _vs = self.get_vehicles() or []
-                    for _v in _vs:
-                        if str(_v.get("vin") or "") != self._vin:
-                            continue
-                        _mid = str(_v.get("modelId") or "")
-                        _mn = str(_v.get("modelName") or "")
-                        _is_m = _mid.startswith("1002043") or "M01" in _mn
-                        break
+                    _is_m = self._use_send_command_channel()
                 except Exception:  # noqa: BLE001
                     _is_m = False
                 if _is_m:
-                    # ★ 2026-10-19 更新：M 系车控已适配（改走 send-command，只用 MESH）。
+                    # ★ 2026-10-19 更新：M 系车控【代码已改走】send-command
+                    #   （只用 MESH），依据充分；但**尚未经真车验证**，措辞
+                    #   不能说成「已适配」（教训：别把代码写对说成问题解决）。
                     #   走到这里说明**仍然**被拒 —— 即便如此，也不是"尚未适配"，
                     #   而是该车/该账号的具体限制。措辞必须如实，不要误导车主。
                     _why = ("服务端拒绝了该 M 系车型（理想ONE）的这次车控授权"
@@ -2569,6 +2564,23 @@ class LiApiClient:
 
     def _use_send_command_channel(self) -> bool:
         """本车是否应走 send-command（M 系专用通道）而非 cmd/send。
+
+        ################ ################  重要提醒  ################ ################
+        # ★★ 静态逆向的产出只是【必要条件】，不是【充分条件】★
+        #
+        #   本函数配套的证据（均可复核，不是猜测）：
+        #     ① M 系配置表 LXMVehicleConfig2025.json 70 条全带 sendUrl
+        #     ② subTokenData 权威表：send-command 只需 MESH，VAT 属 cmd/send 专用
+        #     ③ MControlKeyConst：M 系 13 个真实 cmdKey
+        #     ④ 请求体字段 / ⑤ 回查规则（成功 5、失败 7、30 秒窗口）
+        #
+        #   ★ 但"读懂了说明书"≠"钥匙能转这扇锁"——
+        #     真实下发是否成功，**只有真车能回答**。
+        #     2026-10-19 教训（本判据曾恒为 False 而静态完全查不出来：
+        #     因为那不是协议问题，是代码写错了）：
+        #       —— 别把「静态全部确认」说成「已适配/已解决」。
+        #       —— 要说「代码已改对、依据充分，待真机确认」。
+        ##############################################################################
 
         ★★ 2026-10-19 更正（原实现有严重缺陷）：
           原判据是 `modelId.startswith("1002043")` 或 `platform=="1"`，

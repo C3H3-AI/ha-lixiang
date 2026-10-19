@@ -532,6 +532,84 @@ class TestM01DispatchCriterionIsFactBased:
             "文案过时：M 系车控已改走 send-command，不能再说尚未适配")
 
 
+class TestNoDuplicatedDetectionLogic:
+    """★ 同一个判断不得在两处各写一遍（2026-10-19 自查发现）。
+
+    教训：beta.4 我改了「车控分派」的车型判据（改成事实判据），
+    却忘了「错误文案分支」还在用同一份**旧的烂判据**
+    （modelId 前缀，未实测且取不到）⇒ 文案会分错支。
+    ⇒ 「同一个判断写两遍」= 迟早只改其中一处。
+    """
+
+    def test_error_branch_reuses_dispatch_criterion(self):
+        """文案分支必须调用 _use_send_command_channel，而不是自己判车型。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("_is_m = self._use_send_command_channel()")
+        assert i > 0, "文案分支应调用 _use_send_command_channel()"
+        body = src[i:i + 200]
+        assert "_use_send_command_channel()" in body, (
+            "文案分支应复用车控分派的判据，不要自己抄一份")
+        assert "1002043" not in body, "文案分支不应再出现未实测的 modelId 前缀"
+
+    def test_only_one_place_decides_m_series(self):
+        """全库只应有一处「这车是不是 M 系」的判定实现。"""
+        import glob
+        import os
+
+        # m01_state.is_m_series 是能力表口径（供有 ability 的调用方用）
+        # li_api._use_send_command_channel 是网络口径（供 li_api 用）
+        # ★ 两者是不同数据源，允许并存；但 li_api 内部不得再出现第三份。
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        code = re.sub(r'""".*?"""', "", src, flags=re.S)
+        code = "\n".join(ln for ln in code.splitlines()
+                         if not ln.strip().startswith("#"))
+        # li_api 里只能有一处读 M 系独有字段的判断
+        assert code.count("_M01_ONLY_FIELDS") <= 2, (
+            "li_api 里出现多处车型判定，应统一到 _use_send_command_channel")
+        # 不得再有 modelId 前缀判据
+        assert "startswith(\"1002043\")" not in code
+
+
+class TestCoordinatorAttrsAllDeclared:
+    """★ 拦「用而未声明」的属性（2026-10-19 实机日志暴露）。
+
+    实机 WARNING：
+      任务大师列表拉取异常: 'LiCarCoordinator' object has no attribute
+      '_task_permanent'
+    根因：2026-10-18 引入「永久失败不再重试」时加了 3 处**使用**，
+          却漏了 `__init__` 里的**初始化** ⇒ 每轮任务大师拉取都抛异常。
+    """
+
+    def test_task_permanent_declared(self):
+        """_task_permanent 必须在 __init__ 里初始化（不是只有使用）。"""
+        src = (PKG / "coordinator.py").read_text(encoding="utf-8")
+        assert "self._task_permanent: dict[str, str] = {}" in src, (
+            "缺 _task_permanent 初始化声明 ⇒ 实机每轮任务大师都抛 AttributeError")
+
+    def test_no_attr_used_without_declaring(self):
+        """通用守卫：self._xxx 若被当【数据】用，就必须有初始化声明。
+
+        ★ 只看「赋值/读取数据」的用法 —— `self._foo(` 是方法调用，
+          方法的定义是 `def _foo(self)`，不属于未声明属性。
+        """
+        import re as _re
+
+        src = (PKG / "coordinator.py").read_text(encoding="utf-8")
+        # ① 初始化声明：self._xxx = / self._xxx: T = ...
+        declared = set(_re.findall(r"self\.(_[A-Za-z0-9_]+)\s*(?::[^=]+)?=", src))
+        # ② 类里定义的方法名
+        methods = set(_re.findall(r"^\s{4}def (_[A-Za-z0-9_]+)\(", src, _re.M))
+        methods |= set(_re.findall(r"^\s{4}async def (_[A-Za-z0-9_]+)\(", src, _re.M))
+        # ③ 全部 self._xxx 引用，排除「紧跟左括号」的（= 方法调用）
+        # ★ 先剥掉注释行 —— 注释里的示例代码不是真代码
+        code = "\n".join(ln for ln in src.splitlines()
+                            if not ln.strip().startswith("#"))
+        used = set(_re.findall(r"self\.(_[A-Za-z0-9_]+)\b(?!\s*\()", code))
+        provided = {"_hass", "_config_entry", "_api", "_api_m"}
+        missing = sorted(used - declared - methods - provided)
+        assert not missing, (
+            f"这些属性被当数据用但没有初始化声明（实机会抛 AttributeError）: {missing}")
+
 class TestM01Mapping:
     """real-time-state → signal-key 映射的正确性（用实车真值）。"""
 
