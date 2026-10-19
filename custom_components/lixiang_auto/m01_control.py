@@ -253,3 +253,92 @@ def translate(cmd_data: dict[str, Any] | None, *,
         return build_rapid(heat=False, temp=temp)
 
     return None
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ★★★ 官方 commandKeyMap（权威表，19 条）★★★
+#
+# 来源：`com/chehejia/lib/vehicle/m/model/control/VehicleControlModel.smali`
+#       的 `commandKeyMap`（Kotlin Pair 逐条构造，2026-10-20 逐条提取）
+#
+# 【命名键 11 条】—— 已在本模块/li_api 中实现
+# 【数字键 8 条】—— 服务端接受**数字字符串**当 commandKey（M 系老协议特色）
+#                   ⚠️ 但这 8 条的 **cmdData 格式尚无静态证据**，
+#                      直接发空 cmdData 是猜测（违反「不猜」纪律）⇒ 未启用。
+#                      它们对应的能力（拍照/哨兵/唤醒/电池加热/充电目标/
+#                      预约充电/预约OTA/预约空调）待补齐 cmdData 后再接。
+# ══════════════════════════════════════════════════════════════════════════
+OFFICIAL_COMMAND_KEY_MAP: dict[str, str] = {
+    # ── 命名键（已实现）────────────────────────────────────────
+    "LXVehicleControlTypeDoorUnlock": "remote_central_lock_unlock",
+    "LXVehicleControlTypeDoorlock": "remote_central_lock_lock",
+    "LXVehicleControlTypeOpenWindow": "remote_window_open",
+    "LXVehicleControlTypeCloseWindow": "remote_window_close",
+    "LXVehicleControlTypeOpenTrunk": "remote_plg_open",
+    "LXVehicleControlTypeCloseTrunk": "remote_plg_close",
+    "LXVehicleControlTypeLocation": "remote_veh_search",
+    "LXVehicleControlTypeRemoteStart": "remote_engine_start",
+    "LXVehicleControlTypeOpenAC": "remote_ac_ctrl_new",
+    "LXVehicleControlTypeStartCharging": "remote_charging_start",
+    "LXVehicleControlTypeStopCharging": "remote_charging_stop",
+    # ── 数字键（commandKey 已知，cmdData 待查 ⇒ 未启用）─────────
+    "LXVehicleControlTypeStartPhoto": "50.0",
+    "LXVehicleControlTypeSentry": "55.0",
+    "LXVehicleControlTypeWakeUp": "60.0",
+    "LXVehicleControlTypeBatteryHeat": "100.0",
+    "LXVehicleControlTypeChargingTarget": "101.0",
+    "LXVehicleControlTypeAppointmentCharging": "102.0",
+    "LXVehicleControlTypeAppointmentOTA": "103.0",
+    "LXVehicleControlTypeAppointmentAC": "104.0",
+}
+
+#: 数字型 commandKey → 中文名（便于日志与诊断；★ 未启用下发）
+NUMERIC_COMMAND_KEYS: dict[str, str] = {
+    "50.0": "远程拍照",
+    "55.0": "哨兵模式",
+    "60.0": "唤醒车辆",
+    "100.0": "电池加热",
+    "101.0": "充电目标",
+    "102.0": "预约充电",
+    "103.0": "预约 OTA",
+    "104.0": "预约空调",
+}
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ★ M 系「设置类」命令的参数体系（`MSubKeyConst` / `MParamsConst` 实证）
+#
+#   MParamsConst：sub_key / interval_time        ← cmdData 的字段名
+#   MSubKeyConst：photo / charge / OTA / Healthy / Maintain / MinusScreen /
+#                 AcAppointment                  ← sub_key 的取值
+#
+# 官方构造（VehicleControlDockingDelegate.smali 实证）：
+#   LinkedHashMap cmdData = {"sub_key": "MinusScreen"}
+# ⇒ 设置类命令的 cmdData 形如 {"sub_key": "<值>"}（可再加参数字段）。
+#
+# ★★ 重要：上面 8 条数字键里，6 条我们**早就用专用 HTTP 端点实现了** ✔
+#    （比 send-command 更可靠，不依赖 cmdData 猜测）：
+#      50.0  拍照      → EP_SVM_TAKE_PHOTO      ✔
+#      60.0  唤醒      → EP_WAKEUP              ✔
+#      100.0 电池加热  → EP_BATTERY_WARM        ✔
+#      101.0 充电目标  → EP_CHARGE_THRESHOLD    ✔
+#      102.0 预约充电  → EP_CHARGE_APPOINTMENT  ✔
+#      104.0 预约空调  → EP_AC_APPOINTMENT      ✔
+#      103.0 预约OTA   → EP_OTA_UPGRADE         ✔
+#    ⇒ 唯一真正缺的是 **55.0 哨兵模式**（无专用端点，cmdData 无静态证据）。
+# ══════════════════════════════════════════════════════════════════════════
+SUB_KEY_PARAM = "sub_key"
+INTERVAL_TIME_PARAM = "interval_time"
+
+SUB_KEYS: dict[str, str] = {
+    "photo": "photo",
+    "charge": "charge",
+    "ota": "OTA",
+    "healthy": "Healthy",
+    "maintain": "Maintain",
+    "minus_screen": "MinusScreen",
+    "ac_appointment": "AcAppointment",
+}
+
+#: 哨兵模式（55.0）—— ⚠️ cmdData 无静态证据，暂不下发（保持只读）
+SENTRY_COMMAND_KEY = "55.0"

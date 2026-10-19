@@ -239,3 +239,81 @@ class TestWiring:
         body = src[i:i + 1200]
         assert "acOffStatus" in body
         assert "== 0" in body, "OffStatus=0 表示空调开着（取反）"
+
+
+class TestOfficialCommandKeyMap:
+    """★ 官方 commandKeyMap（VehicleControlModel.smali，19 条）必须原样保留。
+
+    这是 M 系「能力名 → 实际 commandKey」的权威映射。数字键（50.0/55.0/…）
+    说明服务端确实接受数字字符串当 commandKey —— 这是 M 系老协议特色。
+    """
+
+    def test_map_has_nineteen_entries(self):
+        assert len(mc.OFFICIAL_COMMAND_KEY_MAP) == 19
+
+    def test_named_keys(self):
+        m = mc.OFFICIAL_COMMAND_KEY_MAP
+        assert m["LXVehicleControlTypeDoorlock"] == "remote_central_lock_lock"
+        assert m["LXVehicleControlTypeDoorUnlock"] == "remote_central_lock_unlock"
+        assert m["LXVehicleControlTypeOpenWindow"] == "remote_window_open"
+        assert m["LXVehicleControlTypeOpenTrunk"] == "remote_plg_open"
+        assert m["LXVehicleControlTypeLocation"] == "remote_veh_search"
+        assert m["LXVehicleControlTypeOpenAC"] == "remote_ac_ctrl_new"
+        assert m["LXVehicleControlTypeStartCharging"] == "remote_charging_start"
+
+    def test_numeric_keys_present(self):
+        m = mc.OFFICIAL_COMMAND_KEY_MAP
+        assert m["LXVehicleControlTypeStartPhoto"] == "50.0"
+        assert m["LXVehicleControlTypeSentry"] == "55.0"
+        assert m["LXVehicleControlTypeWakeUp"] == "60.0"
+        assert m["LXVehicleControlTypeChargingTarget"] == "101.0"
+
+    def test_numeric_keys_not_activated(self):
+        """★ 数字键的 cmdData 无证据 ⇒ 不得出现在可下发路径里。"""
+        assert set(mc.NUMERIC_COMMAND_KEYS) == {
+            "50.0", "55.0", "60.0", "100.0", "101.0", "102.0", "103.0", "104.0"}
+        # build_* / translate 不应产出数字键
+        for ac_on in (True, False, None):
+            for fn in (lambda: mc.build_seat("fl", 2, ac_on=ac_on),
+                       lambda: mc.build_wheel_heat(on=True, ac_on=ac_on),
+                       lambda: mc.build_ac_switch(on=True, temp=22.0),
+                       lambda: mc.build_ac_temp(21.0, ac_on=ac_on)):
+                key, _ = fn()
+                assert key not in mc.NUMERIC_COMMAND_KEYS, (
+                    f"{key} 是数字键，但其 cmdData 尚无证据，不应下发")
+
+
+class TestSettingCommandParams:
+    """M 系「设置类」命令的参数体系（MSubKeyConst / MParamsConst 实证）。
+
+    官方构造（VehicleControlDockingDelegate.smali）：
+        cmdData = LinkedHashMap{"sub_key": "MinusScreen"}
+    """
+
+    def test_param_names(self):
+        assert mc.SUB_KEY_PARAM == "sub_key"
+        assert mc.INTERVAL_TIME_PARAM == "interval_time"
+
+    def test_sub_keys_match_official(self):
+        """sub_key 取值必须与 MSubKeyConst 完全一致。"""
+        assert set(mc.SUB_KEYS.values()) == {
+            "photo", "charge", "OTA", "Healthy", "Maintain", "MinusScreen",
+            "AcAppointment"}
+
+    def test_numeric_capabilities_mostly_have_dedicated_endpoints(self):
+        """★ 数字键 8 条里 7 条已有专用端点（更可靠）⇒ 不必猜 cmdData。"""
+        src = (MOD / "li_api.py").read_text(encoding="utf-8")
+        for ep in ("EP_SVM_TAKE_PHOTO", "EP_WAKEUP", "EP_BATTERY_WARM",
+                   "EP_CHARGE_THRESHOLD", "EP_CHARGE_APPOINTMENT",
+                   "EP_AC_APPOINTMENT", "EP_OTA_UPGRADE"):
+            assert ep in src, f"{ep} 缺失（数字键能力的专用端点）"
+
+    def test_sentry_not_activated(self):
+        """哨兵（55.0）cmdData 无证据 ⇒ 不得出现在可下发路径。"""
+        assert mc.SENTRY_COMMAND_KEY == "55.0"
+        for ac_on in (True, False, None):
+            for fn in (lambda: mc.build_seat("fl", 1, ac_on=ac_on),
+                       lambda: mc.build_wheel_heat(on=True, ac_on=ac_on),
+                       lambda: mc.build_ac_switch(on=True, temp=22.0)):
+                key, _ = fn()
+                assert key != mc.SENTRY_COMMAND_KEY
