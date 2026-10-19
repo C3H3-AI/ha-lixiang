@@ -2713,6 +2713,31 @@ class LiApiClient:
             pass
         return False
 
+    def _m01_ac_is_on(self) -> bool | None:
+        """空调当前是否开着（供 M 系 AC 命令构造用）。
+
+        ★ 官方 a0 各方法都用 `status/e->k()` 判断空调状态来决定
+          发哪个 commandKey（开着 → remote_ac_ctrl_new + Type；
+          关着 → remote_XX_adjut / remote_ai_temp_ctrl_ex_on）。
+        ⇒ 我们也必须判断，数据来自 real-time-state 的
+          `airConditioningStatus.acOffStatus.value`。
+          ★ 字段名叫 **Off**Status ⇒ **0 表示没关（即开着）**，要取反。
+          拿不到（还没拉过状态）时返回 None，让构造器走"未知"分支。
+        """
+        rts = self._last_rts or {}
+        acs = rts.get("airConditioningStatus") if isinstance(rts, dict) else None
+        if not isinstance(acs, dict):
+            return None
+        off = acs.get("acOffStatus")
+        if isinstance(off, dict):
+            off = off.get("value")
+        if off is None:
+            return None
+        try:
+            return int(float(off)) == 0
+        except (TypeError, ValueError):
+            return None
+
     def _send_command_via_rvc(self, command_key: str,
                               command_data: dict | None,
                               *, poll: bool, timeout: float) -> dict:
@@ -2739,6 +2764,22 @@ class LiApiClient:
         _data = dict(command_data or {})
         if key not in self._M01_CMDDATA_KEYS:
             _data = {}
+        else:
+            # ★★ 2026-10-20：M 系的 AC 家族（空调/座椅/方向盘/快冷快热）
+            #   与 X 系是【两套协议】—— 我们的各平台传的是 X 系
+            #   {acCtrlType, acCtrlValue, acCtrlTemp}，必须先翻译成
+            #   M 系的 {Type:"编号", Temp:"21.5"} 或
+            #   {FLLevel:"2", FLLevelFeedBack:"1"}（见 m01_control 模块，
+            #   依据 a0.smali 的 a()~k() 逐方法反汇编）。
+            try:
+                from .m01_control import translate as _m01_translate
+                _ac_on = self._m01_ac_is_on()
+                _tr = _m01_translate(_data, ac_on=_ac_on)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("M 系 AC 翻译失败（按原样下发）: %s", err)
+                _tr = None
+            if _tr is not None:
+                key, _data = _tr
         res = self.send_vehicle_command(key, _data, poll=poll)
         # 形状对齐：send_command 返回 {...}、调用方读 resultCode / msg
         return {
