@@ -312,6 +312,8 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
                 #   取反：0(不关) → 1(开)；1(关) → 0(关)
                 _v = 0 if _v else 1
             put(key, _v)
+            # ★ 2026-10-20：附带 M 系原始码（取反后的 ac_on）供渲染翻译
+            put("__m01_" + key, _v)
 
     # 剩余油量（chargeSetting.enduranceStatus.residueFuel，单位 %）
       # ★ 2026-10-14：原注释写 L 有误，证据见 sensor.py 中 fuel_level 注释
@@ -328,11 +330,13 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     _rl = _num(_dig(res, "ringLightStatus").get("status"))
     if _rl is not None:
         put("ring_light", _rl)
+        put("__m01_ring_light", _rl)
 
     # 车内是否有钥匙（keyInCarWarning.warning，实测 "0"）
     _ki = _num(_dig(res, "keyInCarWarning").get("warning"))
     if _ki is not None:
         put("key_in_car_warning", _ki)
+        put("__m01_key_in_car", _ki)
 
     # 五门（★ App 侧：doorSwitchStatus.<门>.isOpen，类型是 String）
     doors = res.get("doorSwitchStatus")
@@ -385,6 +389,7 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     _ccv = _dig(res, "caseCoverStatus").get("switchState")
     if _ccv is not None:
         put("charge_port_lid", _int01(_ccv))
+        put("__m01_charge_lid", _ccv)
 
     # ── A2. 方向盘加热（wheelWarmStatus.warmOnOff: String）
     #   映射到已有信号 wheel_heat（L 系走 VSS，M 系此前恒为 unknown）
@@ -429,6 +434,7 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     _rs = _raw(_dig(res, "remoteStartStatus").get("startStatus"))
     if isinstance(_rs, str) and _rs.strip():
         put("remote_start_status", _rs.strip())
+        put("__m01_remote_start", _rs)
 
     #   B5-B7. 今日行程（vehEnergy.todayEnergy: {mileage, elecEnergy, fuelConsumption}）
     _te = _dig(res, "vehEnergy", "todayEnergy")

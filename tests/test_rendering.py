@@ -704,3 +704,69 @@ class TestM01PowerMode:
         assert i_pm < i_cs, (
             "power_mode 分支应在 charge_status 之前（顶层特殊信号区），"
             "否则 power_mode 永远走不到这个分支")
+
+
+class TestM01SwitchSignals:
+    """★ M 系一批「开关/布尔」信号翻译（2026-10-20 车主截图驱动）。
+
+    ★★ 判定前提（避免「用状态冒充开关」这个坑）：
+      这些字段在官方响应里是**开关位/布尔**（switchState / status / warning /
+      startStatus / acOffStatus），不是状态枚举 ⇒ 翻译为 开/关 或 有/无 是安全的。
+
+    实测来源（真实 ONE 响应）：
+      caseCoverStatus.switchState="0"    → 充电口盖
+      ringLightStatus.status="1"         → 环灯
+      keyInCarWarning.warning="0"        → 钥匙在车提醒
+      remoteStartStatus.startStatus="0"  → 远程启动
+      airConditioningStatus.acOffStatus="0"（取反后 ac_on=1）
+    """
+
+    @staticmethod
+    def _render(key, code, raw_key):
+        from rendering import render_value
+
+        data = {"vss": {key: {"value": code}, raw_key: {"value": code}}}
+        return render_value(key, code, {"value": code}, data)
+
+    @pytest.mark.parametrize("key,raw,zero,one", [
+        ("charge_port_lid", "__m01_charge_lid", "关闭", "开启"),
+        ("ring_light", "__m01_ring_light", "关闭", "开启"),
+        ("key_in_car_warning", "__m01_key_in_car", "正常", "钥匙在车内"),
+        ("remote_start_status", "__m01_remote_start", "未启动", "已启动"),
+        ("ac_on", "__m01_ac_on", "关闭", "开启"),
+    ])
+    def test_switch_translations(self, key, raw, zero, one):
+        assert self._render(key, 0, raw) == zero
+        assert self._render(key, 1, raw) == one
+
+    @pytest.mark.parametrize("key", ["charge_port_lid", "ring_light",
+                                     "key_in_car_warning",
+                                     "remote_start_status", "ac_on"])
+    def test_x_series_unaffected(self, key):
+        """★ X 系不带 __m01_ 标记 ⇒ 保持裸值（不得被误翻译）。"""
+        from rendering import render_value
+
+        data = {"vss": {key: {"value": 1}}}
+        assert render_value(key, 1, {"value": 1}, data) == 1
+
+    def test_mapping_table_structure(self):
+        from rendering import _M01_SWITCH_TEXT
+
+        assert set(_M01_SWITCH_TEXT) == {
+            "ring_light", "key_in_car_warning", "charge_port_lid",
+            "remote_start_status", "ac_on"}
+        for tbl in _M01_SWITCH_TEXT.values():
+            assert 0 in tbl and 1 in tbl
+
+    def test_m01_state_emits_all_raw_codes(self):
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent.parent / "custom_components"
+               / "lixiang_auto" / "m01_state.py").read_text(encoding="utf-8")
+        # 显式 put 的四个
+        for tag in ("__m01_ring_light", "__m01_key_in_car", "__m01_charge_lid",
+                    "__m01_remote_start"):
+            assert tag in src, f"m01_state 未输出 {tag} ⇒ 渲染无法区分 M/X 系"
+        # ac_on 走的是 AC 批量循环里的动态拼接 '"__m01_" + key'（不写字面量）
+        assert '"__m01_" + key' in src, (
+            "AC 批量循环应动态附带 __m01_<key>（ac_on 由此产生）")

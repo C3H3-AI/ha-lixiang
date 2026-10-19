@@ -93,6 +93,26 @@ _M01_POWER_MODE_TEXT = {
     5: "智驾上电",
 }
 
+# ★ M 系（理想ONE）一批「开关/布尔」信号的文案 —— 2026-10-20 车主截图驱动。
+#   ★ 判定依据：这些字段在官方响应里是 **开关位**（switchState / status /
+#     warning / startStatus），不是"状态枚举" ⇒ 可安全翻译为 开/关 或 有/无，
+#     不会出现「用状态冒充开关」的问题（那正是本项目踩过的坑）。
+#
+#   实测来源（真实 ONE 响应）：
+#     caseCoverStatus.switchState = "0"   → 充电口盖（0 关 / 1 开）
+#     ringLightStatus.status      = "1"   → 环灯（0 灭 / 1 亮）
+#     keyInCarWarning.warning     = "0"   → 钥匙在车提醒（0 正常 / 非 0 告警）
+#     remoteStartStatus.startStatus="0"   → 远程启动（0 未启动 / 1 已启动）
+_M01_SWITCH_TEXT: dict[str, dict[int, str]] = {
+    "ring_light": {0: "关闭", 1: "开启"},
+    "key_in_car_warning": {0: "正常", 1: "钥匙在车内"},
+    "charge_port_lid": {0: "关闭", 1: "开启"},
+    "remote_start_status": {0: "未启动", 1: "已启动"},
+    # ac_on：acOffStatus(0=不关) 已在 m01_state 取反 ⇒ 1=空调开 / 0=关
+    "ac_on": {0: "关闭", 1: "开启"},
+}
+
+
 
 
 #: 里程统计的三个派生字段 → 上游 trip_total JSON 里的字段名（2026-09-28）
@@ -203,6 +223,25 @@ def render_value(
             except (TypeError, ValueError):
                 return STATE_UNKNOWN
         return STATE_UNKNOWN if val is None else val
+
+    # ★ 2026-10-20：M 系一批开关/布尔信号（同上，车主截图驱动的裸值问题）
+    if key in _M01_SWITCH_TEXT:
+        _tag = "__m01_" + {
+            "ring_light": "ring_light",
+            "key_in_car_warning": "key_in_car",
+            "charge_port_lid": "charge_lid",
+            "remote_start_status": "remote_start",
+            "ac_on": "ac_on",
+        }.get(key, "")
+        _s = (data or {}).get("vss", {}).get(_tag)
+        _rv = _s.get("value") if isinstance(_s, dict) else _s
+        if _rv is not None:
+            try:
+                return _M01_SWITCH_TEXT[key].get(int(_rv), STATE_UNKNOWN)
+            except (TypeError, ValueError):
+                return STATE_UNKNOWN
+        return STATE_UNKNOWN if val is None else val
+
 
     if key == "location" and isinstance(val, str):
         try:
