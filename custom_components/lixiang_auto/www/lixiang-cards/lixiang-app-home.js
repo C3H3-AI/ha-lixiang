@@ -534,7 +534,17 @@ const STYLE = `
                     display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
                     overflow:hidden; }
   /* 里程卡比上排略高（App 约 213px）—— 右列是「电量 + 哨兵」两张堆叠 */
-  .mile { min-height:clamp(196px, 54vw, 232px); }
+  /* ★ 2026-10-20：补 flex 布局 —— 此前只有 min-height，内容顶贴、
+     卡片下半大片空白（截图发现：里程/电量卡数字贴顶、下面空一大块）。
+     与 .ac/.loc 的 space-between 保持一致。*/
+  .mile { min-height:clamp(196px, 54vw, 232px); display:flex;
+          flex-direction:column; justify-content:space-between; }
+  .batt { min-height:clamp(196px, 54vw, 232px); display:flex;
+          flex-direction:column; justify-content:space-between; }
+  /* ★ 2026-10-20：给 .cap 一个通用基线 —— 此前只有 .mile .cap 有定义，
+     .batt .cap 等落到 div 默认（16px/深色），与里程卡完全不协调。
+     （真浏览器审计发现：mile.cap 13px/#9A9A9A vs batt.cap 16px/#1A1A1A）*/
+  .cap { font-size:13px; color:var(--lx-t3); margin-top:4px; line-height:1.3; }
   .mile .big { font-family:"LxNum","Licium"; font-size:30px; font-weight:600; line-height:1.1; }
   .mile .big small { font-size:14px; font-weight:500; color:var(--lx-t2); margin-left:3px; }
   .mile .cap { font-size:13px; color:var(--lx-t3); margin-top:4px; }
@@ -554,7 +564,9 @@ const STYLE = `
                        font-size:12px; color:var(--lx-t2); }
   .batt .batt-remain .ic { font-size:11px; }
   .batt .row img { width:26px; height:26px; }
-  .batt .big { font-family:"LxNum","Licium"; font-size:28px; font-weight:600; line-height:1.05; }
+  /* ★ 2026-10-20：与 .mile 统一为 30px —— 相邻两卡数字大小不同会显得没对齐。
+     （真浏览器审计发现：mile 30px / batt 28px）*/
+  .batt .big { font-family:"LxNum","Licium"; font-size:30px; font-weight:600; line-height:1.05; }
   .batt .big small { font-size:15px; font-weight:500; color:var(--lx-t2); }
   .sentry { display:flex; align-items:center; gap:12px; min-height:76px; }
   .sentry img { width:26px; height:26px; }
