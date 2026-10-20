@@ -463,7 +463,8 @@ class TestM01ControlDispatch:
         """send-command 只用 MESH，不需要 VAT —— 这是 ONE 能控的关键。"""
         src = (PKG / "li_api.py").read_text(encoding='utf-8')
         i = src.find("def _send_command_via_rvc")
-        body = src[i:i + 1200]
+        j = src.find("\n    def ", i + 10)
+        body = src[i:(j if j > i else i + 2500)]
         assert "send_vehicle_command" in body, "应复用已有的 send-command 方法"
         assert "VAT" not in body or "#" in body, (
             "send-command 路径不应需要 VAT（官方 subTokenData 已证实）")
@@ -531,6 +532,242 @@ class TestM01DispatchCriterionIsFactBased:
         assert "M 系的授权体系尚未适配" not in src, (
             "文案过时：M 系车控已改走 send-command，不能再说尚未适配")
 
+
+class TestM01MeshScopeIsOfficialFullPackage:
+    """★★ 2026-10-19 车主日志实证的决定性 bug：M 系取 token 就被 SSO 拒。
+
+    日志原文：
+      车控 remoteVehPlgControl 失败: 换 token 失败
+        （scope=remote-wakeup:wakeup veh-ctrl:cmd-send veh-ctrl:cmd-result-get,
+         error=access_denied）
+
+    根因：`SCOPE_MESH` 只有 **3 项**，而官方 subTokenData 里
+    `httpLiMeshServiceV2.scope` 是 **5 项**（多 vss:get-batch + task-master）。
+    我们 2026-10-08 早就实测过：**单换子集被 SSO 拒绝，完整五件套才行**
+    （App 从不单换，只用完整包）。⇒ 3 项直接被拒，根本没走到 send-command。
+    """
+
+    def test_full_scope_has_exactly_official_five(self):
+        """SCOPE_MESH_FULL 必须严格等于官方 5 项（顺序无关）。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("SCOPE_MESH_FULL = (")
+        assert i > 0, "缺 SCOPE_MESH_FULL"
+        j = src.find(")", i)
+        blob = src[i:j]
+        official = {"remote-wakeup:wakeup", "veh-ctrl:cmd-result-get",
+                    "veh-ctrl:cmd-send", "vss:get-batch", "task-master"}
+        for item in official:
+            assert item in blob, f"完整包缺 {item}"
+        # 恰好 5 项
+        assert len([x for x in official if x in blob]) == 5
+
+    def test_mesh_token_branches_on_m_series(self):
+        """_get_mesh_token 必须对 M 系用完整包，X 系保持原 3 项。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _get_mesh_token")
+        body = src[i:i + 900]
+        assert "SCOPE_MESH_FULL" in body, "M 系必须用完整五件套"
+        assert "SCOPE_MESH" in body, "X 系保持原 scope"
+        assert "_use_send_command_channel()" in body, "应按车型分流"
+        # 缓存键必须分开，避免两套 scope 互相污染
+        assert "mesh_full" in body, "完整包应用独立缓存键"
+
+    def test_scope_mesh_unchanged_for_x_series(self):
+        """★ 防误伤：SCOPE_MESH 仍是原 3 项（L6 现在靠它正常工作）。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert ('SCOPE_MESH = "remote-wakeup:wakeup veh-ctrl:cmd-send '
+                'veh-ctrl:cmd-result-get"') in src, (
+            "SCOPE_MESH 被改动 ⇒ 可能影响 L6")
+
+
+class TestM01TravelQueryGated:
+    """★ M 系没有行程服务（恒返 100035），要前置拦截，不能刷 WARNING。
+
+    车主日志：10 秒内 13 条「行程查询失败(2026-10 单月): code=100035」。
+    """
+
+    def test_travel_handler_guards_m_series(self):
+        src = (PKG / "__init__.py").read_text(encoding="utf-8")
+        i = src.find("async def _handle_get_travel")
+        assert i > 0
+        body = src[i:i + 3000]
+        assert "is_m_series" in body, (
+            "行程查询未对 M 系前置拦截 ⇒ 会一直刷 WARNING")
+        assert "无行程服务" in body, "应给出明确结论而不是反复报错"
+
+
+class TestM01CmdDataRule:
+    """★★ M 系的 cmdData 规则与 X 系不同（a0.smali / BaseAppWidget 实证）。
+
+    官方构造（BaseAppWidget 里锁车路径）：
+        new OperateReq; setCommandKey("remote_central_lock_lock");
+        → 直接 F(OperateReq) 发出去，**没有 setCommandData**
+
+    ⇒ 简单命令（锁/窗/尾门/寻车/充电启停）靠【独立的 cmdKey】区分动作，
+      **不需要 cmdData**。把 X 系的 {'plgPosi':'100'} / {'lockSw':'1'}
+      塞进去属于多余参数，可能被判非法。
+
+    只有两类 M 系命令确实要 cmdData：
+      ① remote_ac_ctrl_new —— 空调/座椅/方向盘全挤在这一个键，
+         靠 Type/Temp/SteerSet/FLLevel 区分（a0.d() 实证）
+      ② fTkC —— 前备箱开/关共用该键（MControlKeyConst 里都映射它）
+    """
+
+    def test_cmddata_keys_declared(self):
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert "_M01_CMDDATA_KEYS" in src, "缺 M 系 cmdData 白名单"
+        i = src.find("_M01_CMDDATA_KEYS")
+        j = src.find(")", i)
+        blob = src[i:j]
+        assert "remote_ac_ctrl_new" in blob, "空调必须允许 cmdData"
+        assert "fTkC" in blob, "前备箱必须允许 cmdData（开关共用 cmdKey）"
+
+    def test_simple_commands_strip_cmddata(self):
+        """锁车/车窗/后备箱等必须把 X 系 cmdData 清空。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _send_command_via_rvc")
+        j = src.find("\n    def ", i + 10)
+        body = src[i:(j if j > i else i + 3000)]
+        assert "_M01_CMDDATA_KEYS" in body, "下发时应按白名单决定是否带 cmdData"
+        assert "_data = {}" in body, "非白名单命令应清空 cmdData"
+
+    def test_lock_mapping_present(self):
+        """锁车键必须映射为 M 系独立 cmdKey（不是 X 系键）。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        assert '\"remoteVehLockControl\": \"remote_central_lock_lock\"' in src or \
+               '"remoteVehLockControl": "remote_central_lock_lock"' in src
+
+    def test_all_official_cmdkeys_declared(self):
+        """13 个官方 cmdKey 应完整声明（便于核对，防漏）。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("_M01_CMDKEYS")
+        assert i > 0, "缺官方 cmdKey 全集"
+        for k in ("fTkC", "remote_ac_ctrl_new", "remote_central_lock_lock",
+                  "remote_central_lock_unlock", "remote_charging_start",
+                  "remote_charging_stop", "remote_engine_start",
+                  "remote_plg_close", "remote_plg_open", "remote_veh_search",
+                  "remote_veh_stop_m01", "remote_window_close",
+                  "remote_window_open"):
+            assert f'"{k}"' in src[i:i + 800], f"官方 cmdKey 缺 {k}"
+
+
+class TestM01TokenFallback:
+    """★★ M 系取 token 的兜底路径（2026-10-19 车主日志驱动）。
+
+    车主日志：
+      车控失败: 换 token 失败（scope=remote-wakeup:wakeup veh-ctrl:cmd-send
+                                veh-ctrl:cmd-result-get, error=access_denied）
+
+    两条可能的授权路径（都需要覆盖，因为静态定不了）：
+      ① MESH 完整五件套 —— 官方 subTokenData 的 scope（首选）
+      ② 主 Bearer —— send-command 与 real-time-state 同属
+         `/ssp-as-mobile-api/v3-0/` 命名空间，而后者在 ONE 上实测可用
+    ⇒ MESH 取不到时退回主 Bearer，不能直接抛异常让车控失败。
+    """
+
+    def test_mesh_failure_falls_back_to_main_bearer(self):
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _get_mesh_token")
+        j = src.find("\n    def ", i + 10)
+        body = src[i:(j if j > i else i + 1800)]
+        assert "_travel_bearer()" in body, (
+            "M 系取 MESH 失败时应退回主 Bearer（否则车控直接失败）")
+        assert "except Exception" in body, "兜底必须有 try/except"
+
+    def test_fallback_is_documented_with_reason(self):
+        """兜底必须有依据说明，不能是瞎试。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _get_mesh_token")
+        body = src[i:i + 1800]
+        assert "ssp-as-mobile-api" in body or "real-time-state" in body, (
+            "应写明依据：send-command 与 real-time-state 同命名空间")
+
+    def test_x_series_still_simple(self):
+        """★ 防误伤：X 系不应走这套兜底（它现在 3 项 scope 正常）。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("def _get_mesh_token")
+        body = src[i:i + 1800]
+        # X 系那一支必须是简单直返，不带 try
+        assert 'self._get_scoped("mesh", SCOPE_MESH, AUD_MESH, ttl=780)' in body
+
+
+class TestNoDuplicatedDetectionLogic:
+    """★ 同一个判断不得在两处各写一遍（2026-10-19 自查发现）。
+
+    教训：beta.4 我改了「车控分派」的车型判据（改成事实判据），
+    却忘了「错误文案分支」还在用同一份**旧的烂判据**
+    （modelId 前缀，未实测且取不到）⇒ 文案会分错支。
+    ⇒ 「同一个判断写两遍」= 迟早只改其中一处。
+    """
+
+    def test_error_branch_reuses_dispatch_criterion(self):
+        """文案分支必须调用 _use_send_command_channel，而不是自己判车型。"""
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        i = src.find("_is_m = self._use_send_command_channel()")
+        assert i > 0, "文案分支应调用 _use_send_command_channel()"
+        body = src[i:i + 200]
+        assert "_use_send_command_channel()" in body, (
+            "文案分支应复用车控分派的判据，不要自己抄一份")
+        assert "1002043" not in body, "文案分支不应再出现未实测的 modelId 前缀"
+
+    def test_only_one_place_decides_m_series(self):
+        """全库只应有一处「这车是不是 M 系」的判定实现。"""
+        import glob
+        import os
+
+        # m01_state.is_m_series 是能力表口径（供有 ability 的调用方用）
+        # li_api._use_send_command_channel 是网络口径（供 li_api 用）
+        # ★ 两者是不同数据源，允许并存；但 li_api 内部不得再出现第三份。
+        src = (PKG / "li_api.py").read_text(encoding="utf-8")
+        code = re.sub(r'""".*?"""', "", src, flags=re.S)
+        code = "\n".join(ln for ln in code.splitlines()
+                         if not ln.strip().startswith("#"))
+        # li_api 里只能有一处读 M 系独有字段的判断
+        assert code.count("_M01_ONLY_FIELDS") <= 2, (
+            "li_api 里出现多处车型判定，应统一到 _use_send_command_channel")
+        # 不得再有 modelId 前缀判据
+        assert "startswith(\"1002043\")" not in code
+
+
+class TestCoordinatorAttrsAllDeclared:
+    """★ 拦「用而未声明」的属性（2026-10-19 实机日志暴露）。
+
+    实机 WARNING：
+      任务大师列表拉取异常: 'LiCarCoordinator' object has no attribute
+      '_task_permanent'
+    根因：2026-10-18 引入「永久失败不再重试」时加了 3 处**使用**，
+          却漏了 `__init__` 里的**初始化** ⇒ 每轮任务大师拉取都抛异常。
+    """
+
+    def test_task_permanent_declared(self):
+        """_task_permanent 必须在 __init__ 里初始化（不是只有使用）。"""
+        src = (PKG / "coordinator.py").read_text(encoding="utf-8")
+        assert "self._task_permanent: dict[str, str] = {}" in src, (
+            "缺 _task_permanent 初始化声明 ⇒ 实机每轮任务大师都抛 AttributeError")
+
+    def test_no_attr_used_without_declaring(self):
+        """通用守卫：self._xxx 若被当【数据】用，就必须有初始化声明。
+
+        ★ 只看「赋值/读取数据」的用法 —— `self._foo(` 是方法调用，
+          方法的定义是 `def _foo(self)`，不属于未声明属性。
+        """
+        import re as _re
+
+        src = (PKG / "coordinator.py").read_text(encoding="utf-8")
+        # ① 初始化声明：self._xxx = / self._xxx: T = ...
+        declared = set(_re.findall(r"self\.(_[A-Za-z0-9_]+)\s*(?::[^=]+)?=", src))
+        # ② 类里定义的方法名
+        methods = set(_re.findall(r"^\s{4}def (_[A-Za-z0-9_]+)\(", src, _re.M))
+        methods |= set(_re.findall(r"^\s{4}async def (_[A-Za-z0-9_]+)\(", src, _re.M))
+        # ③ 全部 self._xxx 引用，排除「紧跟左括号」的（= 方法调用）
+        # ★ 先剥掉注释行 —— 注释里的示例代码不是真代码
+        code = "\n".join(ln for ln in src.splitlines()
+                            if not ln.strip().startswith("#"))
+        used = set(_re.findall(r"self\.(_[A-Za-z0-9_]+)\b(?!\s*\()", code))
+        provided = {"_hass", "_config_entry", "_api", "_api_m"}
+        missing = sorted(used - declared - methods - provided)
+        assert not missing, (
+            f"这些属性被当数据用但没有初始化声明（实机会抛 AttributeError）: {missing}")
 
 class TestM01Mapping:
     """real-time-state → signal-key 映射的正确性（用实车真值）。"""

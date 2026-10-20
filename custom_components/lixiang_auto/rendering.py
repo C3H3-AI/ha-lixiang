@@ -55,6 +55,65 @@ except ImportError:  # pragma: no cover - 单测路径
 # 与 sensor.py 保持一致
 STATE_UNKNOWN = "unknown"
 
+# ★ M 系（理想ONE）充电状态文案 —— 来源：APK `index.vehicle.js` 的
+#   LXVehicleChargingStatus 官方枚举（2026-10-19 提取，15 项，非推测）。
+#   ★ 与 X 系【不是同一套】：X 系渲染只认归一化码（0/40/50/60/70/80/90/111），
+#     M 系塞的是这里的原始码 ⇒ 10 落进 else ⇒ 渲染成 None（车主报的"不对"）。
+#   ★ 实测 ONE 的 chargeStatus=10 = NotCharging（未充电）—— 语义完全吻合。
+_M01_CHARGE_TEXT = {
+    10: "未充电",
+    11: "插枪未充电",
+    20: "识别中",
+    30: "等待充电",
+    40: "电池加热中",
+    50: "充电中",
+    60: "充电完成",
+    70: "已停止充电",
+    80: "电池保温中",
+    81: "电池保持中",
+    90: "电池预热中",
+    111: "电池故障",
+    120: "拔枪后",
+    130: "已插枪",
+    140: "充电暂停",
+    141: "未知",
+}
+
+# ★ M 系（理想ONE）电源模式文案 —— 来源：APK `index.vehicle.js` 的
+#   LXVehiclePowerModeStatus 官方枚举（2026-10-20 提取，非推测）：
+#     0 OFF · 1 LOCAL_ACC(ACC) · 2 LOCAL_ON(ON) · 3 INVALID
+#     · 4 REMOTE_ON(RemoteACC) · 5 ADAS_ON
+#   ★ 车主截图（2026-10-19 17:28:57）显示「电源模式 = 2」→ 实际是 ON（整车通电）
+_M01_POWER_MODE_TEXT = {
+    0: "熄火",
+    1: "ACC 通电",
+    2: "整车通电",
+    3: "无效",
+    4: "远程上电",
+    5: "智驾上电",
+}
+
+# ★ M 系（理想ONE）一批「开关/布尔」信号的文案 —— 2026-10-20 车主截图驱动。
+#   ★ 判定依据：这些字段在官方响应里是 **开关位**（switchState / status /
+#     warning / startStatus），不是"状态枚举" ⇒ 可安全翻译为 开/关 或 有/无，
+#     不会出现「用状态冒充开关」的问题（那正是本项目踩过的坑）。
+#
+#   实测来源（真实 ONE 响应）：
+#     caseCoverStatus.switchState = "0"   → 充电口盖（0 关 / 1 开）
+#     ringLightStatus.status      = "1"   → 环灯（0 灭 / 1 亮）
+#     keyInCarWarning.warning     = "0"   → 钥匙在车提醒（0 正常 / 非 0 告警）
+#     remoteStartStatus.startStatus="0"   → 远程启动（0 未启动 / 1 已启动）
+_M01_SWITCH_TEXT: dict[str, dict[int, str]] = {
+    "ring_light": {0: "关闭", 1: "开启"},
+    "key_in_car_warning": {0: "正常", 1: "钥匙在车内"},
+    "charge_port_lid": {0: "关闭", 1: "开启"},
+    "remote_start_status": {0: "未启动", 1: "已启动"},
+    # ac_on：acOffStatus(0=不关) 已在 m01_state 取反 ⇒ 1=空调开 / 0=关
+    "ac_on": {0: "关闭", 1: "开启"},
+}
+
+
+
 
 #: 里程统计的三个派生字段 → 上游 trip_total JSON 里的字段名（2026-09-28）
 _STAT_MILEAGE_FIELDS = {
@@ -151,6 +210,39 @@ def render_value(
         return None
 
     # ---- 特殊信号: 返回可读值 ----
+    # ★ 2026-10-20：M 系（理想ONE）电源模式 —— 车主截图暴露的裸值问题
+    #   官方枚举 LXVehiclePowerModeStatus（APK index.vehicle.js 实证）：
+    #     0 熄火 / 1 ACC 通电 / 2 整车通电 / 3 无效 / 4 远程上电 / 5 智驾上电
+    #   ★ 截图 17:28:57 显示「电源模式 = 2」→ 实际是"整车通电"
+    if key == "power_mode":
+        _raw = (data or {}).get("vss", {}).get("__m01_power_mode")
+        _rv = _raw.get("value") if isinstance(_raw, dict) else _raw
+        if _rv is not None:
+            try:
+                return _M01_POWER_MODE_TEXT.get(int(_rv), STATE_UNKNOWN)
+            except (TypeError, ValueError):
+                return STATE_UNKNOWN
+        return STATE_UNKNOWN if val is None else val
+
+    # ★ 2026-10-20：M 系一批开关/布尔信号（同上，车主截图驱动的裸值问题）
+    if key in _M01_SWITCH_TEXT:
+        _tag = "__m01_" + {
+            "ring_light": "ring_light",
+            "key_in_car_warning": "key_in_car",
+            "charge_port_lid": "charge_lid",
+            "remote_start_status": "remote_start",
+            "ac_on": "ac_on",
+        }.get(key, "")
+        _s = (data or {}).get("vss", {}).get(_tag)
+        _rv = _s.get("value") if isinstance(_s, dict) else _s
+        if _rv is not None:
+            try:
+                return _M01_SWITCH_TEXT[key].get(int(_rv), STATE_UNKNOWN)
+            except (TypeError, ValueError):
+                return STATE_UNKNOWN
+        return STATE_UNKNOWN if val is None else val
+
+
     if key == "location" and isinstance(val, str):
         try:
             loc = json.loads(val)
@@ -180,6 +272,7 @@ def render_value(
             return o.get("currentVersion") or o.get("displayTargetVersion") or STATE_UNKNOWN
         except (ValueError, TypeError):
             return STATE_UNKNOWN
+
     if key == "charge_status":
         # ★ 2026-09-23 复刻 App 的 XChargeDataHandle.getChargeState()
         #   （smali:80-241）—— 不再自造枚举。
@@ -207,6 +300,15 @@ def render_value(
                 return int(v) if v is not None else None
             except (TypeError, ValueError):
                 return None
+
+        # ★★ 2026-10-19：M 系用【另一套枚举】（见 _M01_CHARGE_TEXT）。
+        #   m01_state 附带 __m01_charge = M 系原始码 ⇒ 走这张表；
+        #   没有该键（X 系）⇒ 继续走下面的 App 归一化逻辑。
+        #   ★ X 系只认归一化码（0/40/50/…），M 系是原始码（10 NotCharging…）
+        #     ⇒ 混用会落进 else 渲染成 None（车主 2026-10-19 报的"不对"）。
+        _m01 = _v("__m01_charge")
+        if _m01 is not None:
+            return _M01_CHARGE_TEXT.get(_m01, STATE_UNKNOWN)
 
         cs = _v("charge_status")
         # 预约充电判定（三条件同时满足）
