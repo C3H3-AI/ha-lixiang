@@ -10,7 +10,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CARD = path.join(__dirname, '..', 'custom_components', 'lixiang_auto',
                        'www', 'lixiang-cards', 'lixiang-app-home.js');
 
-const HA = 'http://192.168.3.206:8125';
+// ★ IP 不写死 —— 走环境变量（默认 localhost），避免内网 IP 进仓库
+//   （CI 的敏感信息扫描会拦下硬编码内网 IP）
+const HA = process.env.HA_URL || 'http://localhost:8123';
 let failures = 0;
 const ok = (m) => console.log('  ✅ ' + m);
 const bad = (m) => { console.log('  ❌ ' + m); failures++; };
