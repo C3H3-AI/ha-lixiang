@@ -942,6 +942,26 @@ def _async_register_services(hass: HomeAssistant) -> None:
             try:
                 dump = ab.dump()
                 dump["features_detected"] = feats
+                # ★ 2026-10-20：附 5 档能力视图（available / signal_missing /
+                #   unsupported / unavailable / pending）。
+                #   ★ 只有【明确证据】才判 unsupported —— 缺信号、能力表没这个 tag
+                #     都不算。这正是理想 ONE 座椅实体全被跳过的根因。
+                try:
+                    from .capability_view import capability_view, SIGNAL_MISSING  # noqa: PLC0415
+                    _coord = d.get("coordinator")
+                    _vss = (_coord.data or {}).get("vss", {}) if _coord else {}
+                    _feats = [(k, k, (k,)) for k in (_vss or {}) if not k.startswith("__")]
+                    _items = capability_view(_feats, vss=_vss, ability=ab)
+                    dump["capability_view"] = {
+                        "summary": {
+                            s: sum(1 for x in _items if x.status == s)
+                            for s in ("available", "signal_missing", "unsupported",
+                                      "unavailable", "pending")
+                        },
+                        "items": [x.as_dict() for x in _items],
+                    }
+                except Exception as _e:  # noqa: BLE001
+                    _LOGGER.debug("能力视图跳过: %s", _e)
                 # ★ 2026-09-27：附带【整车配置表 Hpcm】——
                 #   比车型能力表更精确（同款车选装不同）
                 #   含 SS3/SS4 协议判定（hmi_platform）
