@@ -720,14 +720,37 @@ function lxLoadOrder(row) {
     const raw = st.getItem(LX_DRAG_STORE);
     if (!raw) return null;
     const arr = JSON.parse(raw);
-    return Array.isArray(arr) && arr.length ? arr : null;
+    if (!Array.isArray(arr) || !arr.length) return null;
+    // 兼容旧格式（纯 id 字符串数组）：补 host="" 让重放按"就近"处理
+    return arr.map((x) => (typeof x === "string" ? { id: x, host: "" } : x));
   } catch (e) { return null; }
 }
 
 function lxSaveOrder(ids, row) {
   try {
     const st = lxStore(row);
-    if (st) st.setItem(LX_DRAG_STORE, JSON.stringify(ids));
+    if (!st) return;
+    const scope = (row && row.closest(".root")) || row.parentElement;
+    const pairs = [];
+    const seen = new Set();
+    // 当前 row 的卡
+    (ids || []).forEach((id) => {
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      pairs.push({ id, host: row.id || "" });
+    });
+    // 其它 row2 的卡（跨组拖动的结果要靠这个才能还原）
+    if (scope && scope.querySelectorAll) {
+      scope.querySelectorAll(".row2").forEach((r) => {
+        if (r === row) return;
+        r.querySelectorAll(":scope > .card").forEach((c) => {
+          if (!c.id || seen.has(c.id)) return;
+          seen.add(c.id);
+          pairs.push({ id: c.id, host: r.id || "" });
+        });
+      });
+    }
+    st.setItem(LX_DRAG_STORE, JSON.stringify(pairs));
   } catch (e) {}
 }
 
@@ -746,10 +769,34 @@ function lxApplyOrder(row) {
   if (!cards.length) return false;
   const byId = new Map(cards.map((c) => [c.id, c]));
   let touched = false;
-  for (const id of order) {
-    const el = byId.get(id);
+  for (const it of order) {
+    const el = byId.get(it.id);
     // 必须仍在 DOM 里（车型可能不支持该卡），否则跳过
     if (el) { row.appendChild(el); touched = true; }
+  }
+  return touched;
+}
+
+/**
+ * ★ 重放【全局】顺序：把每张卡按保存的顺序分配回它上次所在的 .row2。
+ *   需要每张卡记住自己的宿主 row（拖动时写入 data-lx-host）。
+ */
+function lxApplyGlobalOrder(root) {
+  const order = lxLoadOrder(root);
+  if (!order || !root) return false;
+  const rows = Array.from(root.querySelectorAll(".row2"));
+  if (!rows.length) return false;
+  const byId = new Map();
+  rows.forEach((r) => r.querySelectorAll(":scope > .card")
+    .forEach((c) => byId.set(c.id, c)));
+  let touched = false;
+  for (const it of order) {
+    const el = byId.get(it.id);
+    if (!el) continue;
+    // 有明确宿主就回宿主；没有（旧数据）就留在当前 row
+    const host = it.host ? rows.find((r) => r.id === it.host) : null;
+    if (host) { host.appendChild(el); touched = true; }
+    else if (el.parentElement) { touched = true; }
   }
   return touched;
 }
@@ -774,7 +821,6 @@ function lxEnableDragSort(row) {
       // 超过 6px 才认定为"拖动"（避免轻微抖动误判）
       if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
       drag.moved = true;
-      drag.card.classList.add("lx-dragging");
       row.classList.add("lx-drop-active");
     }
     drag.dx = dx;
@@ -829,6 +875,9 @@ function lxEnableDragSort(row) {
       drag = { card, host: row, x0: ev.clientX, y0: ev.clientY, dx: 0, dy: 0, moved: false };
       card.setAttribute("draggable", "false");   // ★ 禁掉原生拖拽，交给我们自己
       card.style.willChange = "transform";
+      // ★ 长按成功【立刻】给视觉反馈 —— 之前只在移动超 6px 后才加类，
+      //   用户长按后看不到任何变化，会以为"没反应"（真实用户反馈）。
+      card.classList.add("lx-dragging");
       try { navigator.vibrate && navigator.vibrate(12); } catch (e) {}
     }, LX_DRAG_HOLD_MS);
   });
@@ -1763,7 +1812,8 @@ class LixiangAppHome extends HTMLElement {
     //   · 先应用已保存的顺序，再给每个 .row2 挂拖拽能力。
     //   · 两处调用：首屏渲染 + 后续重渲染（车型/主题变化会重写 DOM）。
     try {
-      root.querySelectorAll(".row2").forEach((r) => lxApplyOrder(r));
+      // ★ 先按【全局】保存的顺序重放（含跨 row2 的位置）
+      if (typeof lxApplyGlobalOrder === "function") lxApplyGlobalOrder(root);
       root.querySelectorAll(".row2").forEach((r) => lxEnableDragSort(r));
       this.__lxDragBound = true;
     } catch (e) { /* 拖拽是增强功能，失败不影响主功能 */ }
