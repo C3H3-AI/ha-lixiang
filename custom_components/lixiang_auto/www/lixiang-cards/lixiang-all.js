@@ -965,10 +965,22 @@ const STYLE = `
   lixiang-app-home { display:block;
     --lx-blue:#0A58F6; --lx-t1:#1A1A1A; --lx-t2:#666; --lx-t3:#9A9A9A;
     --lx-green:#34C759; --lx-orange:#FF9500; --lx-red:#FF3B30;
-    --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2; }
+    --lx-card:#F7F7F9; --lx-bg:#FFF; --lx-line:#F0F0F2;
+    /* ★ 与深色块同名成对 —— 弹窗/toast 跟随主题 */
+    --lx-surface:#FFF; --lx-on-surface:#111418;
+    --lx-invert-bg:#1b1f27; --lx-invert-fg:#FFF;
+    --lx-toast-bg:rgba(0,0,0,.84); --lx-toast-fg:#fff; }
   @media (prefers-color-scheme: dark) {
     lixiang-app-home { --lx-t1:#F2F2F7; --lx-t2:#AEAEB2; --lx-t3:#8E8E93;
-            --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF; }
+            --lx-card:#1C1C1E; --lx-bg:#000; --lx-line:#2C2C2E; --lx-blue:#4C9AFF;
+            /* ★ 2026-10-20：补「反转面」变量 —— 弹窗/toast 用。
+               硬编码 #fff 在深色下会是刺眼白块（车主可感知）。 */
+            --lx-surface:#1C1C1E;      /* 弹窗底（深色下与卡片一致）*/
+            --lx-on-surface:#F2F2F7;   /* 弹窗字 */
+            --lx-invert-bg:#F2F2F7;    /* 主按钮底（深色下用亮色）*/
+            --lx-invert-fg:#1C1C1E;    /* 主按钮字 */
+            --lx-toast-bg:rgba(242,242,247,.92);
+            --lx-toast-fg:#1C1C1E; }
   }
   /* 2026-10-12：兜底 —— 长内容不得撑破视口（车主："手机上右边溢出"）。
      真正修复是把 grid 列改成 minmax(0,1fr)；这里再加一道保险。
@@ -1222,7 +1234,7 @@ const STYLE = `
   .divider { height:1px; background:var(--lx-line); margin:16px 0; }
 
   .toast { position:fixed; left:50%; bottom:90px; transform:translate(-50%,14px);
-           background:rgba(0,0,0,.84); color:#fff; font-size:13px; padding:10px 18px;
+           background:var(--lx-toast-bg); color:var(--lx-toast-fg); font-size:13px; padding:10px 18px;
            border-radius:11px; opacity:0; pointer-events:none; transition:.22s; z-index:9;
            white-space:nowrap; }
   .toast.show { opacity:1; transform:translate(-50%,0); }
@@ -1267,13 +1279,13 @@ const STYLE = `
   /* ★ 官方同款二次确认弹框 */
   .cfm { position:fixed; inset:0; z-index:99; background:rgba(16,20,28,.45);
          display:flex; align-items:center; justify-content:center; padding:24px; }
-  .cfm-box { width:100%; max-width:340px; background:#fff; border-radius:20px;
+  .cfm-box { width:100%; max-width:340px; background:var(--lx-surface); border-radius:20px;
              padding:24px 20px 16px; box-shadow:0 18px 50px rgba(10,14,22,.28); }
-  .cfm-text { font-size:16px; line-height:1.55; color:#111418; text-align:center; font-weight:500; }
+  .cfm-text { font-size:16px; line-height:1.55; color:var(--lx-on-surface); text-align:center; font-weight:500; }
   .cfm-row { display:flex; gap:12px; margin-top:22px; }
   .cfm-row button { flex:1; height:46px; border-radius:23px; font-size:16px; font-weight:600;
-                    border:1px solid #e3e6ea; background:#fff; color:#111418; cursor:pointer; }
-  .cfm-row .cfm-yes { background:#1b1f27; border-color:#1b1f27; color:#fff; }
+                    border:1px solid var(--lx-line); background:var(--lx-surface); color:var(--lx-on-surface); cursor:pointer; }
+  .cfm-row .cfm-yes { background:var(--lx-invert-bg); border-color:var(--lx-invert-bg); color:var(--lx-invert-fg); }
   .cfm-rem { display:flex; align-items:center; justify-content:center; gap:6px;
              margin-top:14px; font-size:13px; color:#6b7480; }
   .big3d .tp small { font-size:9px; font-weight:400; opacity:.75; margin-left:1px; }
