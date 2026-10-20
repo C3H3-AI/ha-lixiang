@@ -880,10 +880,22 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 continue
             res = await hass.async_add_executor_job(api.probe_realtime_state)
             vin = entry.data.get(CONF_VIN) or "unknown"
-            out_path = _Path(hass.config.path(f"lixiang_realtime_state_{vin}.json"))
+            out_path = _Path(hass.config.path(f"lixiang_realtime_state_{safe_filename_token(vin)}.json"))
 
+            # ★ 2026-10-20: write-to-disk must be redacted first - the raw response contains
+            #   lat/lng (address-level), VIN, and possibly tokens. Diagnostic files are
+            #   meant to be shared; one miss means "one click sends home address and
+            #   control credentials out". Principle: allowlist (new sensitive fields
+            #   default to not-exported, not default-to-leaked).
+            from .diag_redact import (
+                redact_realtime_state, redact_entry_data, summarize_for_log,
+                safe_filename_token,
+            )
+            _safe = redact_realtime_state(res.get("data") or res)
+            _safe["_entry"] = redact_entry_data(dict(entry.data))
+            
             def _write() -> None:
-                out_path.write_text(_json.dumps(res, ensure_ascii=False, indent=2),
+                out_path.write_text(_json.dumps(_safe, ensure_ascii=False, indent=2),
                                     encoding="utf-8")
 
             try:
@@ -891,13 +903,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
             except Exception as err:  # noqa: BLE001
                 _LOGGER.warning("real-time-state 探针写盘失败: %s", err)
                 continue
-            summary = {
-                k: {"ok": v.get("ok"), "code": v.get("code"),
-                    "error": (v.get("error") or "")[:60] or None}
-                for k, v in (res.get("attempts") or {}).items()
-            }
-            _LOGGER.info("real-time-state 探针 VIN=%s → %s | 已写入 %s",
-                         vin, summary, out_path)
+            summary = summarize_for_log(res)
+            _LOGGER.info("real-time-state 探针 fp=%s → %s | 已写入 %s（已脱敏）",
+                             safe_filename_token(vin), summary, out_path)
             results.append({"vin": vin, "file": str(out_path), "attempts": summary})
         if not results:
             _LOGGER.warning("real-time-state 探针：没有找到匹配的条目（检查 vin 参数）")
@@ -914,6 +922,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
         同时把摘要打到日志（INFO）。
         """
         import json as _json  # noqa: PLC0415
+        from .diag_redact import redact_ability  # noqa: PLC0415
         from pathlib import Path as _Path  # noqa: PLC0415
 
         target_vin = (call.data or {}).get("vin")
@@ -945,8 +954,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
                     _LOGGER.debug("Hpcm 导出跳过: %s", _e)
                 out = _Path(hass.config.config_dir) / (
                     f"lixiang_ability_{ab.model_id or 'unknown'}.json")
+                _safe = redact_ability(dump)   # ★ 同 dump_realtime_state：写盘前脱敏
                 out.write_text(
-                    _json.dumps(dump, ensure_ascii=False, indent=2),
+                    _json.dumps(_safe, ensure_ascii=False, indent=2),
                     encoding="utf-8")
                 _LOGGER.info(
                     "能力表已导出: %s（%s，%s）| 三排=%s 二排中=%s 冰箱=%s",
