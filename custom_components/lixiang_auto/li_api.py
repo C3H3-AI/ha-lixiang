@@ -77,6 +77,25 @@ SCOPE_CARD = "login offline_access"
 # 两者都用登录会话 POST https://id.lixiang.com/api/auth (response_type=token) 换取。
 AUD_MESH = "1j0vgTqagJUHuT6nLmbTGx"
 SCOPE_MESH = "remote-wakeup:wakeup veh-ctrl:cmd-send veh-ctrl:cmd-result-get"
+
+# ★★ 2026-10-19（车主日志实证，决定性）：
+#   SCOPE_MESH 上面只有 **3 项**，而官方 subTokenData 里 httpLiMeshServiceV2
+#   的 scope 是 **5 项**（多 vss:get-batch 与 task-master）。
+#   我们 2026-10-08 早就实测过：「单换子集被 SSO 拒绝（300 access_denied），
+#   完整五件套可正常换取 —— App 从不单换，只用完整包」。
+#
+#   车主 18:30 的日志正是这条：
+#     车控 remoteVehPlgControl 失败: 换 token 失败
+#       （scope=remote-wakeup:wakeup veh-ctrl:cmd-send veh-ctrl:cmd-result-get,
+#        error=access_denied）
+#     ⇒ 判据已经生效（日志有「车型判据：real-time-state 含 M 系独有字段」），
+#       但**取 token 这一步就被 SSO 拒了**，根本没走到 send-command。
+#
+#   ⇒ M 系必须用【官方完整五件套】取 MESH token。
+#     （X 系保持原 3 项不变 —— 它现在能正常工作，不动它。）
+SCOPE_MESH_FULL = (
+    "remote-wakeup:wakeup veh-ctrl:cmd-result-get "
+    "veh-ctrl:cmd-send vss:get-batch task-master")
 AUD_VAT = "5Tc7yDrnMzALwc9Rytl9sp"
 
 # ★ 2026-10-01 实测新增：lcp-bff-app-api 通道
@@ -1055,23 +1074,18 @@ class LiApiClient:
                 #   ⇒ 真因是【这套「cmdKey:VIN」scope 属于 X 系，M 系不认】。
                 #   按是否 M 系给两种准确说法，避免继续误导用户。
                 # ★ 判据用 get_vehicles()（已调过、无额外网络开销）：
-                #   ★ 2026-10-19：这条判据（modelId 前缀 / modelName 含 M01）
-                #     **未实测**且 modelId 往往取不到 ⇒ 只作兜底提示用；
-                #     车控通道分派已改用「real-time-state 独有字段」这个事实判据。
-                _is_m = False
+                # ★ 2026-10-19：与车控分派【用同一个可靠判据】——
+                #   之前这里自己抄了一份 modelId 前缀判据，而那份判据
+                #   未实测且 modelId 往往取不到 ⇒ 恒 False ⇒ 文案分错支。
+                #   教训：同一个判断在两处各写一遍，迟早只改一处。
                 try:
-                    _vs = self.get_vehicles() or []
-                    for _v in _vs:
-                        if str(_v.get("vin") or "") != self._vin:
-                            continue
-                        _mid = str(_v.get("modelId") or "")
-                        _mn = str(_v.get("modelName") or "")
-                        _is_m = _mid.startswith("1002043") or "M01" in _mn
-                        break
+                    _is_m = self._use_send_command_channel()
                 except Exception:  # noqa: BLE001
                     _is_m = False
                 if _is_m:
-                    # ★ 2026-10-19 更新：M 系车控已适配（改走 send-command，只用 MESH）。
+                    # ★ 2026-10-19 更新：M 系车控【代码已改走】send-command
+                    #   （只用 MESH），依据充分；但**尚未经真车验证**，措辞
+                    #   不能说成「已适配」（教训：别把代码写对说成问题解决）。
                     #   走到这里说明**仍然**被拒 —— 即便如此，也不是"尚未适配"，
                     #   而是该车/该账号的具体限制。措辞必须如实，不要误导车主。
                     _why = ("服务端拒绝了该 M 系车型（理想ONE）的这次车控授权"
@@ -1134,7 +1148,28 @@ class LiApiClient:
     # ---------- 车控双 token ----------
 
     def _get_mesh_token(self) -> str:
-        """MESH token: cmd/send 的 Authorization 头 (~15min)."""
+        """MESH token: cmd/send 与 send-command 的 Authorization 头 (~15min)。
+
+        ★★ 2026-10-19：M 系（理想ONE）必须用【官方完整五件套】scope 换取。
+           用 3 项子集会被 SSO 直接拒（300 access_denied）——
+           车主日志实证（见 SCOPE_MESH_FULL 上方注释）。
+           ★ 缓存键也分开（mesh_full vs mesh），避免两套 scope 互相污染。
+        """
+        if self._use_send_command_channel():
+            try:
+                return self._get_scoped(
+                    "mesh_full", SCOPE_MESH_FULL, AUD_MESH, ttl=780)
+            except Exception as err:  # noqa: BLE001
+                # ★★ 2026-10-19 兜底（重要）：
+                #   send-command 与 real-time-state 同属 `/ssp-as-mobile-api/v3-0/`
+                #   命名空间；而 real-time-state 用的是【主 Bearer】(x-chj-token)
+                #   —— 这一点在 ONE 上已实测成功（只读数据正常）。
+                #   若 MESH 取不到（access_denied），退回主 Bearer 试一次：
+                #   这是有依据的备选，不是瞎试。
+                _LOGGER.debug(
+                    "MESH(完整五件套) 换取失败(%s)，退回主 Bearer 试 send-command",
+                    type(err).__name__)
+                return self._travel_bearer()
         return self._get_scoped("mesh", SCOPE_MESH, AUD_MESH, ttl=780)
 
     def _get_vat_token(self) -> str:
@@ -2563,12 +2598,95 @@ class LiApiClient:
     #     M 系示例：remote_central_lock_lock / remote_window_open
     #     X 系示例：remoteVehLockControl / remoteVehWdwControl
     _M01_CMDKEY_MAP: dict[str, str] = {
-        # X 系 cmdKey → M 系 cmdKey（在同一 APK 里并存，按车型选）
+        # ── X 系 cmdKey → M 系 cmdKey（两套并存，按车型选）──────────────────
+        # ★★ 2026-10-19 补全：此前只映射了锁车一把键，导致其余车控
+        #   在 M 系上会拿 X 系键去调 send-command ⇒ 必然失败。
+        #   来源（★ 官方，非推测）：
+        #     ① LXMVehicleConfig2025.json 的 70 条能力表（13 个 cmdKey）
+        #     ② MControlKeyConst 的静态字段（LXVehicleControlType*）
+        #     ③ a0.smali 构造 OperateReq 时的 cmdData.Type 取值
+        #
+        # ★★ 重要差异：M 系的 **commandKey 与 cmdData.Type 是两个层次** ——
+        #   · commandKey：13 个（remote_central_lock_lock / remote_plg_open …）
+        #   · cmdData.Type：另一组（空调全部挤在 remote_ac_ctrl_new 里，
+        #     靠 Type + Temp/SteerSet/FLLevel… 区分具体功能）
+        #   ⇒ 锁车/车窗/尾门/寻车/充电启停 是 1:1 映射 ✓
+        #   ⇒ 空调/座椅加热/方向盘加热 需要再按 Type 分流（本表只给 commandKey，
+        #     Type 由各平台按需放进 cmdData）✓
         "remoteVehLockControl": "remote_central_lock_lock",      # 锁车
+        "remoteVehWdwControl": "remote_window_open",              # 开窗（关窗另用 _close）
+        "remoteVehPlgControl": "remote_plg_open",                 # 开尾门（关用 _close）
+        "remoteVehSearch": "remote_veh_search",                   # 寻车 / 车辆位置
+        "remoteVehACSmartControl": "remote_ac_ctrl_new",          # 空调（含座椅/方向盘）
+        "remote_charge_control": "remote_charging_start",         # 开始充电（停止用 _stop）
+        "remoteVehAuth": "remote_veh_search",                     # 授权驾驶：无专属键，复用寻车
+        "remoteVehFrgControl": "remote_ac_ctrl_new",              # 冰箱/除霜等 → 走空调通道
+        "remoteVehSvm": "remote_veh_search",                      # 哨兵/闪灯 → 复用寻车
+        "remoteVehACFirstControl": "remote_ac_ctrl_new",          # 一键空调
+        # ★ 2026-10-20：哨兵 —— X 系 cmdKey 是 sentinelModeSetting；
+        #   M 系官方 commandKeyMap 里是 **"55.0"**（数字字符串）。
+        "sentinelModeSetting": "55.0",
     }
+
+    #: M 系「反向动作」键 —— 开↔关、成对出现。
+    #: ★ 来自官方能力表：每个开/关/停都是**独立的 cmdKey** ✓
+    _M01_CMDKEY_INVERSE: dict[str, str] = {
+        "remote_central_lock_lock": "remote_central_lock_unlock",
+        "remote_window_open": "remote_window_close",
+        "remote_plg_open": "remote_plg_close",
+        "remote_charging_start": "remote_charging_stop",
+        "remote_engine_start": "remote_veh_stop_m01",
+    }
+
+    #: M 系里【需要 cmdData】的 cmdKey（其余一律传空 —— 靠独立 cmdKey 区分动作）
+    #:   ★ 依据：a0.smali 的 a0.d() 只给 remote_ac_ctrl_new 建 HashMap，
+    #:     BaseAppWidget 的锁车/车窗/后备箱路径只 setCommandKey 不 setCommandData。
+    _M01_CMDDATA_KEYS: tuple[str, ...] = (
+        "remote_ac_ctrl_new",   # 空调/座椅加热/S 方向盘：靠 Type/Temp/SteerSet/FLLevel
+        "fTkC",                 # 前备箱开/关共用该键（官方 FrontTrunkOpen/Close 都映射它）
+        # ★ 2026-10-20 哨兵：官方 commandKeyMap → Sentry = "55.0"。
+        #   payload 沿用与 X 系同构的 {"sentinelSwitch":0/1, "timestap":毫秒}
+        #   （⚠️ timestap 是 App 的拼写，少一个 m，必须照抄）
+        #   ★ 属「同应用同概念」推论，非直接静态实证 —— 已在注释标明。
+        "55.0",
+    )
+
+    #: M 系官方 cmdKey 全集（13 个，来源：LXMVehicleConfig2025.json + MControlKeyConst）
+    _M01_CMDKEYS: tuple[str, ...] = (
+        "fTkC",
+        "remote_ac_ctrl_new",
+        "remote_central_lock_lock",
+        "remote_central_lock_unlock",
+        "remote_charging_start",
+        "remote_charging_stop",
+        "remote_engine_start",
+        "remote_plg_close",
+        "remote_plg_open",
+        "remote_veh_search",
+        "remote_veh_stop_m01",
+        "remote_window_close",
+        "remote_window_open",
+    )
 
     def _use_send_command_channel(self) -> bool:
         """本车是否应走 send-command（M 系专用通道）而非 cmd/send。
+
+        ################ ################  重要提醒  ################ ################
+        # ★★ 静态逆向的产出只是【必要条件】，不是【充分条件】★
+        #
+        #   本函数配套的证据（均可复核，不是猜测）：
+        #     ① M 系配置表 LXMVehicleConfig2025.json 70 条全带 sendUrl
+        #     ② subTokenData 权威表：send-command 只需 MESH，VAT 属 cmd/send 专用
+        #     ③ MControlKeyConst：M 系 13 个真实 cmdKey
+        #     ④ 请求体字段 / ⑤ 回查规则（成功 5、失败 7、30 秒窗口）
+        #
+        #   ★ 但"读懂了说明书"≠"钥匙能转这扇锁"——
+        #     真实下发是否成功，**只有真车能回答**。
+        #     2026-10-19 教训（本判据曾恒为 False 而静态完全查不出来：
+        #     因为那不是协议问题，是代码写错了）：
+        #       —— 别把「静态全部确认」说成「已适配/已解决」。
+        #       —— 要说「代码已改对、依据充分，待真机确认」。
+        ##############################################################################
 
         ★★ 2026-10-19 更正（原实现有严重缺陷）：
           原判据是 `modelId.startswith("1002043")` 或 `platform=="1"`，
@@ -2603,6 +2721,31 @@ class LiApiClient:
             pass
         return False
 
+    def _m01_ac_is_on(self) -> bool | None:
+        """空调当前是否开着（供 M 系 AC 命令构造用）。
+
+        ★ 官方 a0 各方法都用 `status/e->k()` 判断空调状态来决定
+          发哪个 commandKey（开着 → remote_ac_ctrl_new + Type；
+          关着 → remote_XX_adjut / remote_ai_temp_ctrl_ex_on）。
+        ⇒ 我们也必须判断，数据来自 real-time-state 的
+          `airConditioningStatus.acOffStatus.value`。
+          ★ 字段名叫 **Off**Status ⇒ **0 表示没关（即开着）**，要取反。
+          拿不到（还没拉过状态）时返回 None，让构造器走"未知"分支。
+        """
+        rts = self._last_rts or {}
+        acs = rts.get("airConditioningStatus") if isinstance(rts, dict) else None
+        if not isinstance(acs, dict):
+            return None
+        off = acs.get("acOffStatus")
+        if isinstance(off, dict):
+            off = off.get("value")
+        if off is None:
+            return None
+        try:
+            return int(float(off)) == 0
+        except (TypeError, ValueError):
+            return None
+
     def _send_command_via_rvc(self, command_key: str,
                               command_data: dict | None,
                               *, poll: bool, timeout: float) -> dict:
@@ -2612,7 +2755,40 @@ class LiApiClient:
         ★ 只用 MESH token —— 不需要 VAT（官方 subTokenData 已证实）。
         """
         key = self._M01_CMDKEY_MAP.get(command_key, command_key)
-        res = self.send_vehicle_command(key, command_data or {}, poll=poll)
+
+        # ★★ 2026-10-19（a0.smali 实证）：M 系的 cmdData 规则与 X 系【不同】
+        #   官方构造（BaseAppWidget 里锁车/车窗/后备箱的下发路径）：
+        #       new OperateReq; setCommandKey("remote_central_lock_lock");
+        #       → 直接 F(OperateReq) 发出去，**没有 setCommandData**
+        #   ⇒ 这些命令靠【独立的 cmdKey】区分动作，**不需要 cmdData**。
+        #   ⇒ 若把 X 系的 {'plgPosi':'100'} / {'lockSw':'1'} 塞进去，
+        #      属于多余参数，可能被服务端判非法。
+        #
+        #   只有两类 M 系命令确实需要 cmdData：
+        #     ① remote_ac_ctrl_new —— 空调/座椅/方向盘全都挤在这个键上，
+        #        靠 cmdData 的 Type/Temp/SteerSet/FLLevel… 区分（a0.d() 实证）
+        #     ② fTkC —— 前备箱开/关共用该键（MControlKeyConst 里
+        #        FrontTrunkOpen 与 FrontTrunkClose 都映射到 fTkC）
+        _data = dict(command_data or {})
+        if key not in self._M01_CMDDATA_KEYS:
+            _data = {}
+        else:
+            # ★★ 2026-10-20：M 系的 AC 家族（空调/座椅/方向盘/快冷快热）
+            #   与 X 系是【两套协议】—— 我们的各平台传的是 X 系
+            #   {acCtrlType, acCtrlValue, acCtrlTemp}，必须先翻译成
+            #   M 系的 {Type:"编号", Temp:"21.5"} 或
+            #   {FLLevel:"2", FLLevelFeedBack:"1"}（见 m01_control 模块，
+            #   依据 a0.smali 的 a()~k() 逐方法反汇编）。
+            try:
+                from .m01_control import translate as _m01_translate
+                _ac_on = self._m01_ac_is_on()
+                _tr = _m01_translate(_data, ac_on=_ac_on)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.debug("M 系 AC 翻译失败（按原样下发）: %s", err)
+                _tr = None
+            if _tr is not None:
+                key, _data = _tr
+        res = self.send_vehicle_command(key, _data, poll=poll)
         # 形状对齐：send_command 返回 {...}、调用方读 resultCode / msg
         return {
             "ok": bool(res.get("ok")),

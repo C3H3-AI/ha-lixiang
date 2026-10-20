@@ -577,3 +577,196 @@ class TestXmodeSubSwitch:
         sig = {"value": raw}
         out = render_value("xmode", raw, sig, {"vss": {"xmode": sig}})
         assert out == "已关闭"
+
+
+class TestM01ChargeStatusEnum:
+    """★ M 系（理想ONE）充电状态用【另一套枚举】（车主 2026-10-19 报"不对"）。
+
+    现象：ONE 的 charge_status 显示为空（渲染成 None）。
+    根因：M 系塞的是**原始码**（实测 10），而渲染只认 X 系的**归一化码**
+    （0/40/50/60/70/80/90/111）⇒ 10 落进 else ⇒ None。
+
+    修复依据：APK `index.vehicle.js` 里的官方枚举 `LXVehicleChargingStatus`
+    （15 项，2026-10-19 提取，非推测）；实测 ONE 的 10 = NotCharging = 未充电。
+    """
+
+    def test_m01_enum_covers_all_15_official_values(self):
+        from rendering import _M01_CHARGE_TEXT
+
+        official = {10, 11, 20, 30, 40, 50, 60, 70, 80, 81, 90, 111, 120, 130,
+                    140, 141}
+        assert set(_M01_CHARGE_TEXT) == official, (
+            f"M 系枚举应覆盖官方 15 项，缺: {official - set(_M01_CHARGE_TEXT)}，"
+            f"多: {set(_M01_CHARGE_TEXT) - official}")
+
+    def test_m01_real_value_renders_text(self):
+        """★ 实测 ONE 的 chargeStatus=10 必须渲染成「未充电」，不是 None。"""
+        from rendering import render_value
+
+        data = {"vss": {"charge_status": {"value": 10},
+                        "__m01_charge": {"value": 10}}}
+        out = render_value("charge_status", 10, {"value": 10}, data)
+        assert out == "未充电", f"实测 10 应显示「未充电」，实际 {out!r}"
+        assert out is not None, "★ 这正是车主报的「不对」"
+
+    def test_m01_branching_states(self):
+        from rendering import render_value
+
+        for code, text in ((50, "充电中"), (60, "充电完成"),
+                           (70, "已停止充电"), (111, "电池故障")):
+            data = {"vss": {"charge_status": {"value": code},
+                            "__m01_charge": {"value": code}}}
+            got = render_value("charge_status", code, {"value": code}, data)
+            assert got == text, f"{code} 应为 {text}，实际 {got!r}"
+
+    def test_x_series_unaffected(self):
+        """★ X 系不带 __m01_charge ⇒ 必须继续走原 App 归一化逻辑。"""
+        from rendering import render_value
+
+        for code, text in ((3, "充电中"), (5, "已停止"), (2, "电池加热")):
+            data = {"vss": {"charge_status": {"value": code}}}
+            got = render_value("charge_status", code, {"value": code}, data)
+            assert got == text, f"X 系 {code} 应为 {text}，实际 {got!r}"
+
+    def test_m01_state_emits_raw_code(self):
+        """m01_state 必须同时给出原始码（渲染据此分流）。"""
+        from pathlib import Path
+        m01 = (Path(__file__).resolve().parent.parent
+               / "custom_components" / "lixiang_auto" / "m01_state.py")
+        src = m01.read_text(encoding="utf-8")
+        assert 'put("__m01_charge"' in src, (
+            "m01_state 未输出 __m01_charge ⇒ 渲染无法区分 M/X 系")
+
+
+class TestM01PowerMode:
+    """★ M 系电源模式（2026-10-20 车主截图暴露）。
+
+    截图：2026-10-19 17:28:57「电源模式 = 2」—— 裸数字，用户看不懂。
+    官方枚举 LXVehiclePowerModeStatus（APK index.vehicle.js 实证）：
+      0 熄火 / 1 ACC 通电 / 2 整车通电 / 3 无效 / 4 远程上电 / 5 智驾上电
+    """
+
+    def test_official_values(self):
+        from rendering import _M01_POWER_MODE_TEXT
+
+        assert _M01_POWER_MODE_TEXT[0] == "熄火"
+        assert _M01_POWER_MODE_TEXT[2] == "整车通电"
+        assert _M01_POWER_MODE_TEXT[5] == "智驾上电"
+
+    def test_screenshot_value_is_readable(self):
+        """★ 截图的 2 必须渲染成"整车通电"，不能还是 2。"""
+        from rendering import render_value
+
+        data = {"vss": {"power_mode": {"value": "2"},
+                        "__m01_power_mode": {"value": "2"}}}
+        out = render_value("power_mode", "2", {"value": "2"}, data)
+        assert out == "整车通电", f"实测 2 应显示「整车通电」，实际 {out!r}"
+        assert out is not None
+
+    def test_all_levels(self):
+        from rendering import render_value
+
+        for code, text in ((0, "熄火"), (1, "ACC 通电"), (3, "无效"),
+                           (4, "远程上电")):
+            data = {"vss": {"power_mode": {"value": code},
+                            "__m01_power_mode": {"value": code}}}
+            got = render_value("power_mode", code, {"value": code}, data)
+            assert got == text, f"{code} 应为 {text}，实际 {got!r}"
+
+    def test_x_series_unaffected(self):
+        """★ X 系不带 __m01_power_mode ⇒ 保持原样（裸值）。"""
+        from rendering import render_value
+
+        data = {"vss": {"power_mode": {"value": 2}}}
+        assert render_value("power_mode", 2, {"value": 2}, data) == 2
+
+    def test_m01_state_emits_raw(self):
+        from pathlib import Path
+
+        m01 = (Path(__file__).resolve().parent.parent
+               / "custom_components" / "lixiang_auto" / "m01_state.py")
+        src = m01.read_text(encoding="utf-8")
+        assert 'put("__m01_power_mode"' in src, (
+            "m01_state 未输出 __m01_power_mode ⇒ 渲染无法区分 M/X 系")
+
+    def test_branch_not_nested_in_charge_status(self):
+        """★ 防重复犯错：power_mode 分支必须是顶层，不能嵌在 charge_status 里。
+
+        （我第一次就把分支误插进了 charge_status 块 → power_mode 永远走不到）
+        """
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent.parent / "custom_components"
+               / "lixiang_auto" / "rendering.py").read_text(encoding="utf-8")
+        i_pm = src.find('if key == "power_mode":')
+        i_cs = src.find('if key == "charge_status":')
+        assert i_pm > 0 and i_cs > 0
+        assert i_pm < i_cs, (
+            "power_mode 分支应在 charge_status 之前（顶层特殊信号区），"
+            "否则 power_mode 永远走不到这个分支")
+
+
+class TestM01SwitchSignals:
+    """★ M 系一批「开关/布尔」信号翻译（2026-10-20 车主截图驱动）。
+
+    ★★ 判定前提（避免「用状态冒充开关」这个坑）：
+      这些字段在官方响应里是**开关位/布尔**（switchState / status / warning /
+      startStatus / acOffStatus），不是状态枚举 ⇒ 翻译为 开/关 或 有/无 是安全的。
+
+    实测来源（真实 ONE 响应）：
+      caseCoverStatus.switchState="0"    → 充电口盖
+      ringLightStatus.status="1"         → 环灯
+      keyInCarWarning.warning="0"        → 钥匙在车提醒
+      remoteStartStatus.startStatus="0"  → 远程启动
+      airConditioningStatus.acOffStatus="0"（取反后 ac_on=1）
+    """
+
+    @staticmethod
+    def _render(key, code, raw_key):
+        from rendering import render_value
+
+        data = {"vss": {key: {"value": code}, raw_key: {"value": code}}}
+        return render_value(key, code, {"value": code}, data)
+
+    @pytest.mark.parametrize("key,raw,zero,one", [
+        ("charge_port_lid", "__m01_charge_lid", "关闭", "开启"),
+        ("ring_light", "__m01_ring_light", "关闭", "开启"),
+        ("key_in_car_warning", "__m01_key_in_car", "正常", "钥匙在车内"),
+        ("remote_start_status", "__m01_remote_start", "未启动", "已启动"),
+        ("ac_on", "__m01_ac_on", "关闭", "开启"),
+    ])
+    def test_switch_translations(self, key, raw, zero, one):
+        assert self._render(key, 0, raw) == zero
+        assert self._render(key, 1, raw) == one
+
+    @pytest.mark.parametrize("key", ["charge_port_lid", "ring_light",
+                                     "key_in_car_warning",
+                                     "remote_start_status", "ac_on"])
+    def test_x_series_unaffected(self, key):
+        """★ X 系不带 __m01_ 标记 ⇒ 保持裸值（不得被误翻译）。"""
+        from rendering import render_value
+
+        data = {"vss": {key: {"value": 1}}}
+        assert render_value(key, 1, {"value": 1}, data) == 1
+
+    def test_mapping_table_structure(self):
+        from rendering import _M01_SWITCH_TEXT
+
+        assert set(_M01_SWITCH_TEXT) == {
+            "ring_light", "key_in_car_warning", "charge_port_lid",
+            "remote_start_status", "ac_on"}
+        for tbl in _M01_SWITCH_TEXT.values():
+            assert 0 in tbl and 1 in tbl
+
+    def test_m01_state_emits_all_raw_codes(self):
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent.parent / "custom_components"
+               / "lixiang_auto" / "m01_state.py").read_text(encoding="utf-8")
+        # 显式 put 的四个
+        for tag in ("__m01_ring_light", "__m01_key_in_car", "__m01_charge_lid",
+                    "__m01_remote_start"):
+            assert tag in src, f"m01_state 未输出 {tag} ⇒ 渲染无法区分 M/X 系"
+        # ac_on 走的是 AC 批量循环里的动态拼接 '"__m01_" + key'（不写字面量）
+        assert '"__m01_" + key' in src, (
+            "AC 批量循环应动态附带 __m01_<key>（ac_on 由此产生）")
