@@ -190,6 +190,13 @@ function lxEnableDragSort(row) {
     if (!drag) return;
     const card = drag.card;
     const moved = drag.moved;
+    // ★★ 拖动过就必须吞掉【随后补发的 click】——
+    //   卡片整块可点（点空调卡跳空调页），pointerup 后浏览器会补一个 click，
+    //   若不拦就会"松手即跳二级界面"，而且用户以为没拖动成功。
+    if (moved) {
+      card.__lxSwallowClick = true;
+      setTimeout(() => { card.__lxSwallowClick = false; }, 350);
+    }
     // 复位视觉
     card.style.transform = "";
     card.classList.remove("lx-dragging");
@@ -208,6 +215,16 @@ function lxEnableDragSort(row) {
       try { navigator.vibrate && navigator.vibrate(8); } catch (e) {}
     }
   };
+
+  // ★ click 拦在【捕获阶段】：卡片的跳转逻辑多在冒泡阶段，
+  //   捕获阶段先拦掉，比事后 preventDefault 可靠。
+  row.addEventListener("click", (ev) => {
+    const card = ev.target.closest && ev.target.closest(".card");
+    if (card && card.__lxSwallowClick) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+  }, true);
 
   row.addEventListener("pointerdown", (ev) => {
     if (ev.button != null && ev.button !== 0) return;

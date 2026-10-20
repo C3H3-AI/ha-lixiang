@@ -120,6 +120,21 @@ await page.goto('file://' + path.join(__dirname, '_drag_fixture.html'));
   after.saved ? ok('顺序已保存到 localStorage')
               : bad('顺序未保存');
 
+  // ★★ 拖动后浏览器会补发 click → 必须被吞掉（否则"松手就跳二级界面"）
+  const jumped = await page.evaluate(`(() => {
+    let navigated = false;
+    const card = document.getElementById('c-ac');
+    card.addEventListener('click', (ev) => {
+      navigated = !!(card.__lxSwallowClick);
+    });
+    // 模拟浏览器在 pointerup 后补发的 click
+    card.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+    return { swallowFlag: !!card.__lxSwallowClick, navigated };
+  })()`);
+  jumped.swallowFlag
+    ? ok('松手后的 click 被吞掉（不会跳二级界面）')
+    : bad('松手后 click 未被吞 → 会跳二级界面（用户反馈的 bug）');
+
   // ★ 刷新后顺序是否保持（本地重放验证）
   await page.evaluate(`(() => {
     // 模拟刷新：把 c-ac 放回原来的 r1（DOM 复位）
