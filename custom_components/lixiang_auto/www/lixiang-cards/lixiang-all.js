@@ -1813,7 +1813,10 @@ class LixiangAppHome extends HTMLElement {
                  ② 「未连接」来自 _eid("key_connected")，但该绑定键根本不存在，
                     所以永远显示假状态。现改为「车辆信息」+ 真实车型副标题。 -->
             <div class="tx"><div class="nm">车辆信息</div><div class="sd" id="v-key">—</div></div></div>
-          <div class="entry" id="e-scene" role="button" tabindex="0">
+          <!-- ★ 2026-10-20：情景模式入口按【车型能力】隐藏。
+               M 系（理想ONE）real-time-state 无场景字段、能力表无 version:scene
+               ⇒ 点进去只能看到 unknown。实体不存在就不给入口（同 QUICK 思路）。 -->
+          <div class="entry" id="e-scene" role="button" tabindex="0" hidden>
             <img class="ic" src="${__iconBase}/ic_home_scene_mode_lisa.png" alt="" onerror="this.src='${__iconBase}/ic_home_control.webp'">
             <div class="tx"><div class="nm">情景模式</div></div></div>
           <div class="entry" id="e-setting" role="button" tabindex="0">
@@ -2055,6 +2058,18 @@ class LixiangAppHome extends HTMLElement {
     wire("#t", nav.vinfo || "/lixiang/vinfo");
     wire("#e-key", nav.vinfo || "/lixiang/vinfo");
     wire("#e-task", nav.task || "/lixiang/task");
+    // ★ 2026-10-20：情景模式入口按车型隐藏
+    //   ONE（M 系）的 real-time-state 无场景字段、能力表无 version:scene
+    //   ⇒ 实体不会创建 ⇒ 不给入口（避免点进去只有 unknown）
+    {
+      const _el = this.$("#e-scene");
+      if (_el) {
+        const _has = !!this._eid("scene_mode")
+                   || !!this._eidIn("entries", "scene_mode")
+                   || !!this._eidIn("quick", "scene_mode");
+        _el.hidden = !_has;
+      }
+    }
     wire("#e-scene", nav.scene || "/lixiang/scene");
     // 2026-10-12 修复（车主："车辆设置二级页面错误"）：这两行此前没有默认路径。
     // nav.setting / nav.health 未配置时是 undefined → go(undefined) → if (!p) return

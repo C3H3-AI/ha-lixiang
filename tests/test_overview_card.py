@@ -1136,3 +1136,39 @@ class TestPhoneLayoutThresholdAlignment:
     def test_no_330px_left(self):
         assert "max-width: 330px" not in self._home_src(), (
             "旧的 330px 阈值应已改为 340px（否则 358px 仍被收窄）")
+
+
+class TestSceneEntryGating:
+    """★ 情景模式入口按车型隐藏（2026-10-20 维护者反馈）。
+
+    背景：ONE 车主看到车控卡上有「情景模式」入口，点进去只有 unknown。
+    根因：
+      · M 系 real-time-state 无场景字段 ⇒ scene_mode 实体不创建
+      · M 系能力表无 version:scene
+      · 而卡片入口区（entries）没有像 QUICK 那样的实体存在性门控
+    """
+
+    @staticmethod
+    def _home_src() -> str:
+        from pathlib import Path
+
+        return (Path(__file__).resolve().parent.parent / "custom_components"
+                / "lixiang_auto" / "www" / "lixiang-cards"
+                / "lixiang-app-home.js").read_text(encoding="utf-8")
+
+    def test_entry_starts_hidden(self):
+        """入口默认 hidden，再由 JS 按实体存在性决定是否显示。"""
+        s = self._home_src()
+        assert 'id="e-scene" role="button" tabindex="0" hidden>' in s, (
+            "情景模式入口应默认 hidden（避免无车型能力时闪现）")
+
+    def test_gating_logic_exists(self):
+        s = self._home_src()
+        assert "_el.hidden = !_has" in s, "缺按实体存在性显示的逻辑"
+        assert 'scene_mode' in s
+
+    def test_gate_checks_entity_existence(self):
+        """必须查实体是否存在，而不是硬编码车型名。"""
+        s = self._home_src()
+        assert '_eid("scene_mode")' in s, "应查 scene_mode 实体是否存在"
+        assert 'M01' not in s.split('e-scene')[1][:600], "不应硬编码车型"
