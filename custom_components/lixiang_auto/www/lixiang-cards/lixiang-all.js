@@ -1092,7 +1092,14 @@ const STYLE = `
        原来写在 ≤480px 里 —— 容器查询修好后（v1.5.10）它在 460~490px 的
        desktop 栏里也命中，车主反馈"一行只有 2 个"。App 本体在 420pt 仍是 4 列，
        所以阈值下调到 400px（约等于手机竖屏可用宽度以下）。 */
-    @container (max-width: 330px) {
+      /* ★ 2026-10-20：330px → 340px（按官方截图对齐，18px 余量）
+         维护者反馈「其他用户是一列，我们是两列」。
+         最强证据 = 官方 App 手机宽度实测（容器 ≈358px）：
+         快捷 4 个 / 两卡并排 / 瓦片 2 个 —— 全部保持多列。
+         而旧阈值 330px【本该低于 358px】却仍让 358 落在阈值之下，
+         于是 .quick 收 2 列、.row2 收 1 列 ⇒ 看起来「一列」。
+         ⇒ 340px 保证 358px 宽度不命中，与官方一致。 */
+    @container (max-width: 340px) {
       .quick { grid-template-columns: repeat(2, minmax(0,1fr)); }
       .row2 { grid-template-columns: minmax(0,1fr); }
       .entries { grid-template-columns: minmax(0,1fr); }
