@@ -32,22 +32,22 @@ class TestLocationMasking:
         "gps_longitude", "gps_latitude", "coord", "position", "location",
     ])
     def test_location_values_are_masked(self, key):
-        out = dr.redact_realtime_state({"data": {key: "116.397128"}})
+        out = dr.redact_realtime_state({"data": {key: "999.999999"}})
         got = out["data"][key]
         assert got == "<masked-location>", f"{key} 未被掩码: {got!r}"
-        assert "116.397128" not in str(out), "原始坐标泄露！"
+        assert "999.999999" not in str(out), "原始坐标泄露！"
 
     def test_real_world_sample(self):
         """用真实 ONE 响应里出现过的位置字段名。"""
         raw = {"data": {"vehiclePosition": {
-            "longitude": "116.397128", "latitude": "39.916527",
+            "longitude": "999.999999", "latitude": "999.999998",
             "altitude": "44", "direction": "180"}}}
         out = dr.redact_realtime_state(raw)
         vp = out["data"]["vehiclePosition"]
         assert vp["longitude"] == "<masked-location>"
         assert vp["latitude"] == "<masked-location>"
-        assert "116.397128" not in str(out)
-        assert "39.916527" not in str(out)
+        assert "999.999999" not in str(out)
+        assert "999.999998" not in str(out)
 
 
 # ── 凭据掩码 ────────────────────────────────────────────────
@@ -62,7 +62,7 @@ class TestCredentialMasking:
         ("cookie", "a=b"),
         ("hac_key", "k"),
         ("xdev", "device"),
-        ("phone", "13893465222"),
+        ("phone", "13900000000"),
         ("device_id", "d-1"),
         ("imei", "860000000000000"),
     ])
@@ -80,20 +80,20 @@ class TestCredentialMasking:
 
     def test_no_real_phone_number_anywhere(self):
         """★ 用真实出现过手机号做样本，确保字符串形式也不残留。"""
-        raw = {"data": {"phone": "13893465222",
-                        "nested": {"mobile": "13893465222"}}}
+        raw = {"data": {"phone": "13900000000",
+                        "nested": {"mobile": "13900000000"}}}
         out = dr.redact_realtime_state(raw)
-        assert "13893465222" not in str(out)
+        assert "13900000000" not in str(out)
 
 
 # ── VIN 指纹 ────────────────────────────────────────────────
 class TestVinFingerprint:
     def test_vin_becomes_stable_fingerprint(self):
-        fp1 = dr.vin_fingerprint("HLX32B14XR1361015")
-        fp2 = dr.vin_fingerprint("HLX32B14XR1361015")
+        fp1 = dr.vin_fingerprint("HLX0000000000000TEST")
+        fp2 = dr.vin_fingerprint("HLX0000000000000TEST")
         assert fp1 == fp2, "同一辆车必须得到同一个指纹"
         assert fp1.startswith("vin-")
-        assert "HLX32B14XR1361015" not in fp1, "VIN 本身不得出现"
+        assert "HLX0000000000000TEST" not in fp1, "VIN 本身不得出现"
 
     def test_different_vins_differ(self):
         assert dr.vin_fingerprint("AAA") != dr.vin_fingerprint("BBB")
@@ -103,31 +103,31 @@ class TestVinFingerprint:
         assert dr.vin_fingerprint(None) == ""
 
     def test_filename_token_safe(self):
-        t = dr.safe_filename_token("HLX32B14XR1361015")
+        t = dr.safe_filename_token("HLX0000000000000TEST")
         assert t.isalnum()
         assert len(t) == 8
-        assert "HLX32B14XR1361015" not in t
+        assert "HLX0000000000000TEST" not in t
 
 
 # ── 条目白名单 ──────────────────────────────────────────────
 class TestEntryAllowlist:
     def test_only_allowlisted_keys_survive(self):
         data = {
-            "vin": "HLX32B14XR1361015",       # ❌ 直接 VIN
-            "vin_fingerprint": dr.vin_fingerprint("HLX32B14XR1361015"),
+            "vin": "HLX0000000000000TEST",       # ❌ 直接 VIN
+            "vin_fingerprint": dr.vin_fingerprint("HLX0000000000000TEST"),
             "car_type": "L6",                  # ✅
             "car_nickname": "小L",              # ✅
             "platform": "1",                   # ✅
             "token": "SECRET",                 # ❌
             "refresh_token": "SECRET",         # ❌
             "password": "p",                   # ❌
-            "phone": "13893465222",            # ❌
+            "phone": "13900000000",            # ❌
         }
         out = dr.redact_entry_data(data)
         assert set(out) == {"vin_fingerprint", "car_type", "car_nickname", "platform"}
         assert "SECRET" not in str(out)
-        assert "13893465222" not in str(out)
-        assert "HLX32B14XR1361015" not in str(out)
+        assert "13900000000" not in str(out)
+        assert "HLX0000000000000TEST" not in str(out)
 
     def test_none_input(self):
         assert dr.redact_entry_data(None) == {}
@@ -208,28 +208,28 @@ class TestVinMasking:
     @pytest.mark.parametrize("key", ["vin", "VIN", "vehicle_id",
                                      "vehicleId", "frame_no"])
     def test_vin_variants_masked(self, key):
-        out = dr.redact_realtime_state({"data": {key: "HLX32B14XR1361015"}})
+        out = dr.redact_realtime_state({"data": {key: "HLX0000000000000TEST"}})
         got = out["data"][key]
-        assert "HLX32B14XR1361015" not in str(got), f"{key} 泄露了 VIN"
+        assert "HLX0000000000000TEST" not in str(got), f"{key} 泄露了 VIN"
 
     def test_vin_in_nested_structure(self):
-        raw = {"data": {"vehicleInfo": {"vin": "HLX32B14XR1361015"}}}
+        raw = {"data": {"vehicleInfo": {"vin": "HLX0000000000000TEST"}}}
         out = dr.redact_realtime_state(raw)
-        assert "HLX32B14XR1361015" not in str(out)
+        assert "HLX0000000000000TEST" not in str(out)
 
     def test_realistic_injection_scenario(self):
         """★ 模拟最坏情况：原始响应里同时有 token/手机号/VIN/坐标。"""
         raw = {"data": {
-            "token": "SECRET_TOKEN_123",
-            "phone": "13893465222",
-            "vin": "HLX32B14XR1361015",
-            "vehiclePosition": {"longitude": "116.397128",
-                                "latitude": "39.916527"},
+            "token": "FAKE_TOKEN_VALUE",
+            "phone": "13900000000",
+            "vin": "HLX0000000000000TEST",
+            "vehiclePosition": {"longitude": "999.999999",
+                                "latitude": "999.999998"},
         }}
         out = dr.redact_realtime_state(raw)
         blob = str(out)
-        for bad in ("SECRET_TOKEN_123", "13893465222",
-                    "HLX32B14XR1361015", "116.397128", "39.916527"):
+        for bad in ("FAKE_TOKEN_VALUE", "13900000000",
+                    "HLX0000000000000TEST", "999.999999", "999.999998"):
             assert bad not in blob, f"{bad} 泄露！"
 
     def test_structure_survives_redaction(self):
@@ -248,7 +248,7 @@ class TestLocationContainerNotOverMasked:
 
     def test_position_group_recursed(self):
         raw = {"data": {"vehiclePosition": {
-            "longitude": "116.397128", "latitude": "39.916527",
+            "longitude": "999.999999", "latitude": "999.999998",
             "altitude": "44", "direction": "180"}}}
         out = dr.redact_realtime_state(raw)
         vp = out["data"]["vehiclePosition"]

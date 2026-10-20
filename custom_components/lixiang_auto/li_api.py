@@ -730,6 +730,12 @@ class LiApiClient:
         self._phone = str(phone) if phone is not None else ""
         self._password = str(password) if password is not None else ""
         self._vin = str(vin) if vin is not None else ""
+        # ★ 2026-10-20：命令下发的代际守卫
+        #   防「账号/token 已变，命令还按旧的发出去」—— 重登、token 刷新
+        #   都发生在异步等待期间，是最危险的窗口。
+        #   （学自问界 huawei-auto-cloud 的 generation 机制，砍到两层）
+        from .session_guard import SessionGuard
+        self._guard = SessionGuard(vin=self._vin)
         # ★ 2026-09-24 修复（严重 bug）：
         #   secrets 模块的 _LazySecret 是 str 子类，构造时内容为空，
         #   真实值靠 __str__() 延迟求值。
@@ -883,6 +889,9 @@ class LiApiClient:
         self._cli = cli
         # ★ 保存主 Bearer：travel/陪伴里程接口用（此前只存 refresh_token → travel 120001）
         self._main_bearer = str(tok.get("access_token") or "")
+        # ★ token 已更新 ⇒ 推进代际（进行中的命令会被告知「会话已变更」）
+        if getattr(self, "_guard", None) is not None:
+            self._guard.bump_token()
         # ★★★ 2026-10-17（理想 ONE 实车定位出的重大 bug）：
         #   `X-CHJ-Token` 请求头此前一直取 self._app_token —— 那是【配置条目里
         #   上次保存的旧值】，而登录后只更新了 _main_bearer（Authorization 头）。
@@ -1610,6 +1619,9 @@ class LiApiClient:
             return False
         self._cli = cli
         self._main_bearer = access
+        # ★ 同上：token 重新获取 ⇒ 推进代际
+        if getattr(self, "_guard", None) is not None:
+            self._guard.bump_token()
         new_rt = str(tok.get("refresh_token") or "")
         if new_rt and new_rt != self._refresh_token:
             self._refresh_token = new_rt
@@ -2520,6 +2532,9 @@ class LiApiClient:
             (服务端只校验下界; 填 1 可成功, 但采用源码真实值 30 更保险)
           - token 必须是 VAT(token), 不是 MESH / "0" / 空 (旧代码填 "0" 会 2009)
         """
+        # ★ 2026-10-20：命令入口取会话快照，_do() 每次真正发 HTTP 前校验。
+        _guard_ticket = (self._guard.snapshot()
+                         if getattr(self, "_guard", None) is not None else None)
         # ★ 2026-09-28：JOB 通道命令在【发送前】就明确拒绝。
         #   理由见 ensure_job_channel_supported() 的 docstring：
         #   这些命令必然 2009，失败是静态已知的，不该浪费一次车控请求，
@@ -2548,6 +2563,10 @@ class LiApiClient:
         #   MESH / VAT token 缓存可能被服务端提前失效，
         #   旧行为是「点两次才生效」；现在捕获 401 → 清缓存 → 重试一次。
         def _do() -> dict:
+            # ★★ 2026-10-20：真正发 HTTP 前校验会话代际。
+            #   放在 _do 里 ⇒ 重试的每一次都会查（token 可能在重试间隙被刷新）。
+            if getattr(self, "_guard", None) is not None:
+                self._guard.assert_current(_guard_ticket)
             return self._signed_call(
                 "POST", EP_CMD_SEND,
                 json.dumps(body, separators=(",", ":")),
@@ -2834,6 +2853,10 @@ class LiApiClient:
         #     ② MControlKeyConst（M 系 cmdKey 常量表）+ BaseAppWidget.H() 下发入口
         #     ③ L6 实测：send-command 仅带 MESH → 100035（X 系不开放），
         #        不是「token 无效」⇒ MESH 就够了
+        # ★★ 2026-10-20：命令入口取【会话快照】。
+        #   之后无论走哪条通道，最终下发前都要 assert_current ——
+        #   中间隔着异步等待（唤醒/轮询），正是账号/token 最可能变的窗口。
+        _ticket = self._guard.snapshot()
         if self._use_send_command_channel():
             return self._send_command_via_rvc(command_key, command_data,
                                               poll=poll, timeout=timeout)
