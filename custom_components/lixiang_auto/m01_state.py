@@ -499,6 +499,34 @@ def map_realtime_state(res: Any) -> dict[str, dict]:
     put("seat_heat_vent_rl", _num(_seat.get("rlSeatHeatVent")))
     put("seat_heat_vent_rr", _num(_seat.get("rrSeatHeatVent")))
 
+    # ★★ 2026-10-20：喂给 fan 平台的兼容键（否则 ONE 上 fan 实体拿不到数据）
+    #   M 系一个键含「加热+通风」两用（flSeatHeatVent），而 fan.py 的 12 个
+    #   spec 用的是「冷热分开」的键名（seat_fl_heat / seat_fl_vent …）。
+    #   官方 a0.smali 实证：Level = 档位+1（1关 2低 3中 4高）；
+    #   Type 3/4/5/6 = 加热档 1/2/3，25 = 通风档。
+    #   ⇒ 档位 1~3 视为加热、6 视为通风（其余为关）。
+    _seat_fan_map = [
+        ("fl", "seat_heat_vent_fl", "seat_fl_heat", "seat_fl_vent"),
+        ("fr", "seat_heat_vent_fr", "seat_fr_heat", "seat_fr_vent"),
+        ("rl", "seat_heat_vent_rl", "seat_sl_heat", "seat_sl_vent"),
+        ("rr", "seat_heat_vent_rr", "seat_sr_heat", "seat_sr_vent"),
+    ]
+    for _corner, _src_key, _heat_key, _vent_key in _seat_fan_map:
+        _lv = _num(_dig(res, "seatStatus").get(_corner + "SeatHeatVent"))
+        if _lv is None:
+            continue
+        _lv = int(_lv)
+        # 加热档（1~3）→ 喂给 *_heat；通风档（6）→ 喂给 *_vent；关 → 两个都 0
+        if 1 <= _lv <= 3:
+            put(_heat_key, _lv)
+            put(_vent_key, 0)
+        elif _lv >= 6:
+            put(_heat_key, 0)
+            put(_vent_key, max(1, _lv - 5))
+        else:
+            put(_heat_key, 0)
+            put(_vent_key, 0)
+
 
     # ── 其余四门「锁」状态（2026-10-19 补齐）──────────────────────
     #   实测：doorSwitchStatus.<门> = {"isOpen": 0, "isLock": 1, …}

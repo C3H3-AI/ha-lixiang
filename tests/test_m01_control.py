@@ -83,9 +83,11 @@ class TestSeatMapping:
                         [k for k in data if k.endswith("Level")][0]] == "1"
 
     def test_vent_level_6_uses_vent_type(self):
-        """档位 6（通风档）前两座有专门编号：FL=25 / FR=27。"""
-        assert mc.build_seat("fl", 6, ac_on=True)[1]["Type"] == "25"
-        assert mc.build_seat("fr", 6, ac_on=True)[1]["Type"] == "27"
+        """通风（vent=True）前两座有专门编号：FL=25 / FR=27。"""
+        assert mc.build_seat("fl", 6, ac_on=True, vent=True)[1]["Type"] == "25"
+        assert mc.build_seat("fr", 6, ac_on=True, vent=True)[1]["Type"] == "27"
+        # 加热标志下不应拿到通风编号
+        assert mc.build_seat("fl", 2, ac_on=True, vent=False)[1]["Type"] == "5"
 
     def test_temp_only_when_ac_on(self):
         _, data = mc.build_seat("fl", 2, ac_on=True, temp=21.5)
@@ -345,3 +347,65 @@ class TestSentryCoverage:
         """交叉校验：官方表里 Sentry 确实是 55.0。"""
         assert mc.OFFICIAL_COMMAND_KEY_MAP.get(
             "LXVehicleControlTypeSentry") == "55.0"
+
+
+class TestSeatVentVsHeat:
+    """★ 通风与加热是【不同 Type 编号】（2026-10-20 实测发现的 bug）。
+
+    官方 a0.h(Z) / a0.i(Z) 实证：
+      · 加热：Type = 基号 + 档位   （FL: 3+档 → 4/5/6）
+      · 通风：Type = 25 / 27      （固定编号，前两座才有）
+    之前只按 level>=6 判断 ⇒ VentSw 也被发成加热 Type（错）。
+    """
+
+    def test_vent_uses_dedicated_type(self):
+        assert mc.build_seat("fl", 2, ac_on=True, vent=True)[1]["Type"] == "25"
+        assert mc.build_seat("fr", 2, ac_on=True, vent=True)[1]["Type"] == "27"
+
+    def test_heat_uses_base_plus_level(self):
+        assert mc.build_seat("fl", 2, ac_on=True, vent=False)[1]["Type"] == "5"
+        assert mc.build_seat("fr", 1, ac_on=True, vent=False)[1]["Type"] == "8"
+
+    def test_rear_seats_have_no_vent_type(self):
+        """后两座官方无通风编号 ⇒ 退回 base+level（不崩）。"""
+        k, d = mc.build_seat("rl", 2, ac_on=True, vent=True)
+        assert k == "remote_ac_ctrl_new"
+        assert d["Type"] == "13"
+
+    def test_translate_distinguishes_vent(self):
+        """flSeatVentSw 必须走通风 Type，flSeatHeatSw 走加热。"""
+        _, heat = mc.translate(
+            {"acCtrlType": "flSeatHeatSw", "acCtrlValue": "LEVEL2"}, ac_on=True)
+        _, vent = mc.translate(
+            {"acCtrlType": "flSeatVentSw", "acCtrlValue": "LEVEL2"}, ac_on=True)
+        assert heat["Type"] == "5"
+        assert vent["Type"] == "25"
+        assert heat["Type"] != vent["Type"]
+
+
+class TestFanEntityCreationForM01:
+    """★ ONE 上 fan 实体原来一个都不建（能力表 tag 不匹配）。"""
+
+    @staticmethod
+    def _fan_src() -> str:
+        from pathlib import Path
+
+        return (Path(__file__).resolve().parent.parent / "custom_components"
+                / "lixiang_auto" / "fan.py").read_text(encoding="utf-8")
+
+    def test_fan_has_m01_fallback(self):
+        src = self._fan_src()
+        assert 'getattr(ability, "platform", "")' in src, (
+            "fan.py 缺 M 系兜底 ⇒ ONE 上座椅实体全被跳过")
+        assert 'seat_heat_vent_' in src, (
+            "M 系兜底应改用响应字段判定（官方能力表无这些 tag）")
+
+    def test_m01_state_emits_fan_keys(self):
+        """m01_state 必须输出 fan 平台需要的 12 个键（否则实体 unknown）。"""
+        from pathlib import Path
+
+        src = (Path(__file__).resolve().parent.parent / "custom_components"
+               / "lixiang_auto" / "m01_state.py").read_text(encoding="utf-8")
+        for k in ("seat_fl_heat", "seat_fl_vent", "seat_fr_heat", "seat_fr_vent",
+                  "seat_sl_heat", "seat_sr_heat"):
+            assert f'"{k}"' in src, f"m01_state 未输出 {k}（fan 实体会 unknown）"

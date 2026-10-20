@@ -206,7 +206,25 @@ async def async_setup_entry(
         feat = spec[5] if len(spec) > 5 else None
         ability_tag = spec[6] if len(spec) > 6 else None
 
-        if ability is not None and getattr(ability, "available", False) and ability_tag:
+        # ★★ 2026-10-20：M 系（理想ONE）兜底判定
+        #   M 系能力表（{modelId}.json）里【没有】flSeatHeatSw 这类 tag
+        #   （实测 M01B 表里只有 vehicleSeat=6 / 旋转座椅 isSupport=False），
+        #   于是 ability.has(tag) 恒 False ⇒ 座椅实体全被跳过。
+        #   M 系的 real-time-state 直接给了 seatStatus.{fl,fr,rl,rr}SeatHeatVent
+        #   ⇒ 改成用【响应字段是否存在】判定，更可靠。
+        _is_m = str(getattr(ability, "platform", "")) == "1"
+        if _is_m:
+            _corner = {
+                "seat_fl_heat": "fl", "seat_fl_vent": "fl",
+                "seat_fr_heat": "fr", "seat_fr_vent": "fr",
+                "seat_sl_heat": "rl", "seat_sl_vent": "rl",
+                "seat_sr_heat": "rr", "seat_sr_vent": "rr",
+            }.get(spec[0])
+            _seat = ((coordinator.data or {}).get("vss") or {}).get(
+                "seat_heat_vent_" + (_corner or "fl")) or {}
+            if _seat.get("value") is None:
+                continue
+        elif ability is not None and getattr(ability, "available", False) and ability_tag:
             # ① 权威路径：车型能力表
             if not ability.has(ability_tag):
                 _LOGGER.debug("能力表 %s(%s=%s) 判定无此座椅，跳过 %s",

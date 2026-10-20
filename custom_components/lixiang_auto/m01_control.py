@@ -112,7 +112,8 @@ def _as_str(value: Any) -> str:
 
 
 def build_seat(
-    corner: str, level: int, *, ac_on: bool | None, temp: Any = None
+    corner: str, level: int, *, ac_on: bool | None, temp: Any = None,
+    vent: bool = False
 ) -> tuple[str, dict[str, str]]:
     """构造座椅加热/通风命令。
 
@@ -134,7 +135,13 @@ def build_seat(
         return key, {level_field: "1", fb_field: "0"}
 
     if ac_on:
-        type_code = vent_type if (level >= 6 and vent_type) else str(base + level)
+        # ★ 2026-10-20 修正：通风与加热是【不同 Type】
+        #   官方 a0.h/i：加热 = 基号+档位（3+1..3+3）；通风 = 25 / 27（固定编号）
+        #   ⇒ 按 vent 标志分流，不能只看 level>=6
+        if vent and vent_type:
+            type_code = vent_type
+        else:
+            type_code = str(base + level)
         data: dict[str, str] = {"Type": type_code}
         if temp is not None:
             data["Temp"] = _as_str(temp)
@@ -230,7 +237,10 @@ def translate(cmd_data: dict[str, Any] | None, *,
     # ── 座椅四角 ───────────────────────────────────────────────
     corner = _SEAT_TYPE_PREFIX.get(ctype)
     if corner:
-        return build_seat(corner, parse_level(cval), ac_on=ac_on, temp=temp)
+        # ★ VentSw = 通风（与 HeatSw 是不同 Type 编号）
+        _vent = "vent" in ctype.lower()
+        return build_seat(corner, parse_level(cval), ac_on=ac_on,
+                          temp=temp, vent=_vent)
 
     # ── 方向盘加热 ─────────────────────────────────────────────
     if ctype in ("strgWhlHeatSw", "wheelHeatSw"):
