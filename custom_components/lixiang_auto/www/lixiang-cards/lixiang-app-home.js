@@ -37,6 +37,220 @@ const __iconFallback = BUILTIN_ICON_BASE;
 //   背景：外壳（lixiang-app）只能靠猴补丁拦 history.pushState；一旦 HA 路由
 //   抢在它前面处理，子卡片内的"返回/入口"会真的切 HA 视图 → 车主反馈
 //   「点击都回到首页」。改为显式事件：外壳在则内部切换，不在则回退 HA 路由。
+// ═══ ★ 卡片拖拽排序（2026-10-20）══════════════════════════════════
+//   目标：允许用户在【卡片内部】拖动 .row2 里的卡片（空调 / 位置 / 里程 /
+//        电量 / 哨兵）自由换位，顺序持久化到 localStorage。
+//   设计要点：
+//     · 只用原生 HTML5 drag & drop，不引第三方库（卡片要尽量轻）。
+//     · 【长按 350ms 才进入拖拽】—— 否则会与卡片自身的点击冲突
+//       （点空调卡要跳空调页，点位置卡要跳地图页）。
+//     · 拖动时给占位提示；松手按新顺序写回 DOM 并保存。
+//     · 提供 lxClearOrder()，用户拖乱后可恢复默认。
+const LX_DRAG_STORE = "lx_apphome_order";
+const LX_DRAG_HOLD_MS = 350;
+
+/** 取当前实例的 localStorage（shadow DOM / 多实例下不依赖全局）。 */
+function lxStore(row) {
+  try {
+    const win = (row && row.ownerDocument && row.ownerDocument.defaultView) || window;
+    return win.localStorage || null;
+  } catch (e) { return null; }
+}
+
+function lxLoadOrder(row) {
+  try {
+    const st = lxStore(row);
+    if (!st) return null;
+    const raw = st.getItem(LX_DRAG_STORE);
+    if (!raw) return null;
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr) || !arr.length) return null;
+    // 兼容旧格式（纯 id 字符串数组）：补 host="" 让重放按"就近"处理
+    return arr.map((x) => (typeof x === "string" ? { id: x, host: "" } : x));
+  } catch (e) { return null; }
+}
+
+function lxSaveOrder(ids, row) {
+  try {
+    const st = lxStore(row);
+    if (!st) return;
+    const scope = (row && row.closest(".root")) || row.parentElement;
+    const pairs = [];
+    const seen = new Set();
+    // 当前 row 的卡
+    (ids || []).forEach((id) => {
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      pairs.push({ id, host: row.id || "" });
+    });
+    // 其它 row2 的卡（跨组拖动的结果要靠这个才能还原）
+    if (scope && scope.querySelectorAll) {
+      scope.querySelectorAll(".row2").forEach((r) => {
+        if (r === row) return;
+        r.querySelectorAll(":scope > .card").forEach((c) => {
+          if (!c.id || seen.has(c.id)) return;
+          seen.add(c.id);
+          pairs.push({ id: c.id, host: r.id || "" });
+        });
+      });
+    }
+    st.setItem(LX_DRAG_STORE, JSON.stringify(pairs));
+  } catch (e) {}
+}
+
+function lxClearOrder(row) {
+  try {
+    const st = lxStore(row);
+    if (st) st.removeItem(LX_DRAG_STORE);
+  } catch (e) {}
+}
+
+/** 按已保存顺序重排某个 .row2 里的卡片；无保存则保持原样。 */
+function lxApplyOrder(row) {
+  const order = lxLoadOrder(row);
+  if (!order || !row) return false;
+  const cards = Array.from(row.querySelectorAll(":scope > .card"));
+  if (!cards.length) return false;
+  const byId = new Map(cards.map((c) => [c.id, c]));
+  let touched = false;
+  for (const it of order) {
+    const el = byId.get(it.id);
+    // 必须仍在 DOM 里（车型可能不支持该卡），否则跳过
+    if (el) { row.appendChild(el); touched = true; }
+  }
+  return touched;
+}
+
+/**
+ * ★ 重放【全局】顺序：把每张卡按保存的顺序分配回它上次所在的 .row2。
+ *   需要每张卡记住自己的宿主 row（拖动时写入 data-lx-host）。
+ */
+function lxApplyGlobalOrder(root) {
+  const order = lxLoadOrder(root);
+  if (!order || !root) return false;
+  const rows = Array.from(root.querySelectorAll(".row2"));
+  if (!rows.length) return false;
+  const byId = new Map();
+  rows.forEach((r) => r.querySelectorAll(":scope > .card")
+    .forEach((c) => byId.set(c.id, c)));
+  let touched = false;
+  for (const it of order) {
+    const el = byId.get(it.id);
+    if (!el) continue;
+    // 有明确宿主就回宿主；没有（旧数据）就留在当前 row
+    const host = it.host ? rows.find((r) => r.id === it.host) : null;
+    if (host) { host.appendChild(el); touched = true; }
+    else if (el.parentElement) { touched = true; }
+  }
+  return touched;
+}
+
+/** 给一个 .row2 容器挂上拖拽能力。 */
+function lxEnableDragSort(row) {
+  if (!row || row.__lxDrag) return;
+  row.__lxDrag = true;
+  let holdTimer = null;
+  let drag = null;          // { card, x0, y0, dx, dy, placeholder, moved }
+
+  const clearHold = () => {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+  };
+
+  // 拖动中：记录位移（★ 只在已进入拖动模式后才更新，不取消计时）
+  const onMove = (ev) => {
+    if (!drag) return;
+    const dx = ev.clientX - drag.x0;
+    const dy = ev.clientY - drag.y0;
+    if (!drag.moved) {
+      // 超过 6px 才认定为"拖动"（避免轻微抖动误判）
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      drag.moved = true;
+      row.classList.add("lx-drop-active");
+    }
+    drag.dx = dx;
+    drag.dy = dy;
+    drag.card.style.transform = `translate(${dx}px, ${dy}px) scale(1.02)`;
+
+    // ★ 找当前悬停的卡（允许跨 .row2 —— 两张卡区间可互换）
+    //   ★ 用 row.ownerDocument 而非裸 document：shadow DOM / 多实例下更稳
+    const doc = row.ownerDocument || document;
+    const over = doc.elementFromPoint(ev.clientX, ev.clientY);
+    const card = over && over.closest && over.closest(".card");
+    if (!card || card === drag.card) return;
+    const host = card.closest(".row2");
+    if (!host) return;
+    const box = card.getBoundingClientRect();
+    const after = (ev.clientX - box.left) > box.width / 2;
+    host.insertBefore(drag.card, after ? card.nextSibling : card);
+    drag.host = host;
+  };
+
+  const onUp = () => {
+    clearHold();
+    if (!drag) return;
+    const card = drag.card;
+    const moved = drag.moved;
+    // ★★ 拖动过就必须吞掉【随后补发的 click】——
+    //   卡片整块可点（点空调卡跳空调页），pointerup 后浏览器会补一个 click，
+    //   若不拦就会"松手即跳二级界面"，而且用户以为没拖动成功。
+    if (moved) {
+      card.__lxSwallowClick = true;
+      setTimeout(() => { card.__lxSwallowClick = false; }, 350);
+    }
+    // 复位视觉
+    card.style.transform = "";
+    card.classList.remove("lx-dragging");
+    row.classList.remove("lx-drop-active");
+    card.removeAttribute("draggable");
+    drag = null;
+
+    if (moved) {
+      const ids = Array.from(row.querySelectorAll(":scope > .card"))
+        .map((c) => c.id).filter(Boolean);
+      lxSaveOrder(ids, row);
+      const scope = row.closest(".root") || row.parentElement;
+      if (scope && scope.querySelectorAll) {
+        scope.querySelectorAll(".row2").forEach((r) => { if (r !== row) lxApplyOrder(r); });
+      }
+      try { navigator.vibrate && navigator.vibrate(8); } catch (e) {}
+    }
+  };
+
+  // ★ click 拦在【捕获阶段】：卡片的跳转逻辑多在冒泡阶段，
+  //   捕获阶段先拦掉，比事后 preventDefault 可靠。
+  row.addEventListener("click", (ev) => {
+    const card = ev.target.closest && ev.target.closest(".card");
+    if (card && card.__lxSwallowClick) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+  }, true);
+
+  row.addEventListener("pointerdown", (ev) => {
+    if (ev.button != null && ev.button !== 0) return;
+    const card = ev.target.closest(".card");
+    if (!card || !row.contains(card)) return;
+    clearHold();
+    holdTimer = setTimeout(() => {
+      holdTimer = null;
+      drag = { card, host: row, x0: ev.clientX, y0: ev.clientY, dx: 0, dy: 0, moved: false };
+      card.setAttribute("draggable", "false");   // ★ 禁掉原生拖拽，交给我们自己
+      card.style.willChange = "transform";
+      // ★ 长按成功【立刻】给视觉反馈 —— 之前只在移动超 6px 后才加类，
+      //   用户长按后看不到任何变化，会以为"没反应"（真实用户反馈）。
+      card.classList.add("lx-dragging");
+      try { navigator.vibrate && navigator.vibrate(12); } catch (e) {}
+    }, LX_DRAG_HOLD_MS);
+  });
+
+  // ★★ 关键修正：pointermove/up 绑在【window】上
+  //    · 拖动时手指可能移出卡片区 → 只有 window 能持续收到事件
+  //    · pointermove 不再 clearHold（那会导致永远拖不起来）
+  window.addEventListener("pointermove", onMove, { passive: true });
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onUp);
+}
+
 function lxNavigate(card, path) {
   if (!path || !card) return;
   let handled = false;
@@ -436,7 +650,35 @@ const STYLE = `
        原来写在 ≤480px 里 —— 容器查询修好后（v1.5.10）它在 460~490px 的
        desktop 栏里也命中，车主反馈"一行只有 2 个"。App 本体在 420pt 仍是 4 列，
        所以阈值下调到 400px（约等于手机竖屏可用宽度以下）。 */
-    @container (max-width: 330px) {
+      /* ★ 2026-10-20：330px → 340px（按官方截图对齐，18px 余量）
+         维护者反馈「其他用户是一列，我们是两列」。
+         最强证据 = 官方 App 手机宽度实测（容器 ≈358px）：
+         快捷 4 个 / 两卡并排 / 瓦片 2 个 —— 全部保持多列。
+         而旧阈值 330px【本该低于 358px】却仍让 358 落在阈值之下，
+         于是 .quick 收 2 列、.row2 收 1 列 ⇒ 看起来「一列」。
+         ⇒ 340px 保证 358px 宽度不命中，与官方一致。 */
+    /* ── ★ 卡片拖拽排序（2026-10-20）────────────────────────────
+       长按 350ms 抓起某张卡 → 拖到目标位置松手 → 顺序保存。
+       · .lx-dragging  被拖起的卡：半透明 + 抬起阴影（跟手）
+       · .lx-dragover  悬停位置：插入线提示（比方块更轻，不遮挡内容） */
+    .card.lx-dragging {
+      opacity:.72; transform:scale(.985);
+      filter:drop-shadow(0 6px 16px rgba(0,0,0,.22));
+      cursor:grabbing;
+    }
+    .card.lx-dragging * { pointer-events:none; }
+    /* 拖拽中的插入提示线 */
+    .row2.lx-drop-active { position:relative; }
+    .row2.lx-drop-active::after {
+      content:""; position:absolute; inset:0; pointer-events:none;
+      outline:2px dashed rgba(0,114,255,.35); outline-offset:2px;
+      border-radius:12px;
+    }
+    /* 触屏上禁止长按选中/放大镜，否则会跟拖拽打架 */
+    .row2 > .card { -webkit-user-select:none; user-select:none;
+                    -webkit-touch-callout:none; }
+
+    @container (max-width: 340px) {
       .quick { grid-template-columns: repeat(2, minmax(0,1fr)); }
       .row2 { grid-template-columns: minmax(0,1fr); }
       .entries { grid-template-columns: minmax(0,1fr); }
@@ -926,6 +1168,16 @@ class LixiangAppHome extends HTMLElement {
       <div class="toast" role="status" aria-live="polite"></div>
     `;
     this.appendChild(root);
+
+    // ★ 2026-10-20：卡片拖拽排序初始化（长按 350ms 抓起 → 自由换位 → 记住顺序）
+    //   · 先应用已保存的顺序，再给每个 .row2 挂拖拽能力。
+    //   · 两处调用：首屏渲染 + 后续重渲染（车型/主题变化会重写 DOM）。
+    try {
+      // ★ 先按【全局】保存的顺序重放（含跨 row2 的位置）
+      if (typeof lxApplyGlobalOrder === "function") lxApplyGlobalOrder(root);
+      root.querySelectorAll(".row2").forEach((r) => lxEnableDragSort(r));
+      this.__lxDragBound = true;
+    } catch (e) { /* 拖拽是增强功能，失败不影响主功能 */ }
 
     // ★ 2026-10-09（用户要求）：抬头固定。
     //   .head 用 position:sticky 粘顶；这里判断"是否已粘顶"以收紧头部。

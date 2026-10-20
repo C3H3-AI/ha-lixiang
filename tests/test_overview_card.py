@@ -432,15 +432,15 @@ class TestAppHomeLayoutRegressions:
         assert ".quick { grid-template-columns: repeat(2" not in blk, (
             "≤480px 里又出现快捷按钮 2 列 —— 460~490px 的桌面栏会被误伤")
         # ★ 2026-10-14 二次修正：手机实测容器约 350~380px，400px 阈值仍会命中
-        #   （车主截图证实：他手机上还是一行 2 个）→ 阈值再降到 330px。
+        #   （车主截图证实：他手机上还是一行 2 个）→ 阈值再降到 340px。
         for thr in (400,):
             seg = s.find("@container (max-width: %dpx)" % thr)
             if seg > 0:
                 assert ".quick { grid-template-columns: repeat(2" not in s[seg:seg + 200], (
                     "≤%dpx 段里仍有快捷按钮 2 列 —— 手机宽度会被误伤" % thr)
-        j = s.find("@container (max-width: 330px)")
-        assert j > 0, "缺 ≤330px 的窄屏段（快捷按钮 2 列应在这里）"
-        assert ".quick { grid-template-columns: repeat(2" in s[j:j + 200], "≤330px 段里没有 2 列规则"
+        j = s.find("@container (max-width: 340px)")
+        assert j > 0, "缺 ≤340px 的窄屏段（快捷按钮 2 列应在这里）"
+        assert ".quick { grid-template-columns: repeat(2" in s[j:j + 200], "≤340px 段里没有 2 列规则"
 
     def test_car_image_leaves_side_margins(self):
         """车图要缩窄并居中，两侧留白给胎压标签（车主：胎压还在车子上）。"""
@@ -632,7 +632,7 @@ class TestQuickActiveState:
           · 下方两卡  一行 **2 个**（空调 + 地图）
           · 入口瓦片  一行 **2 个**（车辆健康|任务大师 / 钥匙管理|情景模式 / 车辆设置）
         我先后把 .row2 与 .entries 写在 `≤480px` 里收成一列 —— 都命中了手机宽度，全错。
-        现在：≤480 一律不收；只在极窄 ≤330px 才收。
+        现在：≤480 一律不收；只在极窄 ≤340px 才收。
         """
         s = self._src()
         i = s.find("@container (max-width: 480px)")
@@ -644,12 +644,12 @@ class TestQuickActiveState:
         assert ".quick { grid-template-columns: repeat(2" not in blk, (
             "≤480px 段又把快捷按钮收成 2 列了（官方手机宽度是 4 列）")
         # 极窄兜底必须齐
-        j = s.find("@container (max-width: 330px)")
+        j = s.find("@container (max-width: 340px)")
         assert j > 0
         tail = s[j:j + 400]
         for frag in (".quick { grid-template-columns: repeat(2", ".row2 { grid-template-columns: minmax(0,1fr)",
                      ".entries { grid-template-columns: minmax(0,1fr)"):
-            assert frag in tail, f"≤330px 段缺兜底：{frag}"
+            assert frag in tail, f"≤340px 段缺兜底：{frag}"
 
     def test_charge_page_has_official_four_metrics(self):
         """★ 官方充电页 4 项指标：充电效率 / 充电功率 / 输入电流 / 输入电压。
@@ -1089,3 +1089,50 @@ class TestQuickActiveState:
         seg = s[i:i + 400]
         assert "it.onName" in seg and "active ? it.onName : it.name" in seg, (
             "标签未按 active 在 onName/name 之间切换")
+
+
+class TestPhoneLayoutThresholdAlignment:
+    """★ 手机宽度阈值必须【低于官方实测的 358px】（2026-10-20）。
+
+    背景：维护者反馈「其他用户看到一列，我们看到两列」。
+    官方 App 手机宽度（容器 ≈358px）实测**全是多列**：
+      · 快捷按钮  一行 4 个
+      · 下方两卡  一行 2 个
+      · 入口瓦片  一行 2 个
+    ⇒ 阈值必须低于 358px，否则官方同宽度下反而被收窄。
+    旧值 330px 让 358 落在阈值之下 ⇒ 就是「一列」的原因。
+    """
+
+    @staticmethod
+    def _home_src() -> str:
+        from pathlib import Path
+
+        p = (Path(__file__).resolve().parent.parent / "custom_components"
+             / "lixiang_auto" / "www" / "lixiang-cards" / "lixiang-app-home.js")
+        return p.read_text(encoding="utf-8")
+
+    def test_threshold_below_official_358(self):
+        """★ 阈值必须 < 358px（官方实测宽度），否则与官方不一致。"""
+        import re
+
+        s = self._home_src()
+        m = re.search(r"@container \(max-width: (\d+)px\)", s[s.find(".quick {"):])
+        thresholds = [int(x) for x in re.findall(
+            r"@container \(max-width: (\d+)px\)", s)]
+        assert thresholds, "未找到任何断点"
+        narrow = min(thresholds)
+        assert narrow < 358, (
+            f"最窄断点 {narrow}px 必须低于官方实测 358px，"
+            f"否则官方同宽度下被误收成一列")
+
+    def test_358px_keeps_multi_column(self):
+        """★ 官方 358px 下三处都应保持多列（不被收窄）。"""
+        s = self._home_src()
+        narrow = min(int(x) for x in __import__("re").findall(
+            r"@container \(max-width: (\d+)px\)", s))
+        assert 358 > narrow, (
+            f"358px（官方实测）不应命中 {narrow}px 断点，否则会收成一列")
+
+    def test_no_330px_left(self):
+        assert "max-width: 330px" not in self._home_src(), (
+            "旧的 330px 阈值应已改为 340px（否则 358px 仍被收窄）")

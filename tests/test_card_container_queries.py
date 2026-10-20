@@ -105,18 +105,47 @@ class TestAppHomeMobileBreakpoints:
             "app-home 缺少 ≤480px 断点（v1.5.7 的提交说明曾声称有，实际没有）")
 
     def test_mobile_breakpoint_covers_quick_grid(self):
-        """手机上快捷键要从 4 列收成 2 列。"""
+        """窄屏（≤340px）要把 .quick 从 4 列收成 2 列。
+
+        ★ 2026-10-20：阈值从 480px 下调到 340px —— 依据是官方 App 手机宽度
+          实测（容器 ≈358px 下快捷仍是 4 个），阈值必须**低于** 358px。
+          同时 480px 段**不能**再收 .row2/.entries（那正是"看到一列"的根因）。
+        """
         s = _strip_comments(APP_HOME.read_text(encoding="utf-8"))
-        i = s.find("@container (max-width: 480px)")
+        i = s.find("@container (max-width: 340px)")
+        assert i > 0, "缺 ≤340px 窄屏断点（阈值必须低于官方实测的 358px）"
         seg = s[i:i + 600]
         assert "repeat(2,minmax(0,1fr))" in seg.replace(" ", ""), (
-            "手机断点里没有把 .quick 收成 2 列")
+            "≤340px 段里没有把 .quick 收成 2 列")
 
-    def test_mobile_breakpoint_covers_row2_and_entries(self):
+    def test_480_breakpoint_keeps_two_cards_side_by_side(self):
+        """★ ≤480px 段里绝不能再收 .row2/.entries —— 官方手机宽度下两卡是并排的。
+
+        （维护者 2026-10-19 反馈「其他用户是一列，我们是两列」：
+          旧 330px 阈值让 358px 落进断点 → 看起来就是一列。）
+        """
         s = _strip_comments(APP_HOME.read_text(encoding="utf-8"))
         i = s.find("@container (max-width: 480px)")
+        assert i > 0
+        seg = s[i:s.find("@container", i + 10)]
+        # ★ 只看【布局规则】—— .row2.lx-drop-active 这类是拖拽样式，
+        #   不影响列数，不能误判。
+        import re as _re
+        rules = _re.sub(r"\.[a-z0-9-]+\.[a-z0-9-]+[^{]*\{[^}]*\}", "", seg)
+        rules = _re.sub(r"\.[a-z0-9-]+\s*>?\s*[^{]*\{[^}]*\}", "", rules)
+        assert "grid-template-columns" not in rules or ".row2" not in rules, (
+            "≤480px 里又在 .row2 上设了列数（会让手机宽度变一列）")
+        assert ".entries" not in rules, (
+            "≤480px 里又在 .entries 上设了列数（会让手机宽度变一列）")
+
+    def test_narrow_breakpoint_covers_row2_and_entries(self):
+        """极窄（≤340px）才收 .row2 / .entries（单列堆叠）。"""
+        s = _strip_comments(APP_HOME.read_text(encoding="utf-8"))
+        i = s.find("@container (max-width: 340px)")
+        assert i > 0
         seg = s[i:i + 600]
-        assert ".row2" in seg and ".entries" in seg, "手机断点没覆盖 .row2 / .entries"
+        assert ".row2" in seg and ".entries" in seg, (
+            "≤340px 段没覆盖 .row2 / .entries")
 
 
 class TestNoStrayBacktickInStyleTemplate:
