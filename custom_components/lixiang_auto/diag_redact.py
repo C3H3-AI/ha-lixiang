@@ -43,11 +43,19 @@ __all__ = [
 
 # ── 位置类信号 ──────────────────────────────────────────────
 #   原始响应里含经纬度的键名/路径片段。这些是**住址级**信息，一律掩码。
-LOCATION_SIGNAL_IDS = (
-    "longitude", "latitude", "lng", "lat",
+# ★ 短键（lat/lng/coord）必须【精确匹配】—— 子串会误伤：
+#   "lat" 会命中 "hmi_platform"（p-lat-form）、"coordinates"
+#   ⇒ 实测踩过：hmi_platform（SS3/SS4 协议判定，排障关键）被误掩
+_LOCATION_EXACT = ("lat", "lng", "coord", "coords", "coordinates", "location")
+
+# 长键用子串匹配 —— ★ 只保留【真坐标】语义，不收 "position"：
+#   "position" 会命中 gearPosition/windowPosition/seatPosition/chargePosition
+#   等【档位/开度】字段，那些是排障关键，不能掩。
+#   真坐标的独有语义是 longitude/latitude/gps + vehiclePosition。
+_LOCATION_SUBSTR = (
+    "longitude", "latitude",
     "gps_longitude", "gps_latitude",
-    "coord", "coordinates", "position", "location",
-    "gpsInfo", "gps_info",
+    "vehicleposition", "gpsinfo", "gps_info",
 )
 
 # ── 敏感键名提示 ────────────────────────────────────────────
@@ -116,7 +124,9 @@ def _is_location_key(key: str) -> bool:
     而不是把整棵树掩成一个字符串（否则连组里其它非位置字段也丢了）。
     """
     k = str(key).lower()
-    return any(h in k for h in LOCATION_SIGNAL_IDS)
+    if k in _LOCATION_EXACT:
+        return True
+    return any(h in k for h in _LOCATION_SUBSTR)
 
 
 def _redact_tree(node: Any, *, keep_location_shape: bool = True) -> Any:

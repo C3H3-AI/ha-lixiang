@@ -29,7 +29,7 @@ dr = _load()
 class TestLocationMasking:
     @pytest.mark.parametrize("key", [
         "longitude", "latitude", "lng", "lat",
-        "gps_longitude", "gps_latitude", "coord", "position", "location",
+        "gps_longitude", "gps_latitude", "coord", "vehiclePosition", "location",
     ])
     def test_location_values_are_masked(self, key):
         out = dr.redact_realtime_state({"data": {key: "999.999999"}})
@@ -258,3 +258,48 @@ class TestLocationContainerNotOverMasked:
         # 组里的非坐标字段必须保留
         assert vp["altitude"] == "44"
         assert vp["direction"] == "180"
+
+
+# ── 位置规则的误伤（服务级测试抓到的真 bug）────────────────
+class TestLocationFalsePositives:
+    """★ 2026-10-20：服务级验证发现位置规则误伤了排障关键字段。
+
+    bug ① "lat" 子串命中 "hmi_platform"（p-lat-form）
+           —— hmi_platform 是 SS3/SS4 协议判定，排障关键，被误掩
+    bug ② "position" 子串命中 gearPosition/windowPosition/seatPosition
+           等【档位/开度】字段，同样是排障关键
+
+    修法：短键（lat/lng/coord）改精确匹配；去掉 "position" 子串，
+          只留真坐标语义（longitude/latitude/vehiclePosition/gps_*）。
+    """
+
+    @pytest.mark.parametrize("key", [
+        "hmi_platform", "platform",                    # bug ①
+        "gearPosition", "windowPosition", "seatPosition",  # bug ②
+        "chargePosition", "transmissionPosition",
+        "sunroofPosition", "doorPosition", "acPosition",
+    ])
+    def test_gear_and_platform_not_masked(self, key):
+        out = dr.redact_realtime_state({"data": {key: "5"}})
+        assert out["data"][key] == "5", (
+            f"{key} 被误掩 —— 它是档位/协议判定，不是坐标")
+
+    @pytest.mark.parametrize("key", [
+        "longitude", "latitude", "lat", "lng",
+        "gps_longitude", "gps_latitude", "gps_info",
+        "vehiclePosition", "location",
+    ])
+    def test_real_coordinates_still_masked(self, key):
+        out = dr.redact_realtime_state({"data": {key: "116.397128"}})
+        got = out["data"][key]
+        assert "116.397128" not in str(got), f"{key} 应被掩码"
+
+    def test_vehicle_position_group_recursed(self):
+        """坐标组仍要递归（组内非坐标字段保留）。"""
+        raw = {"data": {"vehiclePosition": {
+            "longitude": "116.397128", "latitude": "39.916527",
+            "altitude": "44"}}}
+        out = dr.redact_realtime_state(raw)
+        vp = out["data"]["vehiclePosition"]
+        assert vp["longitude"] == "<masked-location>"
+        assert vp["altitude"] == "44"        # 非坐标字段保留
