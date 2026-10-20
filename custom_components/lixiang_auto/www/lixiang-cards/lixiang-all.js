@@ -705,26 +705,42 @@ const __iconFallback = BUILTIN_ICON_BASE;
 const LX_DRAG_STORE = "lx_apphome_order";
 const LX_DRAG_HOLD_MS = 350;
 
-function lxLoadOrder() {
+/** 取当前实例的 localStorage（shadow DOM / 多实例下不依赖全局）。 */
+function lxStore(row) {
   try {
-    const raw = localStorage.getItem(LX_DRAG_STORE);
+    const win = (row && row.ownerDocument && row.ownerDocument.defaultView) || window;
+    return win.localStorage || null;
+  } catch (e) { return null; }
+}
+
+function lxLoadOrder(row) {
+  try {
+    const st = lxStore(row);
+    if (!st) return null;
+    const raw = st.getItem(LX_DRAG_STORE);
     if (!raw) return null;
     const arr = JSON.parse(raw);
     return Array.isArray(arr) && arr.length ? arr : null;
   } catch (e) { return null; }
 }
 
-function lxSaveOrder(ids) {
-  try { localStorage.setItem(LX_DRAG_STORE, JSON.stringify(ids)); } catch (e) {}
+function lxSaveOrder(ids, row) {
+  try {
+    const st = lxStore(row);
+    if (st) st.setItem(LX_DRAG_STORE, JSON.stringify(ids));
+  } catch (e) {}
 }
 
-function lxClearOrder() {
-  try { localStorage.removeItem(LX_DRAG_STORE); } catch (e) {}
+function lxClearOrder(row) {
+  try {
+    const st = lxStore(row);
+    if (st) st.removeItem(LX_DRAG_STORE);
+  } catch (e) {}
 }
 
 /** 按已保存顺序重排某个 .row2 里的卡片；无保存则保持原样。 */
 function lxApplyOrder(row) {
-  const order = lxLoadOrder();
+  const order = lxLoadOrder(row);
   if (!order || !row) return false;
   const cards = Array.from(row.querySelectorAll(":scope > .card"));
   if (!cards.length) return false;
@@ -743,10 +759,64 @@ function lxEnableDragSort(row) {
   if (!row || row.__lxDrag) return;
   row.__lxDrag = true;
   let holdTimer = null;
-  let dragging = null;
+  let drag = null;          // { card, x0, y0, dx, dy, placeholder, moved }
 
   const clearHold = () => {
     if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+  };
+
+  // 拖动中：记录位移（★ 只在已进入拖动模式后才更新，不取消计时）
+  const onMove = (ev) => {
+    if (!drag) return;
+    const dx = ev.clientX - drag.x0;
+    const dy = ev.clientY - drag.y0;
+    if (!drag.moved) {
+      // 超过 6px 才认定为"拖动"（避免轻微抖动误判）
+      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      drag.moved = true;
+      drag.card.classList.add("lx-dragging");
+      row.classList.add("lx-drop-active");
+    }
+    drag.dx = dx;
+    drag.dy = dy;
+    drag.card.style.transform = `translate(${dx}px, ${dy}px) scale(1.02)`;
+
+    // ★ 找当前悬停的卡（允许跨 .row2 —— 两张卡区间可互换）
+    //   ★ 用 row.ownerDocument 而非裸 document：shadow DOM / 多实例下更稳
+    const doc = row.ownerDocument || document;
+    const over = doc.elementFromPoint(ev.clientX, ev.clientY);
+    const card = over && over.closest && over.closest(".card");
+    if (!card || card === drag.card) return;
+    const host = card.closest(".row2");
+    if (!host) return;
+    const box = card.getBoundingClientRect();
+    const after = (ev.clientX - box.left) > box.width / 2;
+    host.insertBefore(drag.card, after ? card.nextSibling : card);
+    drag.host = host;
+  };
+
+  const onUp = () => {
+    clearHold();
+    if (!drag) return;
+    const card = drag.card;
+    const moved = drag.moved;
+    // 复位视觉
+    card.style.transform = "";
+    card.classList.remove("lx-dragging");
+    row.classList.remove("lx-drop-active");
+    card.removeAttribute("draggable");
+    drag = null;
+
+    if (moved) {
+      const ids = Array.from(row.querySelectorAll(":scope > .card"))
+        .map((c) => c.id).filter(Boolean);
+      lxSaveOrder(ids, row);
+      const scope = row.closest(".root") || row.parentElement;
+      if (scope && scope.querySelectorAll) {
+        scope.querySelectorAll(".row2").forEach((r) => { if (r !== row) lxApplyOrder(r); });
+      }
+      try { navigator.vibrate && navigator.vibrate(8); } catch (e) {}
+    }
   };
 
   row.addEventListener("pointerdown", (ev) => {
@@ -755,59 +825,20 @@ function lxEnableDragSort(row) {
     if (!card || !row.contains(card)) return;
     clearHold();
     holdTimer = setTimeout(() => {
-      dragging = card;
-      card.setAttribute("draggable", "true");
-      card.classList.add("lx-dragging");
+      holdTimer = null;
+      drag = { card, host: row, x0: ev.clientX, y0: ev.clientY, dx: 0, dy: 0, moved: false };
+      card.setAttribute("draggable", "false");   // ★ 禁掉原生拖拽，交给我们自己
+      card.style.willChange = "transform";
       try { navigator.vibrate && navigator.vibrate(12); } catch (e) {}
     }, LX_DRAG_HOLD_MS);
   });
 
-  ["pointerup", "pointercancel", "pointermove"].forEach((ev) =>
-    row.addEventListener(ev, clearHold, { passive: true }));
-
-  row.addEventListener("dragstart", (ev) => {
-    if (!dragging) { ev.preventDefault(); return; }
-    ev.dataTransfer.effectAllowed = "move";
-    // Firefox 需要 setData 才会真正启动拖拽
-    try { ev.dataTransfer.setData("text/plain", dragging.id); } catch (e) {}
-    ev.dataTransfer.setDragImage(dragging, 20, 20);
-  });
-
-  row.addEventListener("dragover", (ev) => {
-    if (!dragging) return;
-    ev.preventDefault();
-    ev.dataTransfer.dropEffect = "move";
-    const over = ev.target.closest(".card");
-    if (!over || over === dragging || !row.contains(over)) return;
-    const box = over.getBoundingClientRect();
-    const after = (ev.clientX - box.left) > box.width / 2;
-    row.insertBefore(dragging, after ? over.nextSibling : over);
-  });
-
-  row.addEventListener("drop", (ev) => {
-    if (!dragging) return;
-    ev.preventDefault();
-    finish();
-  });
-
-  row.addEventListener("dragend", () => { if (dragging) finish(); });
-
-  function finish() {
-    clearHold();
-    if (!dragging) return;
-    dragging.removeAttribute("draggable");
-    dragging.classList.remove("lx-dragging");
-    dragging = null;
-    const ids = Array.from(row.querySelectorAll(":scope > .card"))
-      .map((c) => c.id).filter(Boolean);
-    lxSaveOrder(ids);
-    // 同步本实例内其它 .row2（不用全局选择器 —— 多实例会互相干扰）
-    const scope = row.closest(".root") || row.parentElement;
-    if (scope && scope.querySelectorAll) {
-      scope.querySelectorAll(".row2").forEach((r) => { if (r !== row) lxApplyOrder(r); });
-    }
-    try { navigator.vibrate && navigator.vibrate(8); } catch (e) {}
-  }
+  // ★★ 关键修正：pointermove/up 绑在【window】上
+  //    · 拖动时手指可能移出卡片区 → 只有 window 能持续收到事件
+  //    · pointermove 不再 clearHold（那会导致永远拖不起来）
+  window.addEventListener("pointermove", onMove, { passive: true });
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onUp);
 }
 
 function lxNavigate(card, path) {
