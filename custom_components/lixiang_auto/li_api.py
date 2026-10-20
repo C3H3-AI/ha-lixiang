@@ -2361,6 +2361,13 @@ class LiApiClient:
         ★ 未在真机验证：本方法按配置表 + OperateReq 字段实现，
           首次调用请先看返回的 raw，据实修正（项目规则：不猜）。
         """
+        # ★★ 2026-10-20：命令代际守卫（覆盖 M 系 send-command 与 X 系 cmd/send
+        #   两条通道的统一出口）。防「账号/token 在异步等待期间被换，
+        #   命令还按旧的发出去」—— 宁可明确失败，不带失效凭据下发。
+        _svc_ticket = (self._guard.snapshot()
+                      if getattr(self, "_guard", None) is not None else None)
+        if _svc_ticket is not None:
+            self._guard.assert_current(_svc_ticket)
         body = {
             "vin": self._vin,
             "commandKey": command_key,
