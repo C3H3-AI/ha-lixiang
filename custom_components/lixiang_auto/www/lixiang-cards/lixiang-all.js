@@ -1411,7 +1411,16 @@ const STYLE = `
      用 height（不是 min-height）：min-height 会被内部 padding 顶破导致失配。 */
   /* 右列总高 = 功能卡行高 ×2 + gap + 每卡 +14px 内容余量（两行 vs 单行）。
      见 _syncEntryHeight：--lx-entry-h 由 JS 实测 .entry 高度写入。 */
-  .row2.row2-stack { height:calc(var(--lx-entry-h, 96px) * 2 + 12px + 28px);
+  /* ★ 2026-10-21 依据官方 App 像素级测量（第3版，已画框验证）：
+     官方 电量155 / 哨兵155 / 功能卡155 —— **三者严格等高**。
+     故右列总高 = 功能卡行高 × 2 + gap，不需要任何额外余量。
+     之前 +28px 是误测（把卡内白色区域当成卡片边界）导致的错误补偿。 */
+  /* 官方 电量:哨兵:功能卡 = 155:155:155（严格等高）。
+     右列总高 = 功能卡行高×2 + gap。
+     ★ 但右列单卡有【最小可用高度】—— 电量卡要放「图标 + 数字 + 标签」，
+       低于 ~72px 文字会被裁。故用 max() 兜底：
+       正常字号下跟随功能卡高度；极窄/极小字号时保证不低于 72px。 */
+  .row2.row2-stack { height:calc(max(var(--lx-entry-h, 96px), 72px) * 2 + 12px);
                      min-height:0 !important; }
   .card { background:var(--lx-card); border-radius:18px; padding:16px;
           cursor:pointer; transition:transform .13s, box-shadow .18s; position:relative; }
@@ -1512,7 +1521,21 @@ const STYLE = `
      硬压到 64px 会把「剩余电量」裁掉（实测两次都踩到）。
      因此右列整体比"功能卡×2"略高一点，单卡 ≈ 78px，两行内容刚好放下：
        26px 数字 + 12px 标签 + padding 24 = 62，留呼吸空间。 */
-  .batt { padding:12px 14px; justify-content:center; gap:0; }
+  /* ★ 2026-10-21 对齐官方（截图 4.6）：
+     电量卡是「图标在左 | 数字+标签在右」两列式，整体垂直居中。
+     行高收紧到 1.0/1.15，确保在功能卡同高（72~96px）内完整显示不裁字。 */
+  .batt { padding:10px 14px; justify-content:center; gap:0; overflow:hidden; }
+  .batt .row { align-items:center; gap:8px; }
+  /* ★ 实测（真浏览器）：卡内可用 48px，内容曾需 78px → 「剩余电量」被裁。
+     主因是大数字行高：— 占位符继承了倍率行高，实测 .big 高达 63px。
+     改为**绝对行高**，与字号解耦，保证 26px 数字稳定占 ~30px。 */
+  /* ★ 实测：.big 内有 span(26px) + small(15px) 两个 inline，
+     它们按【基线】对齐 → 行盒被撑到 70px（远超 line-height 30px），
+     于是「剩余电量」被挤出卡片。
+     改为 flex + baseline，把行盒高度约束为 max(30,18) = 30px。 */
+  .batt .big { font-family:"LxNum","Licium"; font-size:26px; font-weight:600;
+               line-height:30px; display:flex; align-items:baseline; gap:1px; }
+  .batt .lbl { font-size:12px; line-height:15px; margin-top:1px; }
   .batt .row { display:flex; align-items:center; gap:8px; }
   .batt .lbl { font-size:12px; line-height:1.25; }
   /* 充电中的剩余时间（App 同款：小字 + 闪电） */
@@ -1522,7 +1545,8 @@ const STYLE = `
   .batt .row img { width:20px; height:20px; }
   /* ★ 2026-10-20：与 .mile 统一为 30px —— 相邻两卡数字大小不同会显得没对齐。
      （真浏览器审计发现：mile 30px / batt 28px）*/
-  .batt .big { font-family:"LxNum","Licium"; font-size:28px; font-weight:600; line-height:1.1; }
+  /* （已合并到上方 .batt .big 规则 —— 重复声明会互相覆盖，
+     曾导致 line-height 修正失效、文字被裁）*/
   .batt .big small { font-size:15px; font-weight:500; color:var(--lx-t2); }
   .sentry { display:flex; align-items:center; gap:12px; min-height:76px; }
   .sentry img { width:26px; height:26px; }
@@ -1546,7 +1570,15 @@ const STYLE = `
   .entry .nm { font-size:15px; line-height:1.2; }
   .entry .sd { font-size:12px; color:var(--lx-t3); margin-top:3px; }
 
-  .big { background:var(--lx-card); border-radius:18px; padding:18px 16px; }
+  /* ★ 2026-10-21 修正 .big（保留规则，去掉害人的容器样式）：
+     「.big」在 DOM 里只有 2 处 —— 里程卡数值、电量卡数值，
+     语义就是"大数字"本身，不是卡片容器。
+     但 v1.3.0 起它被写成 background + border-radius + padding:18px 16px，
+     等于给数字套了 36px 内边距：实测 .big 元素高 70px（其中 36px 纯 padding），
+     把「剩余电量」挤出卡片、里程卡被撑高 36px。
+     现保留规则名（.big 仍是共用样式，里程/电量都靠它定字体），
+     只移除容器外观（背景/圆角/内边距），恢复"数字样式"语义。 */
+  .big { font-variant-numeric:tabular-nums; }
   .divider { height:1px; background:var(--lx-line); margin:16px 0; }
 
   .toast { position:fixed; left:50%; bottom:90px; transform:translate(-50%,14px);
