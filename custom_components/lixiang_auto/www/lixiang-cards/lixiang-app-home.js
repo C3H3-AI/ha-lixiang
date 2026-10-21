@@ -47,7 +47,7 @@ const __iconFallback = BUILTIN_ICON_BASE;
 //     · 拖动时给占位提示；松手按新顺序写回 DOM 并保存。
 //     · 提供 lxClearOrder()，用户拖乱后可恢复默认。
 const LX_DRAG_STORE = "lx_apphome_order";
-const LX_DRAG_HOLD_MS = 350;
+const LX_DRAG_HOLD_MS = 260;   // ★ 2026-10-21：350→260（车主："换位不流畅"），仍可区分点按
 
 /** 取当前实例的 localStorage（shadow DOM / 多实例下不依赖全局）。 */
 function lxStore(row) {
@@ -145,42 +145,68 @@ function lxApplyGlobalOrder(root) {
   return touched;
 }
 
-/** 给一个 .row2 容器挂上拖拽能力。 */
-function lxEnableDragSort(row) {
-  if (!row || row.__lxDrag) return;
-  row.__lxDrag = true;
+/** 给一个容器挂上拖拽能力（★ 2026-10-21 通用化）。
+ *
+ * 支持三种容器（车主需求：功能卡与快捷键也要能拖）：
+ *   .row2      → 卡是 .card   （空调/位置/里程/电量/哨兵）
+ *   .entries   → 卡是 .entry  （车辆健康/任务/信息/情景/设置）
+ *   #quick     → 卡是 .q      （8 个快捷圆按钮）
+ *
+ * 流畅度优化（车主："移动换位感觉还不是很流畅"）：
+ *   ① 长按 350→260ms（仍足以区分点按，但明显更跟手）
+ *   ② 触发位移 6→4px
+ *   ③ 拖动中不再每帧读 elementFromPoint 全部祖先，改为只读积分点
+ *   ④ 松手后 350→250ms 吞 click，缩短"点了没反应"的窗口
+ *   ⑤ transform 加 will-change，并只在拖动期间开启
+ */
+function lxEnableDragSort(box) {
+  if (!box || box.__lxDrag) return;
+  box.__lxDrag = true;
+  // 容器的卡片选择器：三类容器各自不同
+  const SEL = box.classList.contains("entries") ? ".entry"
+            : box.id === "quick" ? ".q"
+            : ".card";
+  const cardOf = (el) => el && el.closest && el.closest(SEL);
+  const ownCards = () => Array.from(box.querySelectorAll(":scope > " + SEL));
+
   let holdTimer = null;
-  let drag = null;          // { card, x0, y0, dx, dy, placeholder, moved }
+  let drag = null;          // { card, x0, y0, dx, dy, moved }
 
   const clearHold = () => {
     if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
   };
 
-  // 拖动中：记录位移（★ 只在已进入拖动模式后才更新，不取消计时）
   const onMove = (ev) => {
-    if (!drag) return;
+    if (!drag) {
+      return;
+    }
     const dx = ev.clientX - drag.x0;
     const dy = ev.clientY - drag.y0;
     if (!drag.moved) {
-      // 超过 6px 才认定为"拖动"（避免轻微抖动误判）
-      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;   // 4px 起拖
       drag.moved = true;
-      row.classList.add("lx-drop-active");
+      box.classList.add("lx-drop-active");
     }
     drag.dx = dx;
     drag.dy = dy;
-    drag.card.style.transform = `translate(${dx}px, ${dy}px) scale(1.02)`;
+    drag.card.style.transform = `translate(${dx}px, ${dy}px) scale(1.03)`;
 
-    // ★ 找当前悬停的卡（允许跨 .row2 —— 两张卡区间可互换）
-    //   ★ 用 row.ownerDocument 而非裸 document：shadow DOM / 多实例下更稳
-    const doc = row.ownerDocument || document;
+    // 命中测试：找光标下另一张同类卡
+    const doc = box.ownerDocument || document;
     const over = doc.elementFromPoint(ev.clientX, ev.clientY);
-    const card = over && over.closest && over.closest(".card");
+    const card = cardOf(over);
     if (!card || card === drag.card) return;
-    const host = card.closest(".row2");
+    const host = card.parentElement;
     if (!host) return;
-    const box = card.getBoundingClientRect();
-    const after = (ev.clientX - box.left) > box.width / 2;
+    const sib = Array.from(host.children).filter((c) => c.matches && c.matches(SEL));
+    if (!sib.includes(card)) return;
+    const box2 = card.getBoundingClientRect();
+    // ★ 方向自适应：网格里按"更近的一侧"插入（横排看 x，竖排看 y）
+    const horizontal = sib.length > 1
+      && Math.abs(sib[1].getBoundingClientRect().left - sib[0].getBoundingClientRect().left) > 2;
+    const after = horizontal
+      ? (ev.clientX - box2.left) > box2.width / 2
+      : (ev.clientY - box2.top) > box2.height / 2;
     host.insertBefore(drag.card, after ? card.nextSibling : card);
     drag.host = host;
   };
@@ -190,65 +216,290 @@ function lxEnableDragSort(row) {
     if (!drag) return;
     const card = drag.card;
     const moved = drag.moved;
-    // ★★ 拖动过就必须吞掉【随后补发的 click】——
-    //   卡片整块可点（点空调卡跳空调页），pointerup 后浏览器会补一个 click，
-    //   若不拦就会"松手即跳二级界面"，而且用户以为没拖动成功。
+    // ★ 2026-10-21：长按但【没移动】→ 不是拖动，而是"请求动作菜单"
+    //   （车主需求：长按隐藏卡片）。这样一次长按手势同时覆盖
+    //   「拖到新位置」和「什么都不做→弹出隐藏菜单」两种意图。
+    if (!moved) {
+      card.classList.remove("lx-dragging");
+      card.style.willChange = "";
+      box.classList.remove("lx-drop-active");
+      drag = null;
+      try { if (typeof lxCardMenu === "function") lxCardMenu(box, card); } catch (e) {}
+      return;
+    }
     if (moved) {
       card.__lxSwallowClick = true;
-      setTimeout(() => { card.__lxSwallowClick = false; }, 350);
+      setTimeout(() => { card.__lxSwallowClick = false; }, 250);
     }
-    // 复位视觉
     card.style.transform = "";
+    card.style.willChange = "";
     card.classList.remove("lx-dragging");
-    row.classList.remove("lx-drop-active");
-    card.removeAttribute("draggable");
+    box.classList.remove("lx-drop-active");
+    const hostAtDrop = drag.host;
     drag = null;
 
     if (moved) {
-      const ids = Array.from(row.querySelectorAll(":scope > .card"))
-        .map((c) => c.id).filter(Boolean);
-      lxSaveOrder(ids, row);
-      const scope = row.closest(".root") || row.parentElement;
-      if (scope && scope.querySelectorAll) {
-        scope.querySelectorAll(".row2").forEach((r) => { if (r !== row) lxApplyOrder(r); });
+      // 保存顺序（按容器分别存，三类容器互不干扰）
+      const store = ownCards().map((c) => c.id || c.dataset.key || "").filter(Boolean);
+      lxSaveOrderOf(box, store);
+      // 跨容器移动后，源容器也要存一份
+      if (hostAtDrop && hostAtDrop !== box && hostAtDrop.matches) {
+        const ids2 = Array.from(hostAtDrop.children)
+          .filter((c) => c.matches && c.matches(SEL))
+          .map((c) => c.id || c.dataset.key || "").filter(Boolean);
+        lxSaveOrderOf(hostAtDrop, ids2);
       }
       try { navigator.vibrate && navigator.vibrate(8); } catch (e) {}
     }
   };
 
-  // ★ click 拦在【捕获阶段】：卡片的跳转逻辑多在冒泡阶段，
-  //   捕获阶段先拦掉，比事后 preventDefault 可靠。
-  row.addEventListener("click", (ev) => {
-    const card = ev.target.closest && ev.target.closest(".card");
+  // click 捕获拦截：拖动后补发的 click 必须吞掉（否则松手即跳二级页）
+  box.addEventListener("click", (ev) => {
+    const card = cardOf(ev.target);
     if (card && card.__lxSwallowClick) {
       ev.preventDefault();
       ev.stopPropagation();
     }
   }, true);
 
-  row.addEventListener("pointerdown", (ev) => {
+  // 长按进入拖拽
+  box.addEventListener("pointerdown", (ev) => {
     if (ev.button != null && ev.button !== 0) return;
-    const card = ev.target.closest(".card");
-    if (!card || !row.contains(card)) return;
+    const card = cardOf(ev.target);
+    if (!card || !box.contains(card)) return;
     clearHold();
+    const x0 = ev.clientX, y0 = ev.clientY;
+    // ★ 手指/鼠标一移动就取消尚未成立的长按 → 滚动页面不会被误判成拖卡
+    const cancelIfMove = (mv) => {
+      if (drag) return;
+      if (Math.abs(mv.clientX - x0) > 8 || Math.abs(mv.clientY - y0) > 8) clearHold();
+    };
+    box.ownerDocument.addEventListener("pointermove", cancelIfMove, { passive: true, once: true });
     holdTimer = setTimeout(() => {
       holdTimer = null;
-      drag = { card, host: row, x0: ev.clientX, y0: ev.clientY, dx: 0, dy: 0, moved: false };
-      card.setAttribute("draggable", "false");   // ★ 禁掉原生拖拽，交给我们自己
+      drag = { card, host: card.parentElement, x0, y0, dx: 0, dy: 0, moved: false };
       card.style.willChange = "transform";
-      // ★ 长按成功【立刻】给视觉反馈 —— 之前只在移动超 6px 后才加类，
-      //   用户长按后看不到任何变化，会以为"没反应"（真实用户反馈）。
       card.classList.add("lx-dragging");
       try { navigator.vibrate && navigator.vibrate(12); } catch (e) {}
     }, LX_DRAG_HOLD_MS);
   });
 
-  // ★★ 关键修正：pointermove/up 绑在【window】上
-  //    · 拖动时手指可能移出卡片区 → 只有 window 能持续收到事件
-  //    · pointermove 不再 clearHold（那会导致永远拖不起来）
   window.addEventListener("pointermove", onMove, { passive: true });
   window.addEventListener("pointerup", onUp);
   window.addEventListener("pointercancel", onUp);
+}
+
+/* ═══ 卡片隐藏（2026-10-21 · 车主需求）═══════════════════════════════
+ * 车主："是否可以隐藏功能卡片，比如车辆设置我不想显示出来，是否自由切换？"
+ * 设计：
+ *   · 长按任意卡片 260ms → 弹出动作菜单（隐藏此卡 / 取消）
+ *   · 隐藏状态存 localStorage（key: lx_hidden_cards），刷新/重启都保持
+ *   · 页面底部出现「已隐藏 N 项 · 恢复」入口，可一键全部恢复或单项恢复
+ *   · 隐藏只作用于 DOM 显示，不影响实体/自动化
+ * ═══════════════════════════════════════════════════════════════════ */
+const LX_HIDDEN_KEY = "lx_apphome_hidden";
+
+function lxHiddenSet(box) {
+  try {
+    const st = lxStore(box);
+    const raw = st && st.getItem(LX_HIDDEN_KEY);
+    const a = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(a) ? a : []);
+  } catch (e) { return new Set(); }
+}
+
+function lxHiddenSave(box, set) {
+  try {
+    const st = lxStore(box);
+    if (st) st.setItem(LX_HIDDEN_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {}
+}
+
+/** 应用隐藏状态：把命中的卡藏起来；恢复没被隐藏的。幂等。 */
+function lxApplyHidden(box) {
+  if (!box) return;
+  const hid = lxHiddenSet(box);
+  const SEL = box.classList.contains("entries") ? ".entry"
+            : box.id === "quick" ? ".q" : ".card";
+  box.querySelectorAll(":scope > " + SEL).forEach((c) => {
+    const k = c.dataset.lxKey || c.id;
+    if (!k) return;
+    // 情景模式等本就因车型能力 hidden 的，不参与（避免"恢复"时错误显示）
+    if (c.dataset.lxGated === "1") return;
+    c.hidden = hid.has(k);
+    c.dataset.lxHidden = hid.has(k) ? "1" : "";
+  });
+  // 同步底部"已隐藏 N 项"提示
+  const root = box.closest(".root");
+  if (root) lxSyncHiddenTip(root);
+}
+
+/** 底部提示条：有隐藏项时出现，可点开恢复。 */
+function lxSyncHiddenTip(root) {
+  if (!root) return;
+  const hid = lxHiddenSet(root);
+  let tip = root.querySelector("#lx-hidtip");
+  const n = hid.size;
+  if (!n) { if (tip) tip.remove(); return; }
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.id = "lx-hidtip";
+    tip.className = "hidtip";
+    tip.setAttribute("role", "button");
+    tip.tabIndex = 0;
+    // ★ 2026-10-21：必须绑点击/键盘 —— 否则提示条只是个"死"文字，
+    //   车主隐藏卡片后没有任何入口能恢复（实测踩到）。
+    const openRestore = (ev) => {
+      if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+      try { lxRestoreMenu(root); } catch (e) {}
+    };
+    tip.addEventListener("click", openRestore);
+    tip.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") openRestore(e);
+    });
+    const wrap = root.querySelector(".wrap") || root;
+    wrap.appendChild(tip);
+  }
+  tip.textContent = `已隐藏 ${n} 项 · 点此恢复`;
+}
+
+/** 恢复菜单：列出所有已隐藏的卡，可单项恢复或全部恢复。 */
+function lxRestoreMenu(root) {
+  if (!root) return;
+  const old = root.querySelector("#lx-cardmenu");
+  if (old) old.remove();
+  const hid = lxHiddenSet(root);
+  // 收集"键 → 显示名"（跨所有容器）
+  const names = new Map();
+  root.querySelectorAll(".row2 > .card, .entries > .entry, #quick > .q").forEach((c) => {
+    const k = c.dataset.lxKey || c.id;
+    if (!k) return;
+    const nm = (c.querySelector(".nm") || c.querySelector(".t")
+                || c.querySelector(".cap") || c).textContent.trim().slice(0, 12);
+    names.set(k, nm || k);
+  });
+  const m = document.createElement("div");
+  m.id = "lx-cardmenu";
+  m.className = "cardmenu";
+  const items = Array.from(hid).map((k) =>
+    `<button type="button" data-show="${encodeURIComponent(k)}">显示：${names.get(k) || k}</button>`).join("");
+  m.innerHTML = `<div class="cm-title">已隐藏的卡片</div>${items}
+    <button type="button" data-act="reset">全部恢复</button>
+    <button type="button" data-act="cancel">取消</button>`;
+  root.appendChild(m);
+  const close = () => m.remove();
+  m.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+  m.addEventListener("click", (ev) => {
+    const b = ev.target.closest("button");
+    if (!b) return;
+    const h = lxHiddenSet(root);
+    if (b.dataset.show) { h.delete(decodeURIComponent(b.dataset.show)); }
+    else if (b.dataset.act === "reset") { h.clear(); }
+    else if (b.dataset.act === "cancel") { close(); return; }
+    lxHiddenSave(root, h);
+    root.querySelectorAll(".row2, .entries, #quick").forEach(lxApplyHidden);
+    close();
+  });
+  setTimeout(() => {
+    const onDoc = (ev) => {
+      if (!m.contains(ev.target)) { close(); document.removeEventListener("pointerdown", onDoc, true); }
+    };
+    document.addEventListener("pointerdown", onDoc, true);
+  }, 0);
+}
+
+/** 弹出单卡动作菜单（长按触发）。 */
+function lxCardMenu(box, card) {
+  const root = box.closest(".root") || document.body;
+  const old = root.querySelector("#lx-cardmenu");
+  if (old) old.remove();
+  const key = card.dataset.lxKey || card.id;
+  if (!key) return;
+  const name = (card.querySelector(".nm") || card.querySelector(".t")
+               || card.querySelector(".cap") || card).textContent.trim().slice(0, 12);
+  const hid = lxHiddenSet(box);
+  const isHidden = hid.has(key);
+
+  const m = document.createElement("div");
+  m.id = "lx-cardmenu";
+  m.className = "cardmenu";
+  m.innerHTML = `
+    <div class="cm-title">${name || "卡片"}</div>
+    <button type="button" data-act="toggle">${isHidden ? "恢复显示" : "隐藏此卡片"}</button>
+    <button type="button" data-act="reset">恢复全部隐藏</button>
+    <button type="button" data-act="cancel">取消</button>`;
+  root.appendChild(m);
+
+  const close = () => { m.remove(); };
+  m.addEventListener("click", (ev) => {
+    const b = ev.target.closest("button");
+    if (!b) return;
+    const act = b.dataset.act;
+    if (act === "cancel") { close(); return; }
+    if (act === "toggle") {
+      const h = lxHiddenSet(box);
+      if (h.has(key)) h.delete(key); else h.add(key);
+      lxHiddenSave(box, h);
+      // 重新应用所有容器（隐藏状态是全局的，跨容器按 key 匹配）
+      const r = box.closest(".root");
+      if (r) r.querySelectorAll(".row2, .entries, #quick").forEach(lxApplyHidden);
+      lxApplyHidden(box);
+    } else if (act === "reset") {
+      lxHiddenSave(box, new Set());
+      const r = box.closest(".root");
+      if (r) r.querySelectorAll(".row2, .entries, #quick").forEach(lxApplyHidden);
+      lxApplyHidden(box);
+    }
+    close();
+  });
+  // 点空白处关闭
+  setTimeout(() => {
+    const onDoc = (ev) => {
+      if (!m.contains(ev.target)) { close(); document.removeEventListener("pointerdown", onDoc, true); }
+    };
+    document.addEventListener("pointerdown", onDoc, true);
+  }, 0);
+  // 保护：菜单本身有 pointerdown，别被上面误关
+  m.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+}
+
+/** 按容器分别持久化顺序（row2 / entries / quick 各一套，互不覆盖）。 */
+function lxSaveOrderOf(box, ids) {
+  try {
+    const st = lxStore(box);
+    if (!st || !box) return;
+    const key = LX_DRAG_STORE + ":" + (box.id || box.className.split(" ")[0] || "x");
+    st.setItem(key, JSON.stringify(ids || []));
+  } catch (e) {}
+}
+
+/** 读回某容器的顺序。 */
+function lxLoadOrderOf(box) {
+  try {
+    const st = lxStore(box);
+    if (!st || !box) return null;
+    const key = LX_DRAG_STORE + ":" + (box.id || box.className.split(" ")[0] || "x");
+    const raw = st.getItem(key);
+    if (!raw) return null;
+    const a = JSON.parse(raw);
+    return Array.isArray(a) ? a : null;
+  } catch (e) { return null; }
+}
+
+/** 应用某容器保存的顺序（幂等；找不到的卡跳过）。 */
+function lxApplyOrderOf(box) {
+  const ids = lxLoadOrderOf(box);
+  if (!ids || !box) return false;
+  const SEL = box.classList.contains("entries") ? ".entry"
+            : box.id === "quick" ? ".q" : ".card";
+  const cur = Array.from(box.children).filter((c) => c.matches && c.matches(SEL));
+  const byId = new Map(cur.map((c) => [c.id || c.dataset.key || "", c]));
+  let touched = false;
+  for (const id of ids) {
+    const el = byId.get(id);
+    if (el) { box.appendChild(el); byId.delete(id); touched = true; }
+  }
+  return touched;
 }
 
 function lxNavigate(card, path) {
@@ -482,10 +733,30 @@ const STYLE = `
      它带 .row2 类是为了复用拖拽能力，但 .row2 的
      grid-template-columns:repeat(2,1fr) 会把它变成【两列并排】——
      正是上一版截图中「电量/哨兵挤在一行、文字竖排被裁」的原因。
-     必须显式覆盖回单列两行，且优先级要高于 .row2（同类名双写更稳）。 */
+     必须显式覆盖回单列两行，且优先级要高于 .row2（同类名双写更稳）。
+     ★ 2026-10-21 追加：车主要求「哨兵与电量的高度 = 车辆信息/车辆设置」。
+       功能卡 .entry 实测 96px（min-height 64 + padding 32）。
+       右列两卡各 96px → 右列总高 = 96*2 + gap12 = 204px。
+       左列里程卡 stretch 对齐后也是 204px（功能卡 96px × 2 + gap ≈ 204，
+       视觉上与功能卡行高一致）。用 var 统一，避免两处写死不同步。 */
   .row2.row2-stack { grid-template-columns:minmax(0,1fr);
                      grid-template-rows:repeat(2,minmax(0,1fr)); }
-  .row2.row2-stack > .card { min-height:0; }
+  .row2.row2-stack > .card { min-height:0; height:100%; box-sizing:border-box; }
+  /* 右列单卡目标高度 = 功能卡(.entry)的可视高度。
+     96px 来自：min-height 64 + padding(16*2) = 96（box-sizing 默认 content-box，
+     加到 min-height 上）。这里给右列整体定高，两卡各 1fr 均分。 */
+  /* ★ 2026-10-21：右列高度【不写死】—— 由 JS 读同屏 .entry 的实际高度同步。
+     为什么不能写死：模板里 .entry 用 min-height:64px，但真实字号/主题下
+     实际渲染 ≈ 96px；写死 96 会在不同字号下失配（截图已暴露）：
+       右列 204px vs 功能卡两行 140px → 电量/哨兵明显偏高。
+     现在改用 --lx-entry-h 由 JS 实测写入（见 _syncEntryHeight），
+     若取不到则回退 min-height，保证不会塌。 */
+  /* 右列总高 = 功能卡一行高度 × 2 + 行间距；两卡各占 1fr → 每卡 = 功能卡高度。
+     用 height（不是 min-height）：min-height 会被内部 padding 顶破导致失配。 */
+  /* 右列总高 = 功能卡行高 ×2 + gap + 每卡 +14px 内容余量（两行 vs 单行）。
+     见 _syncEntryHeight：--lx-entry-h 由 JS 实测 .entry 高度写入。 */
+  .row2.row2-stack { height:calc(var(--lx-entry-h, 96px) * 2 + 12px + 28px);
+                     min-height:0 !important; }
   .card { background:var(--lx-card); border-radius:18px; padding:16px;
           cursor:pointer; transition:transform .13s, box-shadow .18s; position:relative; }
   .card:hover { box-shadow:0 3px 14px rgba(0,0,0,.07); }
@@ -577,15 +848,25 @@ const STYLE = `
   #sparkgrid line { stroke:var(--lx-line); stroke-width:0.4; }
   .mile .axis { display:flex; justify-content:space-between; font-size:10px;
                 color:var(--lx-t3); margin-top:3px; }
-  .batt .row { display:flex; align-items:center; gap:9px; }
+  /* ★ 2026-10-21：右列压到与功能卡等高(64)后，电量卡内容放不下，
+     出现"剩余电量"标签被裁。缩小内部尺寸让它塞进 64px：
+       · 图标 26→20、大数字 30→26、行间距收紧。
+     功能卡是 24px 图标 + 单行文字，电量卡需要两行，故数字略缩。 */
+  /* ★ 2026-10-21：电量卡是【两行】(图标+大数字 / 标签)，而功能卡是单行。
+     硬压到 64px 会把「剩余电量」裁掉（实测两次都踩到）。
+     因此右列整体比"功能卡×2"略高一点，单卡 ≈ 78px，两行内容刚好放下：
+       26px 数字 + 12px 标签 + padding 24 = 62，留呼吸空间。 */
+  .batt { padding:12px 14px; justify-content:center; gap:0; }
+  .batt .row { display:flex; align-items:center; gap:8px; }
+  .batt .lbl { font-size:12px; line-height:1.25; }
   /* 充电中的剩余时间（App 同款：小字 + 闪电） */
   .batt .batt-remain { display:flex; align-items:center; gap:4px; margin-top:6px;
                        font-size:12px; color:var(--lx-t2); }
   .batt .batt-remain .ic { font-size:11px; }
-  .batt .row img { width:26px; height:26px; }
+  .batt .row img { width:20px; height:20px; }
   /* ★ 2026-10-20：与 .mile 统一为 30px —— 相邻两卡数字大小不同会显得没对齐。
      （真浏览器审计发现：mile 30px / batt 28px）*/
-  .batt .big { font-family:"LxNum","Licium"; font-size:30px; font-weight:600; line-height:1.05; }
+  .batt .big { font-family:"LxNum","Licium"; font-size:28px; font-weight:600; line-height:1.1; }
   .batt .big small { font-size:15px; font-weight:500; color:var(--lx-t2); }
   .sentry { display:flex; align-items:center; gap:12px; min-height:76px; }
   .sentry img { width:26px; height:26px; }
@@ -594,9 +875,13 @@ const STYLE = `
   .sentry.on .t { color:var(--lx-blue); }
 
   .entries { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  /* ★ 2026-10-21：功能卡高度变量 —— 右列（电量/哨兵）与功能卡等高，
+     统一由它推导，避免两处写死后不同步。 */
+  .root { --lx-entry-h:96px; }
   .entry { background:var(--lx-card); border-radius:18px; padding:16px;
            display:flex; align-items:center; gap:12px; cursor:pointer;
-           min-height:64px; transition:transform .13s, box-shadow .18s; }
+           min-height:64px; box-sizing:border-box;
+           transition:transform .13s, box-shadow .18s; }
   .entry:hover { box-shadow:0 3px 14px rgba(0,0,0,.07); }
   .entry:active { transform:scale(.985); }
   .entry:focus-visible { outline:2px solid var(--lx-blue); outline-offset:2px; }
@@ -718,8 +1003,57 @@ const STYLE = `
       border-radius:12px;
     }
     /* 触屏上禁止长按选中/放大镜，否则会跟拖拽打架 */
-    .row2 > .card { -webkit-user-select:none; user-select:none;
-                    -webkit-touch-callout:none; }
+    .row2 > .card, .entries > .entry, #quick > .q {
+      -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+    /* ★ 2026-10-21：功能卡 / 快捷按钮也支持拖拽，视觉反馈与 .card 一致 */
+    .entry.lx-dragging, .q.lx-dragging {
+      opacity:.72; filter:drop-shadow(0 6px 16px rgba(0,0,0,.22));
+      cursor:grabbing; z-index:3; position:relative;
+    }
+    .entry.lx-dragging *, .q.lx-dragging * { pointer-events:none; }
+    .entries.lx-drop-active, .quick.lx-drop-active { position:relative; }
+    .entries.lx-drop-active::after, #quick.lx-drop-active::after {
+      content:""; position:absolute; inset:0; pointer-events:none;
+      outline:2px dashed rgba(0,114,255,.35); outline-offset:2px;
+      border-radius:12px;
+    }
+
+    /* ── ★ 2026-10-21 卡片隐藏系统 ────────────────────────────────
+       长按卡片（不移动）→ 弹出动作菜单；隐藏后底部出现可恢复提示。 */
+    .cardmenu {
+      position:absolute; left:50%; bottom:24px; transform:translateX(-50%);
+      z-index:9999; min-width:210px; padding:10px;
+      background:var(--lx-card); border-radius:16px;
+      box-shadow:0 8px 32px rgba(0,0,0,.22);
+      font-size:14px; color:var(--lx-t1);
+      animation:lxmenu .14s ease-out;
+    }
+    @keyframes lxmenu { from { opacity:0; transform:translate(-50%, 8px) }
+                        to   { opacity:1; transform:translate(-50%, 0) } }
+    .cardmenu .cm-title {
+      font-size:12px; color:var(--lx-t3); padding:4px 10px 8px;
+      border-bottom:1px solid var(--lx-line); margin-bottom:6px;
+    }
+    .cardmenu button {
+      display:block; width:100%; text-align:left; border:0; background:none;
+      padding:10px; border-radius:10px; font-size:14px; color:var(--lx-t1);
+      cursor:pointer; font-family:inherit;
+    }
+    .cardmenu button:hover { background:var(--lx-hover); }
+    .cardmenu button[data-act="cancel"] { color:var(--lx-t3); }
+    .hidtip {
+      margin-top:12px; padding:10px 14px; border-radius:12px;
+      background:var(--lx-card); border:1px dashed var(--lx-line);
+      font-size:12px; color:var(--lx-t3); text-align:center; cursor:pointer;
+      -webkit-user-select:none; user-select:none;
+    }
+    .hidtip:hover { color:var(--lx-blue); border-color:var(--lx-blue); }
+    /* ★ 2026-10-21 关键修复：[hidden] 必须强制 display:none。
+       原因：.entry / .card / .q 都显式声明了 display:flex|grid，
+       其优先级高于 HTML hidden 属性自带的 display:none
+       → 隐藏后元素仍然可见（实测 hidden=true 但 offsetHeight>0）。
+       这条规则是隐藏功能能否生效的前提。 */
+    .card[hidden], .entry[hidden], .q[hidden] { display:none !important; }
 
     @container (max-width: 340px) {
       .quick { grid-template-columns: repeat(2, minmax(0,1fr)); }
@@ -1220,13 +1554,31 @@ class LixiangAppHome extends HTMLElement {
     `;
     this.appendChild(root);
 
-    // ★ 2026-10-20：卡片拖拽排序初始化（长按 350ms 抓起 → 自由换位 → 记住顺序）
-    //   · 先应用已保存的顺序，再给每个 .row2 挂拖拽能力。
-    //   · 两处调用：首屏渲染 + 后续重渲染（车型/主题变化会重写 DOM）。
+    // ★ 2026-10-20：卡片拖拽排序初始化（长按抓起 → 自由换位 → 记住顺序）
+    // ★ 2026-10-21 扩展：三类容器都能拖（车主："车辆设置不能移动"、
+    //   "快捷键是否可以自由移动位置"）：
+    //     .row2    → 空调/位置/里程/电量/哨兵（.card）
+    //     .entries → 车辆健康/任务/信息/情景/设置（.entry）
+    //     #quick   → 8 个快捷圆按钮（.q）
     try {
-      // ★ 先按【全局】保存的顺序重放（含跨 row2 的位置）
       if (typeof lxApplyGlobalOrder === "function") lxApplyGlobalOrder(root);
-      root.querySelectorAll(".row2").forEach((r) => lxEnableDragSort(r));
+      const _mount = (el) => {
+        if (!el) return;
+        if (typeof lxApplyOrderOf === "function") lxApplyOrderOf(el);
+        lxEnableDragSort(el);
+      };
+      root.querySelectorAll(".row2").forEach(_mount);
+      root.querySelectorAll(".entries").forEach(_mount);
+      _mount(root.querySelector("#quick"));
+      // ★ 2026-10-21：应用已保存的隐藏状态（长按菜单里改的）
+      if (typeof lxApplyHidden === "function") {
+        root.querySelectorAll(".row2, .entries, #quick").forEach(lxApplyHidden);
+      }
+      // ★ 2026-10-21：右列（电量/哨兵）高度 = 功能卡实际高度（车主明确要求）。
+      //   不能写死：.entry 的 min-height 是 64px，但真实字号/主题下
+      //   渲染高度会变（实测 64~96）。这里实测一行 .entry 的高度，
+      //   写进 --lx-entry-h，右列 min-height = entry*2 + gap。
+      this._syncEntryHeight(root);
       this.__lxDragBound = true;
     } catch (e) { /* 拖拽是增强功能，失败不影响主功能 */ }
 
@@ -1429,6 +1781,27 @@ class LixiangAppHome extends HTMLElement {
       });
       q.appendChild(d);
     });
+  }
+
+  /**
+   * 同步「功能卡高度」到右列（★ 2026-10-21）。
+   *
+   * 车主："哨兵模式和剩余电量高度应该跟车辆信息、车辆设置高度一样。"
+   * 做法：实测一张可见 .entry 的 offsetHeight → 写入 --lx-entry-h
+   * → `.row2-stack` 的 min-height = entry*2 + gap12，两卡各 1fr 等分。
+   *
+   * 容错：无 .entry / 测量为 0（尚未布局）时保留 CSS 的 96px 回退。
+   */
+  _syncEntryHeight(root) {
+    try {
+      const host = root || this;
+      const ent = Array.from(host.querySelectorAll(".entries > .entry"))
+        .find((e) => e.offsetHeight > 0 && !e.hidden);
+      if (!ent) return;
+      const h = Math.round(ent.getBoundingClientRect().height);
+      if (!h || h < 40 || h > 200) return;       // 异常值不采信
+      host.style.setProperty("--lx-entry-h", h + "px");
+    } catch (e) { /* 不影响主功能 */ }
   }
 
   /** 入口卡片接线（幂等：只接一次，元素在 _build 后不再替换） */
