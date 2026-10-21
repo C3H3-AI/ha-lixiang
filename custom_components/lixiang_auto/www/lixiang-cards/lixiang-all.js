@@ -2062,8 +2062,11 @@ class LixiangAppHome extends HTMLElement {
   /** 入口卡片接线（幂等：只接一次，元素在 _build 后不再替换） */
   _wireNav() {
     if (this._navWired) return;
-    this._navWired = true;
-    const c = this._config;
+    // ★ 2026-10-21 修复（车主："二级界面都进不去了"）：
+    //   `_navWired` 原来在**接线之前**就置 true，一旦中途抛异常，
+    //   后面的入口全部接不上，且**永不重试** → 点哪些入口都没反应。
+    //   改为：全部接完才置 true；中途异常则保持 false，下次 _build 会重试。
+    const c = this._config || {};
     const nav = c.nav || {};
     const go = p => { if (!p) return; lxNavigate(this, p); };
     const wire = (sel, path, moreKey) => {
@@ -2082,24 +2085,36 @@ class LixiangAppHome extends HTMLElement {
     wire("#t", nav.vinfo || "/lixiang/vinfo");
     wire("#e-key", nav.vinfo || "/lixiang/vinfo");
     wire("#e-task", nav.task || "/lixiang/task");
-    // ★ 2026-10-20：情景模式入口按车型隐藏
-    //   ONE（M 系）的 real-time-state 无场景字段、能力表无 version:scene
-    //   ⇒ 实体不会创建 ⇒ 不给入口（避免点进去只有 unknown）
-    {
-      const _el = this.$("#e-scene");
-      if (_el) {
-        const _has = !!this._eid("scene_mode")
-                   || !!this._eidIn("entries", "scene_mode")
-                   || !!this._eidIn("quick", "scene_mode");
-        _el.hidden = !_has;
-      }
-    }
     wire("#e-scene", nav.scene || "/lixiang/scene");
     // 2026-10-12 修复（车主："车辆设置二级页面错误"）：这两行此前没有默认路径。
     // nav.setting / nav.health 未配置时是 undefined → go(undefined) → if (!p) return
     // → 点击完全没反应。与其他入口一致，补上默认路径。
     wire("#e-health", nav.health || "/lixiang/health");
     wire("#e-setting", nav.setting || "/lixiang/setting");
+
+    // ★ 2026-10-20：情景模式入口按车型隐藏
+    //   ONE（M 系）的 real-time-state 无场景字段、能力表无 version:scene
+    //   ⇒ 实体不会创建 ⇒ 不给入口（避免点进去只有 unknown）
+    // ★ 2026-10-21 修复崩溃 + 移到接线之后：
+    //   ① 原来用 `this.$("#e-scene")`，但本类**没有 `$` 方法** → TypeError，
+    //      把 _wireNav 从这里打断 ⇒ 后面 e-health / e-setting 永远接不上。
+    //      改用 querySelector（与本文件其余 30+ 处一致）。
+    //   ② 即使隐藏入口也必须先 wire（隐藏只是视觉，不影响监听），
+    //      否则"恢复显示"后又变成点不动。
+    try {
+      const _el = this.querySelector("#e-scene");
+      if (_el) {
+        const _has = !!this._eid("scene_mode")
+                   || !!this._eidIn("entries", "scene_mode")
+                   || !!this._eidIn("quick", "scene_mode");
+        // ★ 2026-10-21：入口在 HTML 里默认 `hidden`（防闪现）。
+        //   因此"有实体"时**必须显式去掉 hidden**，否则支持场景模式的车型
+        //   反而永远看不到入口（本次修复踩到的坑）。
+        //   仅当 hass 仍为空（首帧 warmup）时不动，避免误判成"不支持"。
+        const _ready = !!(this._hass && Object.keys(this._hass.states || {}).length);
+        if (_ready) _el.hidden = !_has;
+      }
+    } catch (e) { /* 隐藏失败不影响导航 */ }
     // ★ 地图卡拍照按钮（官方 HomeControlMapPhoto）
     const shotEl = this.querySelector("#hm-shot");
     if (shotEl) {
@@ -2132,6 +2147,8 @@ class LixiangAppHome extends HTMLElement {
       this._a11y(senEl, "切换哨兵模式", act);
       senEl.addEventListener("click", act);
     }
+    // ★ 2026-10-21：全部接完才算"已接线"（见函数开头说明）。
+    this._navWired = true;
   }
 
   /** 胎压 → {v, unit}：实体单位是 kPa 时换算成 bar（与「车辆健康」页同一规则） */
