@@ -6567,6 +6567,32 @@ const DEFAULT_FONT_BASE = "/local/lixiang-fonts";   // 用户自定义优先
 let __iconBase = DEFAULT_ICON_BASE;   // setConfig 可覆盖
 const __iconFallback = BUILTIN_ICON_BASE;
 
+/* ★ 2026-10-21 新增：座椅底图基址。
+   底图是官方按车型出图的 PNG/WebP（1086×1467），位于集成
+   www/lixiang-climate/。与图标一样：/local 优先（用户可覆盖），
+   缺失时回退集成内置。 */
+const BUILTIN_SEAT_BASE = "/lixiang_auto/lixiang-climate";
+const DEFAULT_SEAT_BASE = "/local/lixiang-climate";
+/* ★ 座椅底图**随集成分发**（在 www/lixiang-climate/，共 360KB），
+   不像图标那样需要用户自备 → 默认直接用集成内置路径。
+   /local 仅作"用户想换图"时的覆盖位。 */
+let __seatBase = BUILTIN_SEAT_BASE;
+
+/* ★ 座椅按钮坐标表（百分比，相对底图 1086×1467）
+   来源：官方空调页截图（1260×2844）实测 10 个圆钮中心，
+        换算：x% = x_center/1260，y% = (y_center×1086/1260)/1467
+        已画框验证（.research/app-climate/verify_btns.png）。
+   说明：5 座(i6) 与 6 座(i8) 前排相同；后排 5 座有中间座，6 座无。 */
+const SEAT_POS = {
+  front: { heatL:[32.5,41.7], heatR:[67.5,41.7],
+           ventL:[32.5,53.8], ventR:[67.5,53.8] },
+  rear5: { heatL:[33.25,76.1], heatM:[49.88,76.1], heatR:[66.6,76.1],
+           ventL:[33.25,88.4], ventR:[66.6,88.4] },
+  rear6: { heatL:[33.25,76.1], heatR:[66.6,76.1],
+           ventL:[33.25,88.4], ventR:[66.6,88.4] },
+  strg:  [32.5,27.85],
+};
+
 // ★ 2026-10-14 统一导航助手：**先问外壳**（lx-navigate 事件），被接管就不改 URL。
 //   背景：外壳（lixiang-app）只能靠猴补丁拦 history.pushState；一旦 HA 路由
 //   抢在它前面处理，子卡片内的"返回/入口"会真的切 HA 视图 → 车主反馈
@@ -6651,6 +6677,43 @@ const STYLE = `
   .info { width:32px; height:32px; border-radius:50%; display:flex;
           align-items:center; justify-content:center; cursor:pointer; flex:0 0 auto; }
   .info img { width:17px; height:17px; opacity:.5; }
+
+  /* ── ★ 座椅可视化区（2026-10-21 新增，对齐官方空调页）─────────────
+     官方实测（1260×2844 截图，画框验证）：
+       · 座椅区占整页约 55~60%，是空调页的**主体**
+       · 圆形按钮直径 182px = 屏宽 14.4%，间距 210px = 16.7%
+       · 按钮叠在座椅图上，浮于其上
+     座椅底图：www/lixiang-climate/seatmap-*.webp（1086×1467，官方按车型出图）
+     按钮坐标：由官方截图坐标 ÷1260 得到百分比 → 缩放不跑位。 */
+  .seatbox { position:relative; margin:8px 16px 0; border-radius:18px;
+             overflow:hidden; background:var(--lx-card); }
+  .seatbox img.bg { display:block; width:100%; height:auto; }
+  /* 按钮：绝对定位，尺寸/位置全用百分比（相对底图 1086×1467） */
+  .seatbox .sbtn {
+    position:absolute; width:14.4%; aspect-ratio:1/1;
+    transform:translate(-50%,-50%);
+    border-radius:50%; border:none; cursor:pointer;
+    background:#FFF; box-shadow:0 2px 8px rgba(0,0,0,.12);
+    display:flex; align-items:center; justify-content:center;
+    padding:0; transition:transform .12s, box-shadow .16s;
+  }
+  .seatbox .sbtn:active { transform:translate(-50%,-50%) scale(.92); }
+  .seatbox .sbtn.on { background:var(--lx-blue); }
+  .seatbox .sbtn.on svg { stroke:#FFF; fill:#FFF; }
+  /* 加热=描边波浪；通风=实心风扇（官方风格） */
+  .seatbox .sbtn svg { width:52%; height:52%; stroke:#3A3A3A;
+                       fill:none; stroke-width:1.7; stroke-linecap:round;
+                       stroke-linejoin:round; }
+  .seatbox .sbtn svg g, .seatbox .sbtn svg use,
+  .seatbox .sbtn svg path, .seatbox .sbtn svg circle { fill:#3A3A3A; stroke:none; }
+  .seatbox .sbtn.on svg g, .seatbox .sbtn.on svg use,
+  .seatbox .sbtn.on svg path, .seatbox .sbtn.on svg circle { fill:#FFF; }
+  /* 加热(波浪)是描边型：只对第一层 path 恢复描边 */
+  .seatbox .sbtn svg > path { fill:none; stroke:#3A3A3A; }
+  .seatbox .sbtn.on svg > path { stroke:#FFF; }
+  .seatbox .sbtn:disabled { opacity:.35; cursor:not-allowed; }
+  /* 方向盘加热：顶部居中 */
+  .seatbox .sbtn.strg { left:48.5%; top:12.5%; }
 
   /* ── 主控区 ── */
   .main { padding:26px 20px 8px; text-align:center; }
@@ -6830,6 +6893,11 @@ class LixiangClimatePage extends HTMLElement {
         </div>
       </div>
 
+      <div class="seatbox" id="seatbox">
+        <img class="bg" id="seatbg" src="${__seatBase}/seatmap-l6.webp" alt="座椅布局">
+        <div class="sbtns" id="sbtns"></div>
+      </div>
+
       <div class="main">
         <div class="dial">
           <button id="dec" aria-label="降低温度">−</button>
@@ -6949,9 +7017,122 @@ class LixiangClimatePage extends HTMLElement {
     } finally { delete this._busy[m.key]; el.classList.remove("busy"); }
   }
 
+  /**
+   * ★ 座椅可视化区渲染（2026-10-21 新增，对齐官方空调页）。
+   *
+   * 三件事：
+   *   ① 按车型选底图：5座→seatmap-l6（连体长椅）/ 6座→seatmap-l8（两独立座）
+   *      判据沿用集成 `fan.py` 已按能力表生成的实体（有三排实体=6座）
+   *   ② 按实体有无渲染按钮：集成已按车型过滤，无实体=该座位不存在
+   *   ③ 按钮位置用 SEAT_POS 百分比，缩放不跑位
+   *
+   * 官方实测：按钮直径 182px = 屏宽 14.4%（即底图宽 14.4%），
+   *           加热=三条波浪，通风=三叶扇。
+   */
+  _renderSeats() {
+    const box = this.querySelector("#seatbox");
+    const bg = this.querySelector("#seatbg");
+    const host = this.querySelector("#sbtns");
+    if (!box || !bg || !host) return;
+
+    // —— ① 选底图 ——
+    // 集成 fan.py 已按能力表生成实体：6座车才有三排座椅实体
+    const is6 = !!(this._eid("seat_tl_heat") || this._eid("seat_tr_heat"));
+    const map = is6 ? "seatmap-l8.webp" : "seatmap-l6.webp";
+    const want = `${__seatBase}/${map}`;
+    if (bg.getAttribute("src") !== want) {
+      bg.onerror = () => {
+        // /local 缺失 → 回退集成内置
+        bg.onerror = null;
+        bg.src = `${BUILTIN_SEAT_BASE}/${map}`;
+      };
+      bg.src = want;
+    }
+
+    // —— ② 按钮定义（field 对应 fan.py 的 SEAT_FANS key）——
+    const P = SEAT_POS;
+    const rear = is6 ? P.rear6 : P.rear5;
+    const defs = [];
+    if (this._eid("steer_heat")) {
+      defs.push({ k: "strg", pos: P.strg, field: "steer_heat", kind: "heat", title: "方向盘加热" });
+    }
+    defs.push({ k: "fl_heat", pos: P.front.heatL, field: "seat_fl_heat", kind: "heat", title: "主驾座椅加热" });
+    defs.push({ k: "fr_heat", pos: P.front.heatR, field: "seat_fr_heat", kind: "heat", title: "副驾座椅加热" });
+    defs.push({ k: "fl_vent", pos: P.front.ventL, field: "seat_fl_vent", kind: "vent", title: "主驾座椅通风" });
+    defs.push({ k: "fr_vent", pos: P.front.ventR, field: "seat_fr_vent", kind: "vent", title: "副驾座椅通风" });
+    defs.push({ k: "sl_heat", pos: rear.heatL, field: "seat_rl_heat", kind: "heat", title: "二排左座椅加热" });
+    if (!is6) defs.push({ k: "sm_heat", pos: rear.heatM, field: "seat_rc_heat", kind: "heat", title: "二排中座椅加热" });
+    defs.push({ k: "sr_heat", pos: rear.heatR, field: "seat_rr_heat", kind: "heat", title: "二排右座椅加热" });
+    defs.push({ k: "sl_vent", pos: rear.ventL, field: "seat_rl_vent", kind: "vent", title: "二排左座椅通风" });
+    defs.push({ k: "sr_vent", pos: rear.ventR, field: "seat_rr_vent", kind: "vent", title: "二排右座椅通风" });
+
+    // —— ③ 渲染（只建一次，后续只更新状态）——
+    if (!host.__built) {
+      host.innerHTML = "";
+      defs.forEach(d => {
+        const eid = this._eid(d.field);
+        if (!eid) return;                       // 该车型无此座位 → 不渲染
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "sbtn";
+        b.dataset.field = d.field;
+        b.style.left = d.pos[0] + "%";
+        b.style.top = d.pos[1] + "%";
+        b.title = d.title;
+        b.setAttribute("aria-label", d.title);
+        // 图标：加热=三条波浪 / 通风=三叶扇（官方是这两个符号，APK 无位图→自绘 SVG）
+        b.innerHTML = d.kind === "heat"
+          ? '<svg viewBox="0 0 24 24"><path d="M4 9c2-2 4-2 6 0s4 2 6 0 4-2 4 0"/><path d="M4 14c2-2 4-2 6 0s4 2 6 0 4-2 4 0"/><path d="M4 19c2-2 4-2 6 0s4 2 6 0 4-2 4 0"/></svg>'
+          /* 通风=三叶风扇（对齐官方）。单片叶子用 rotate(0/120/240) 复制，保证三叶均匀 */
+          : '<svg viewBox="0 0 24 24"><defs><path id="lxblade" d="M12 12 C12 8.5 13 6 15.2 6 C17.6 6 19 7.8 19 9.8 C19 11.6 17.4 12.6 15 12.6 C13.8 12.6 12.8 12.4 12 12 Z"/></defs>'
+            + '<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>'
+            + '<use href="#lxblade" fill="currentColor" stroke="none"/>'
+            + '<use href="#lxblade" transform="rotate(120 12 12)" fill="currentColor" stroke="none"/>'
+            + '<use href="#lxblade" transform="rotate(240 12 12)" fill="currentColor" stroke="none"/></svg>';
+        // ★ 2026-10-21 实测：座椅实体是 **fan 域**（fan.li_xiang_l6_主驾座椅加热 等 9 个），
+        //   bind 里 seat_* 的 domain 也是 "fan" ⇒ 用 set_percentage 控制档位。
+        //   （我一度误判为 sensor 只读 —— 实际 sensor 与 fan 同名并存，
+        //     bind 取的是 fan，故可直接控制。）
+        b.addEventListener("click", async () => {
+          const tgt = this._eid(d.field);
+          if (!tgt || tgt.indexOf("fan.") !== 0) return;
+          const st = this._st(tgt);
+          const cur = Number(st && st.attributes && st.attributes.percentage) || 0;
+          const next = cur > 0 ? 0 : 100;      // 有档位→关；关→满档
+          try {
+            await this._hass.callService("fan", "set_percentage",
+              { entity_id: tgt, percentage: next });
+          } catch (e) {
+            this._toast("操作失败：" + ((e && e.message) || "未知"), "err");
+          }
+        });
+        host.appendChild(b);
+      });
+      host.__built = true;
+    }
+    // 状态同步
+    host.querySelectorAll(".sbtn").forEach(b => {
+      const eid = this._eid(b.dataset.field);
+      const st = eid ? this._st(eid) : null;
+      let on = false;
+      if (st) {
+        // fan 域：percentage>0 即开启（0 = 关闭）
+        const p = Number(st.attributes && st.attributes.percentage);
+        on = Number.isFinite(p) ? p > 0 : this._on(eid);
+      }
+      b.classList.toggle("on", on);
+      // 三档时给个视觉强度（可选）：percentage 33/66/100 → 不同透明度
+      if (st && on) {
+        const p = Number(st.attributes && st.attributes.percentage) || 0;
+        b.style.opacity = p >= 100 ? "1" : (p >= 60 ? "0.9" : "0.8");
+      } else { b.style.opacity = ""; }
+    });
+  }
+
   _update() {
     if (!this._built) return;
     const q = s => this.querySelector(s);
+    this._renderSeats();
 
     q("#v-room").textContent = (t => t == null ? "—" : t.toFixed(0) + "°C")(this._num(this._eid("room_temp")));
 
