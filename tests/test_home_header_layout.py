@@ -135,26 +135,62 @@ class TestCardLayout:
         return m.group(1).strip()
 
     def test_cards_no_longer_hardcoded_150(self):
-        """★ 以前写死 150px（比 App 矮约 20%）—— 必须改成随视口缩放。"""
-        for sel in (".ac", ".loc", ".mile"):
+        """★ 以前写死 150px（比 App 矮约 20%）—— 必须改成随视口缩放。
+
+        ★ 2026-10-21 变更：`.mile` 不再自带 min-height。
+           原因：车主反馈「里程卡太高、电量卡应该跟哨兵一样大」。
+           实测（420 宽）右列 = 电量 259 + gap 12 + 哨兵 108 = 379，
+           而 .mile 作为 grid 项目被 align-items:stretch 拉到 379 ——
+           **里程卡的高度是被右列撑出来的，不是自己的 min-height**。
+           现改为右列 `.row2-stack` 两行等高，里程卡高度由右列总高
+           自然决定（真浏览器实测 245px > 上排 225px，视觉意图不变）。
+        """
+        for sel in (".ac", ".loc"):
             mh = self._min_height(sel)
             assert "clamp(" in mh, f"{sel} 仍是固定高度 {mh}"
             assert "150px" != mh, f"{sel} 又回到 150px"
+        # .mile 不得再写死固定高度（允许没有 min-height）
+        s = _src()
+        i = s.index(".mile {")
+        blk = s[i:s.index("}", i)]
+        assert "150px" not in blk, "里程卡又回到写死 150px"
+
+    def test_row2_stack_is_two_equal_rows(self):
+        """★ 右列「电量 + 哨兵」必须等高（车主明确要求）。
+
+        电量与哨兵在同一列堆叠；.row2-stack 带 .row2 类是为复用拖拽能力，
+        但 .row2 的 grid-template-columns:repeat(2,1fr) 会把它变成两列并排
+        —— 必须显式覆盖回单列两行，否则会出现「挤成一行、文字竖排被裁」。
+        """
+        s = _src()
+        assert ".row2.row2-stack" in s, "缺右列布局规则"
+        assert re.search(
+            r'\.row2\.row2-stack\s*\{[^}]*grid-template-columns\s*:\s*minmax\(0,\s*1fr\)',
+            s), "右列必须覆盖成单列（否则 .row2 会把它变成两列并排）"
+        assert re.search(
+            r'\.row2\.row2-stack\s*\{[^}]*grid-template-rows\s*:\s*repeat\(2',
+            s), "右列必须是两行等高（电量与哨兵一样大）"
 
     def test_ac_and_loc_equal(self):
         """上排两张卡必须等高（App 里就是等高的近正方形）。"""
         assert self._min_height(".ac") == self._min_height(".loc")
 
     def test_mile_taller_than_top_row(self):
-        """里程卡比上排高（App ≈213 vs ≈183）——右列是「电量+哨兵」堆叠。"""
-        def floor_of(v: str) -> int:
-            return int(re.search(r'clamp\(\s*(\d+)px', v).group(1))
-        assert floor_of(self._min_height(".mile")) > floor_of(self._min_height(".ac")), \
-            "里程卡不应比温度卡矮"
+        """里程卡比上排高（App ≈213 vs ≈183）——右列是「电量+哨兵」堆叠。
+
+        ★ 2026-10-21：改为断言「右列两行等高」这一新机制（见上）。
+          .mile 已无 clamp，故不再比较 clamp 下限。
+        """
+        s = _src()
+        assert "grid-template-rows:repeat(2" in s.replace(" ", ""), \
+            "右列应为两行等高 —— 里程卡随之自然高于上排（实测 245 vs 225）"
 
     def test_clamp_is_bounded(self):
-        """clamp 必须三参齐全（否则窄屏/宽屏行为失控）。"""
-        for sel in (".ac", ".loc", ".mile"):
+        """clamp 必须三参齐全（否则窄屏/宽屏行为失控）。
+
+        ★ 2026-10-21：.mile 已不再用 clamp（高度由右列等高决定），故只查上排两卡。
+        """
+        for sel in (".ac", ".loc"):
             mh = self._min_height(sel)
             assert len(mh.split(",")) == 3, f"{sel} 的 clamp 参数不全: {mh}"
 

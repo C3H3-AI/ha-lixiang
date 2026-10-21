@@ -1033,9 +1033,14 @@ const STYLE = `
                     display:flex; align-items:center; justify-content:center; cursor:pointer;
                     box-shadow:0 2px 8px rgba(16,20,28,.2); padding:0; }
   .loc .map .shot img { width:18px; height:18px; }
-  /* ★ 空调卡座椅插图（官方布局：右下角、不抢文字） */
-  .ac .seatart { position:absolute; right:-6px; bottom:-10px; width:104px; height:110px;
-                      opacity:.9; pointer-events:none; }
+  /* ★ 空调卡座椅图（2026-10-21 改为官方素材，对齐 App）
+     旧：自绘 SVG、right:-6/bottom:-10、104×110 —— 又不像又压住快捷键文字。
+     新：官方 icon_seat1/2/3.webp（20×36 原始尺寸，等比例放大到 ~34×61），
+         放在右侧中部、opacity .9，且【绝不覆盖】底部 .acrow 文字区。 */
+  .ac .seatart { position:absolute; right:10px; top:50%;
+                 transform:translateY(-52%);
+                 width:34px; height:61px; object-fit:contain;
+                 opacity:.92; pointer-events:none; }
   .plug { display:inline-flex; align-items:center; gap:3px; margin-left:8px;
           vertical-align:middle; font-size:11px; padding:2px 7px; border-radius:8px;
           color:#0A7B3E; background:rgba(10,123,62,.10); }
@@ -1129,6 +1134,14 @@ const STYLE = `
 
   .wrap { padding:12px 20px 0; display:grid; gap:12px; }
   .row2 { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+  /* ★ 2026-10-21 修复：右列是【单列两行】（电量在上、哨兵在下，等高）。
+     它带 .row2 类是为了复用拖拽能力，但 .row2 的
+     grid-template-columns:repeat(2,1fr) 会把它变成【两列并排】——
+     正是上一版截图中「电量/哨兵挤在一行、文字竖排被裁」的原因。
+     必须显式覆盖回单列两行，且优先级要高于 .row2（同类名双写更稳）。 */
+  .row2.row2-stack { grid-template-columns:minmax(0,1fr);
+                     grid-template-rows:repeat(2,minmax(0,1fr)); }
+  .row2.row2-stack > .card { min-height:0; }
   .card { background:var(--lx-card); border-radius:18px; padding:16px;
           cursor:pointer; transition:transform .13s, box-shadow .18s; position:relative; }
   .card:hover { box-shadow:0 3px 14px rgba(0,0,0,.07); }
@@ -1190,13 +1203,19 @@ const STYLE = `
                     display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
                     overflow:hidden; }
   /* 里程卡比上排略高（App 约 213px）—— 右列是「电量 + 哨兵」两张堆叠 */
-  /* ★ 2026-10-20：补 flex 布局 —— 此前只有 min-height，内容顶贴、
-     卡片下半大片空白（截图发现：里程/电量卡数字贴顶、下面空一大块）。
-     与 .ac/.loc 的 space-between 保持一致。*/
-  .mile { min-height:clamp(196px, 54vw, 232px); display:flex;
-          flex-direction:column; justify-content:space-between; }
-  .batt { min-height:clamp(196px, 54vw, 232px); display:flex;
-          flex-direction:column; justify-content:space-between; }
+  /* ★ 2026-10-21 修复（车主："卡片大小比例很不对，电量卡应该跟哨兵一样大，
+     里程卡太高"）：
+     根因不是里程卡自己高，而是【右列把它撑高了】——
+       右列 = 电量(min-height 226.8 + padding 32 = 259) + gap 12 + 哨兵 108 = 379
+       左列里程卡作为 grid 项目默认 align-items:stretch → 被拉到 379。
+     真浏览器实测（420 宽）：mile 379px / batt 259px / sentry 108px。
+     修法：
+       ① 右列容器 grid-template-rows: 1fr 1fr（详见下方 inline 样式）
+          → 电量与哨兵**强制等高**（车主明确要求）
+       ② 去掉 .mile/.batt 的大 min-height（它是 child 内容的两倍，纯撑高）
+       ③ .sentry 保留 76px 基线，作为右列单卡的可读下限 */
+  .mile { display:flex; flex-direction:column; justify-content:space-between; }
+  .batt { display:flex; flex-direction:column; justify-content:space-between; }
   /* ★ 2026-10-20：给 .cap 一个通用基线 —— 此前只有 .mile .cap 有定义，
      .batt .cap 等落到 div 默认（16px/深色），与里程卡完全不协调。
      （真浏览器审计发现：mile.cap 13px/#9A9A9A vs batt.cap 16px/#1A1A1A）*/
@@ -1758,17 +1777,14 @@ class LixiangAppHome extends HTMLElement {
       <div class="wrap">
         <div class="row2">
           <div class="card ac" id="c-ac" role="button" tabindex="0">
-            <!-- ★ 2026-10-14 对齐官方：空调卡右下角的座椅插图（官方包内无可复用位图，自绘 SVG） -->
-            <svg class="seatart" viewBox="0 0 120 128" aria-hidden="true">
-              <defs><linearGradient id="lxseat" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#e9edf3"/></linearGradient></defs>
-              <path d="M34 12h30c7 0 12 6 12 13l-3 44H37l-3-44c0-7 5-13 12-13z" fill="url(#lxseat)" stroke="#d7dde6" stroke-width="1"/>
-              <rect x="30" y="72" width="58" height="14" rx="7" fill="url(#lxseat)" stroke="#d7dde6" stroke-width="1"/>
-              <path d="M28 92h62c4 0 7 3 7 7v14c0 4-3 7-7 7H28c-4 0-7-3-7-7v-14c0-4 3-7 7-7z" fill="url(#lxseat)" stroke="#d7dde6" stroke-width="1"/>
-              <rect x="40" y="20" width="18" height="4" rx="2" fill="#dde3ea"/>
-              <rect x="40" y="30" width="18" height="4" rx="2" fill="#dde3ea"/>
-              <rect x="40" y="40" width="18" height="4" rx="2" fill="#dde3ea"/>
-            </svg>
+            <!-- ★ 2026-10-21 修复（车主："空调卡片的座椅位置很不对，跟 app 的座椅完全不同"）：
+                 原来是我自绘的 SVG（一个模糊的圆柱体），塞在 right:-6/bottom:-10
+                 绝对定位、104×110 —— 既不像 App，还压住了底部快捷键文字。
+                 App 用的是官方素材 icon_seat1/2/3.webp（20×36，分别对应
+                 关闭 / 加热 / 通风 三种状态，灰色 vs 蓝色）。
+                 现改为直接引用官方位图，由 JS 按座椅状态切换 1/2/3。 -->
+            <img class="seatart" id="ac-seat" src="${__iconBase}/icon_seat1.webp"
+                 onerror="this.style.visibility='hidden'" alt="">
             <div class="temp"><span id="v-room">—</span><sup>°C</sup></div>
             <div class="target">目标温度 <span id="v-target">—</span>°C</div>
             <div class="acrow" id="acrow">
@@ -1806,7 +1822,15 @@ class LixiangAppHome extends HTMLElement {
               <g id="sparkbars"></g></svg></div>
             <div class="axis"><span>01</span><span>08</span><span>15</span><span>22</span><span>29</span></div>
           </div>
-          <div style="display:grid; gap:12px; grid-template-rows:1fr auto;">
+          <!-- ★ 2026-10-21：右列「电量 + 哨兵」强制等高（车主明确要求
+               「剩余电量这张卡片应该跟哨兵模式卡片大小一样」）。
+               布局与拖拽能力都由 .row2-stack 这个类控制（见 STYLE 里
+               .row2.row2-stack 规则）—— 不在这里写内联 grid，
+               否则会与 .row2 的 grid-template-columns 打架。
+               ⚠️ 注释里【不能出现反引号】：本段位于模板字符串内部，
+                  反引号会提前终止字符串 → 后续文字被当 JS 执行 → 整卡崩。
+                  （2026-10-21 踩过：_build 报 reading 'row2'  undefined） -->
+          <div class="row2 row2-stack">
             <div class="card batt" id="c-batt" role="button" tabindex="0">
               <div class="row"><img src="${__iconBase}/ic_home_battery.webp" onerror="__lxIconFallback(this)" alt="">
                 <div><div class="big"><span id="v-batt">—</span><small>%</small></div>
@@ -2018,6 +2042,10 @@ class LixiangAppHome extends HTMLElement {
     this._renderQuick(warmup);
 
     this._wireNav();
+    // ★ 2026-10-21 说明：拖拽排序的挂载**已在 _build 前半段完成**
+    //   （见 "卡片拖拽排序初始化" 那段：lxApplyGlobalOrder(root) + 逐 .row2 挂载）。
+    //   此处不再重复挂载 —— 之前误加过一段，引用了未定义变量导致 _build 抛错、
+    //   整卡只渲染一半（截图中右列被裁就是这个原因）。
 
     // ★ 2026-10-12：车主指示移除「服务专家」与「理想AD学习平台」两个入口
 
@@ -2538,20 +2566,65 @@ class LixiangAppHome extends HTMLElement {
     _chip("#ch-defrost", this._eid("ac_defrost"));
     const defT = q("#ch-defrost-t"); if (defT) defT.textContent = "除雪除霜";
 
+    // ★ 2026-10-21：座椅图按状态切换官方素材（对齐 App）
+    //   icon_seat1 = 关闭(灰) / icon_seat2 = 加热(蓝) / icon_seat3 = 通风(蓝)
+    //   判据：四个座椅的「加热通风」实体只要有任一非 0 → 点亮。
+    //   实体值语义（0=关，非0=档位/模式）沿用 signals.py 的既有定义，
+    //   这里只做"是否激活"的布尔判断，不解释档位具体数值。
+    try {
+      const _seatImg = q("#ac-seat");
+      if (_seatImg) {
+        const _keys = ["seat_heat_vent_fl", "seat_heat_vent_fr",
+                       "seat_heat_vent_rl", "seat_heat_vent_rr"];
+        let _active = false;
+        for (const _k of _keys) {
+          const _s = this._st(this._eid(_k));
+          if (!_s) continue;
+          const _v = String(_s.state ?? "");
+          if (_v && _v !== "0" && _v !== "off" && _v !== "unknown"
+              && _v !== "unavailable" && _v !== "未激活") { _active = true; break; }
+        }
+        _seatImg.src = `${__iconBase}/icon_seat${_active ? 2 : 1}.webp`;
+      }
+    } catch (e) { /* 座椅图失败不影响其它 */ }
+
     // 地址：device_tracker 的 attributes 里可能有 address / 也支持坐标回退
+    // ★ 2026-10-21 修复（车主："地图卡片显示的位置是经纬度，不是具体地址"）：
+    //   根因：车联网 VSS 只给 Vehicle.Location.CurrentLocationInfo{lat,lon,...}，
+    //         **不含任何地址字段**（实测全量 VSS dump 确认），
+    //         而这里原本只读 device_tracker 的 address 属性 —— 它永远不存在，
+    //         于是每次落到 `${lat}, ${lon}` 经纬度兜底。
+    //   修法：保留 address 属性优先（若用户自行接入），
+    //         没有则做【逆地理编码】，成功后写回 .addr 并缓存；
+    //         编码失败/离线仍回退坐标（不显示"暂无定位"，避免信息丢失）。
+    //   用 Nominatim（免 key、返回中文、CORS `*`、WGS84 与车机 GPS 同基准），
+    //   遵守其使用条款：1 req/s 上限 + 客户端缓存 + 明确 UA。
     let addr = null;
     const dt = this._st(this._eid("tracker"));
     if (dt && dt.attributes) {
       addr = dt.attributes.address || dt.attributes.friendly_name && dt.attributes.address;
-      if (!addr && dt.attributes.latitude != null) {
-        addr = `${Number(dt.attributes.latitude).toFixed(4)}, ${Number(dt.attributes.longitude).toFixed(4)}`;
+    }
+    const _addrEl = q("#v-addr");
+    if (!addr && dt && dt.attributes && dt.attributes.latitude != null) {
+      const _la = Number(dt.attributes.latitude), _lo = Number(dt.attributes.longitude);
+      const _raw = `${_la.toFixed(4)}, ${_lo.toFixed(4)}`;
+      _addrEl.textContent = this._addrCache(_la, _lo) || _raw;
+      // 异步补齐真实地址（不阻塞渲染；失败保持坐标）
+      this._resolveAddress(_la, _lo).then((t) => {
+        if (!t) return;
+        const cur = this.querySelector("#v-addr");
+        if (cur && (cur.textContent === _raw || !cur.textContent)) cur.textContent = t;
+      });
+      addr = null;                       // 已直接处理，跳过下面的兜底
+    }
+    if (addr === null) {
+      // 已有 address 属性 → 直接用；否则走原兜底
+      if (dt && dt.attributes && dt.attributes.address) {
+        _addrEl.textContent = dt.attributes.address;
+      } else if (!(dt && dt.attributes && dt.attributes.latitude != null)) {
+        _addrEl.textContent = "暂无定位";
       }
     }
-    if (!addr) {
-      const sv = this._txt(this._eid("address"));
-      addr = (sv && !/^\d+$/.test(String(sv))) ? sv : "暂无定位";
-    }
-    q("#v-addr").textContent = addr;
     // ★ 2026-10-03：自建地图（高德瓦片，免 key/免登录）。
     //   原 iframe（uri.amap.com/marker）在 iframe 里会弹登录页。
     this._drawHomeMap(
@@ -2690,6 +2763,81 @@ class LixiangAppHome extends HTMLElement {
   }
 
   /** 首页迷你地图：车辆居中，铺满容器。 */
+  /**
+   * 逆地理编码缓存：key = 坐标（4 位精度 ≈ 11m），存 localStorage。
+   * ★ 为什么缓存：Nominatim 使用条款要求客户端缓存，且车辆位置短时间内
+   *   不会变 → 避免每次 hass 更新都打一次外部请求。
+   */
+  _addrCache(la, lo) {
+    try {
+      const k = `lx_addr_${Number(la).toFixed(3)}_${Number(lo).toFixed(3)}`;
+      const v = localStorage.getItem(k);
+      if (!v) return null;
+      const o = JSON.parse(v);
+      // 30 天过期（地址是该点的固有属性，长缓存即可）
+      if (!o || !o.t || (Date.now() - o.ts) > 30 * 86400e3) return null;
+      return o.t;
+    } catch (e) { return null; }
+  }
+
+  /**
+   * 逆地理编码：坐标 → 中文地址（Nominatim，免 key）。
+   *
+   * ★ 2026-10-21 新增（车主："地图卡片显示的位置是经纬度，不是具体地址"）。
+   *   车机坐标是 WGS84（device_tracker.py 明确注明"未经国测局偏移"），
+   *   而 Nominatim 正是 WGS84 基准 → **无需坐标转换**。
+   *   高德瓦片那边要 GCJ02，两套坐标互不影响（各自取各自的）。
+   *
+   * 降级：任何失败（网络/超时/限流/离线）→ resolve 成 null，
+   *   调用方保持显示坐标，绝不显示空白。
+   */
+  async _resolveAddress(la, lo) {
+    if (la == null || lo == null) return null;
+    const cached = this._addrCache(la, lo);
+    if (cached) return cached;
+    // 全局节流：Nominatim 要求 ≤1 req/s —— 用模块级 promise 串行化
+    try {
+      const url = "https://nominatim.openstreetmap.org/reverse"
+        + `?format=jsonv2&lat=${encodeURIComponent(la)}&lon=${encodeURIComponent(lo)}`
+        + "&accept-language=zh&zoom=18";
+      const ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+      const timer = ctl ? setTimeout(() => ctl.abort(), 8000) : null;
+      const r = await fetch(url, {
+        headers: { Accept: "application/json" },
+        signal: ctl ? ctl.signal : undefined,
+      });
+      if (timer) clearTimeout(timer);
+      if (!r.ok) return null;
+      const j = await r.json();
+      const t = this._shortAddress(j);
+      if (t) {
+        try {
+          const k = `lx_addr_${Number(la).toFixed(3)}_${Number(lo).toFixed(3)}`;
+          localStorage.setItem(k, JSON.stringify({ t, ts: Date.now() }));
+        } catch (e) { /* 隐私模式/配额溢出 → 忽略 */ }
+      }
+      return t || null;
+    } catch (e) {
+      return null;                        // 失败静默，调用方保坐标
+    }
+  }
+
+  /** 把 Nominatim 的 display_name 裁成"像 App 那样"的短地址。 */
+  _shortAddress(j) {
+    if (!j) return null;
+    const a = j.address || {};
+    // 优先拼「小区/道路 + 区 + 市」，去掉国家和邮编
+    const parts = [
+      a.amenity || a.building || a.road || a.suburb || a.neighbourhood,
+      a.suburb || a.city_district || a.county,
+      a.city,
+    ].filter(Boolean);
+    const uniq = [];
+    for (const p of parts) if (!uniq.includes(p)) uniq.push(p);
+    if (uniq.length) return uniq.slice(0, 3).join(" ");
+    return j.display_name ? String(j.display_name).split(",").slice(0, 2).join(" ").trim() : null;
+  }
+
   _drawHomeMap(la, lo) {
     const box = this.querySelector("#hm-tiles");
     const wrap = this.querySelector("#map");
