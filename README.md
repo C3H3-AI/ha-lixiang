@@ -119,6 +119,43 @@ config/
 
 然后重启 Home Assistant。
 
+### 车辆外观图（默认自带，无需配置）
+
+首页顶部那张车模图**默认走官方静态图**，零配置：
+
+```
+卡片 → GET /lixiang_auto/car-image.json
+     → 后端按车型/车漆返回官方图 URL（p.ampmake.com）
+     → 后端按需下载并缓存 → 卡片 <img> 引用
+```
+
+> 全自动：车型与颜色都由服务端识别，用户不需要任何设置。
+
+### 关于 3D 车模（当前不可用，请勿开启）
+
+> ⚠️ **实测状态：`car_3d: true` 目前是死开关。**
+>
+> 卡片会去加载 `/lixiang_auto/lixiang-3d/index.html`，
+> 但**该查看器页面并不随集成分发**（`www/lixiang-3d/` 在集成包内不存在），
+> 因此开启后该区域只会白屏/404，**不会显示任何 3D 车模**。
+> 请保持默认 `car_3d: false`，使用官方静态车模图（本节上半部分）。
+
+历史原因：早期版本曾内置一个基于 `<model-viewer>` 的查看器，
+依赖约 45 MB 的 `carmodel.glb`（从理想 App Unity bundle 提取）。
+该资源体积过大且无法随 HACS 分发，**查看器已从集成中移除**，
+仅保留了代码里的旧路径分支（默认不启用）。
+
+若你自行实现查看器，需要同时准备：
+
+```text
+config/
+├── www/lixiang-3d/carmodel.glb                  ← 3D 模型（约 45 MB）
+└── custom_components/lixiang_auto/www/lixiang-3d/index.html   ← 查看器页面
+```
+
+> `carmodel.glb` 是理想官方 App 的 3D 资源，仅供个人自用；
+> 集成不包含、也不分发该文件。
+
 ---
 
 ## 配置
