@@ -6759,18 +6759,30 @@ const STYLE = `
   .seatbox .sbtn[data-level="0"] svg circle { fill:#3A3A3A; }
   .seatbox .sbtn[data-level="0"] svg > path { stroke:#3A3A3A; fill:none; }
 
-  /* 加热：暖色（琥珀→橙） */
-  .seatbox .sbtn[data-kind="heat"][data-level="1"] svg > path { stroke:#F5C08A; fill:none; }
-  .seatbox .sbtn[data-kind="heat"][data-level="2"] svg > path { stroke:#F09B3E; fill:none; }
-  .seatbox .sbtn[data-kind="heat"][data-level="3"] svg > path { stroke:#F8870C; fill:none; }
+  /* ★★ 2026-10-22 改用**官方色值**（此前我是自己猜的，车主质疑得对）：
+     取自 APK vector drawable：
+       res/drawable/icon_home_seat_warm.xml  → solid color = orange_fe8400  (#FE8400)
+       res/drawable/icon_home_seat_cold.xml  → solid color = blue_ff346eff  (#346EFF)
+       res/drawable/icon_seat_heat_dot_gray.xml → gray_c8                   (#C8C8C8)
+     并与位图互证（ic_home_seat_heating3 均值 rgb(248,146,34)、
+     ic_home_seat_ventilation2 均值 rgb(77,126,245)）。
+     档位用**透明度**区分强度：1档 .55 / 2档 .78 / 3档 1.0，
+     色相保持官方原色（而不是自己调深浅）。 */
+  .seatbox .sbtn[data-kind="heat"][data-level="1"] svg > path { stroke:#FE8400; fill:none; opacity:.55; }
+  .seatbox .sbtn[data-kind="heat"][data-level="2"] svg > path { stroke:#FE8400; fill:none; opacity:.78; }
+  .seatbox .sbtn[data-kind="heat"][data-level="3"] svg > path { stroke:#FE8400; fill:none; opacity:1; }
 
-  /* 通风：蓝色 */
   .seatbox .sbtn[data-kind="vent"][data-level="1"] svg use,
-  .seatbox .sbtn[data-kind="vent"][data-level="1"] svg circle { fill:#9FC2F8; }
+  .seatbox .sbtn[data-kind="vent"][data-level="1"] svg circle { fill:#346EFF; opacity:.55; }
   .seatbox .sbtn[data-kind="vent"][data-level="2"] svg use,
-  .seatbox .sbtn[data-kind="vent"][data-level="2"] svg circle { fill:#5E93F0; }
+  .seatbox .sbtn[data-kind="vent"][data-level="2"] svg circle { fill:#346EFF; opacity:.78; }
   .seatbox .sbtn[data-kind="vent"][data-level="3"] svg use,
-  .seatbox .sbtn[data-kind="vent"][data-level="3"] svg circle { fill:#467AFA; }
+  .seatbox .sbtn[data-kind="vent"][data-level="3"] svg circle { fill:#346EFF; opacity:1; }
+  /* 关闭态用官方灰 #C8C8C8 而非我原来的 #3A3A3A */
+  .seatbox .sbtn[data-level="0"] svg path,
+  .seatbox .sbtn[data-level="0"] svg use,
+  .seatbox .sbtn[data-level="0"] svg circle { fill:#C8C8C8; }
+  .seatbox .sbtn[data-level="0"] svg > path { stroke:#C8C8C8; fill:none; }
   /* 方向盘只有 1 档：开启时整圆蓝色 + 图标转白 */
   .seatbox .sbtn.on img.strgi { filter:brightness(0) invert(1); }
   /* 加热(波浪)是描边型：只对第一层 path 恢复描边 */
