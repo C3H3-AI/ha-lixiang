@@ -196,7 +196,10 @@ const STYLE = `
     padding:0; transition:transform .12s, box-shadow .16s;
   }
   .seatbox .sbtn:active { transform:translate(-50%,-50%) scale(.92); }
-  .seatbox .sbtn.on { background:var(--lx-blue); }
+  /* ★ 2026-10-22：**只有方向盘**开启时整圆变蓝（它只有 1 档）。
+     座椅按钮保持白底，靠图标颜色深浅/数量表达档位（官方就是这样），
+     否则深灰图标压在蓝底上看不清（实测踩到）。 */
+  .seatbox .sbtn.on:has(img.strgi) { background:var(--lx-blue); }
   .seatbox .sbtn.on svg { stroke:#FFF; fill:#FFF; }
   /* 加热=描边波浪；通风=实心风扇（官方风格） */
   /* 方向盘用的是官方位图（96×96 正方形）——必须 object-fit:contain，
@@ -208,11 +211,25 @@ const STYLE = `
                        stroke-linejoin:round; }
   .seatbox .sbtn svg g, .seatbox .sbtn svg use,
   .seatbox .sbtn svg path, .seatbox .sbtn svg circle { fill:#3A3A3A; stroke:none; }
-  .seatbox .sbtn.on svg g, .seatbox .sbtn.on svg use,
-  .seatbox .sbtn.on svg path, .seatbox .sbtn.on svg circle { fill:#FFF; }
+  /* ★ 2026-10-22 档位色阶（车主："扇叶颜色数量会变化"）：
+     1档浅灰 → 2档中灰 → 3档深黑；激活(白底圆)时仍用深色，
+     只有方向盘"已开启"才整圆变蓝+图标转白。 */
+  .seatbox .sbtn[data-level="1"] svg path,
+  .seatbox .sbtn[data-level="1"] svg use,
+  .seatbox .sbtn[data-level="1"] svg circle { fill:#B9BFC7; }
+  .seatbox .sbtn[data-level="1"] svg > path { stroke:#B9BFC7; fill:none; }
+  .seatbox .sbtn[data-level="2"] svg path,
+  .seatbox .sbtn[data-level="2"] svg use,
+  .seatbox .sbtn[data-level="2"] svg circle { fill:#7B838D; }
+  .seatbox .sbtn[data-level="2"] svg > path { stroke:#7B838D; fill:none; }
+  .seatbox .sbtn[data-level="3"] svg path,
+  .seatbox .sbtn[data-level="3"] svg use,
+  .seatbox .sbtn[data-level="3"] svg circle { fill:#1F2430; }
+  .seatbox .sbtn[data-level="3"] svg > path { stroke:#1F2430; fill:none; }
+  /* 方向盘只有 1 档：开启时整圆蓝色 + 图标转白 */
+  .seatbox .sbtn.on img.strgi { filter:brightness(0) invert(1); }
   /* 加热(波浪)是描边型：只对第一层 path 恢复描边 */
   .seatbox .sbtn svg > path { fill:none; stroke:#3A3A3A; }
-  .seatbox .sbtn.on svg > path { stroke:#FFF; }
   .seatbox .sbtn:disabled { opacity:.35; cursor:not-allowed; }
   /* 方向盘加热：顶部居中 */
   .seatbox .sbtn.strg { left:48.5%; top:12.5%; }
@@ -352,6 +369,56 @@ class LixiangClimatePage extends HTMLElement {
       if (!loose && fn && fn.indexOf(name) >= 0) loose = id;
     }
     return loose;
+  }
+
+  /**
+   * ★ 2026-10-22：读座椅档位 0~3。
+   * 实体是 fan 域，档位体现在 preset_mode（low/medium/high）或 percentage。
+   * 实测 capabilities.preset_modes = ["low","medium","high"] → 三档。
+   */
+  _seatLevel(eid) {
+    const st = this._st(eid);
+    if (!st || ["off", "unknown", "unavailable"].includes(st.state)) return 0;
+    const pm = (st.attributes && st.attributes.preset_mode) || "";
+    const idx = ["low", "medium", "high"].indexOf(String(pm).toLowerCase());
+    if (idx >= 0) return idx + 1;
+    // 退化：用 percentage 反推（1~33→1，34~66→2，>=67→3）
+    const p = Number(st.attributes && st.attributes.percentage);
+    if (Number.isFinite(p) && p > 0) return p >= 67 ? 3 : (p >= 34 ? 2 : 1);
+    return this._on(eid) ? 1 : 0;
+  }
+
+  /**
+   * ★ 2026-10-22：按档位重绘座椅按钮图标（车主："风速扇叶颜色数量会变化，热风也一样"）。
+   *
+   * 表现方式：
+   *   加热 = 竖直波浪线，**档位越高条数越多**（1档1条 / 2档2条 / 3档3条）
+   *   通风 = 三叶风扇，**档位越高叶片越多**（1档1叶 / 2档2叶 / 3档3叶）
+   *   颜色：档位越高越深（1档浅灰 / 2档中灰 / 3档近黑），激活时统一白色
+   * 方向盘（strg）只有 1 档，用官方位图，不参与档位绘制。
+   */
+  _paintSeatIcon(btn, kind, lv) {
+    if (!btn || kind === "strg") return;
+    const n = Math.max(1, Math.min(3, lv || 1));   // 条数/叶数 1~3
+    const isHeat = kind === "heat";
+    const parts = [];
+    if (isHeat) {
+      // 竖直 S 曲线，均匀分布
+      const xs = n === 1 ? [12] : (n === 2 ? [9, 15] : [7, 12, 17]);
+      for (const x of xs) {
+        parts.push(`<path d="M${x} 4c-2 1.6-2 3.4 0 5s2 3.4 0 5 2 3.4 0 5"/>`);
+      }
+    } else {
+      // 三叶扇：按数量取 0° / 120° / 240° 的叶片
+      const angles = n === 1 ? [0] : (n === 2 ? [0, 120] : [0, 120, 240]);
+      parts.push('<circle cx="12" cy="12" r="1.5" class="hub"/>');
+      for (const a of angles) {
+        parts.push(`<use href="#lxblade" transform="rotate(${a} 12 12)"/>`);
+      }
+    }
+    btn.innerHTML = `<svg viewBox="0 0 24 24" data-lv="${n}">`
+      + '<defs><path id="lxblade" d="M12 12 C12 8.5 13 6 15.2 6 C17.6 6 19 7.8 19 9.8 C19 11.6 17.4 12.6 15 12.6 C13.8 12.6 12.8 12.4 12 12 Z"/></defs>'
+      + parts.join("") + "</svg>";
   }
 
   _st(id) { return (id && this._hass) ? this._hass.states[id] : null; }
@@ -612,6 +679,7 @@ class LixiangClimatePage extends HTMLElement {
         b.className = "sbtn";
         b.dataset.field = d.field;
         b.dataset.eid = eid;
+        b.dataset.kind = d.kind;
         b.style.left = d.pos[0] + "%";
         b.style.top = d.pos[1] + "%";
         b.title = d.title;
@@ -638,15 +706,26 @@ class LixiangClimatePage extends HTMLElement {
         //   bind 里 seat_* 的 domain 也是 "fan" ⇒ 用 set_percentage 控制档位。
         //   （我一度误判为 sensor 只读 —— 实际 sensor 与 fan 同名并存，
         //     bind 取的是 fan，故可直接控制。）
+        /* ★ 2026-10-22（车主："交互方式是循环。风速扇叶颜色数量会变化，热风也一样"）
+           三档循环：关 → 1档 → 2档 → 3档 → 关
+           实体实测 capabilities.preset_modes = ["low","medium","high"]
+           → 用 fan.set_preset_mode 控制（turn_off 关闭）。 */
         b.addEventListener("click", async () => {
           const tgt = this._eid(d.field);
           if (!tgt || tgt.indexOf("fan.") !== 0) return;
-          const st = this._st(tgt);
-          const cur = Number(st && st.attributes && st.attributes.percentage) || 0;
-          const next = cur > 0 ? 0 : 100;      // 有档位→关；关→满档
+          const cur = this._seatLevel(tgt);
           try {
-            await this._hass.callService("fan", "set_percentage",
-              { entity_id: tgt, percentage: next });
+            if (cur >= 3) {
+              await this._hass.callService("fan", "turn_off", { entity_id: tgt });
+            } else {
+              /* ★ 2026-10-22 修正：fan 域**没有** set_preset_mode 服务
+                 （可用只有 set_percentage / turn_on / turn_off / toggle）。
+                 档位通过 percentage 表达：1档33 / 2档66 / 3档100；
+                 集成侧 fan.py 会把 percentage 映射回 log/medium/high。 */
+              const pct = cur === 0 ? 33 : (cur === 1 ? 66 : 100);
+              await this._hass.callService("fan", "set_percentage",
+                { entity_id: tgt, percentage: pct });
+            }
           } catch (e) {
             this._toast("操作失败：" + ((e && e.message) || "未知"), "err");
           }
@@ -658,19 +737,11 @@ class LixiangClimatePage extends HTMLElement {
     // 状态同步
     host.querySelectorAll(".sbtn").forEach(b => {
       const eid = b.dataset.eid || this._eid(b.dataset.field);
-      const st = eid ? this._st(eid) : null;
-      let on = false;
-      if (st) {
-        // fan 域：percentage>0 即开启（0 = 关闭）
-        const p = Number(st.attributes && st.attributes.percentage);
-        on = Number.isFinite(p) ? p > 0 : this._on(eid);
-      }
-      b.classList.toggle("on", on);
-      // 三档时给个视觉强度（可选）：percentage 33/66/100 → 不同透明度
-      if (st && on) {
-        const p = Number(st.attributes && st.attributes.percentage) || 0;
-        b.style.opacity = p >= 100 ? "1" : (p >= 60 ? "0.9" : "0.8");
-      } else { b.style.opacity = ""; }
+      const lv = eid ? this._seatLevel(eid) : 0;
+      // 档位 0~3 写到 data-level，CSS 据此着色；图标由 _seatIcon 重绘数量
+      b.dataset.level = String(lv);
+      b.classList.toggle("on", lv > 0);
+      this._paintSeatIcon(b, b.dataset.kind, lv);
     });
   }
 
