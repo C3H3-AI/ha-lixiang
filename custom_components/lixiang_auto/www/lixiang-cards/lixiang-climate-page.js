@@ -61,24 +61,19 @@ let __seatBase = BUILTIN_SEAT_BASE;
 
    说明：5 座(i6) 与 6 座(i8) 前排相同；后排 5 座有中间座，6 座无。 */
 const SEAT_POS = {
-  /* ★★ 2026-10-22 第二次校准（车主："风扇和加热位置不对，需要往上挪"）：
-     之前用"官方截图坐标÷屏宽"推算 —— 但底图本身带大片留白
-     （L6 底图内容只占 y 13%~86%），按整张图百分比定位必然偏移。
-     现改为**直接在对亮度/对比度增强后的底图上目视标定**，
-     逐个圆套准座椅（校准图：.research/app-icons/l6_calib2.png）。
-     横向沿用官方比例（32.5/67.5/33/50/67），纵向按底图重新标定。 */
-  /* ★ 2026-10-22 第三次调整（车主："加热和风扇太近"）：
-     按钮直径 = 底图宽的 14.4% = 156px（底图 1086 宽）→ 半径 78px。
-     官方圆心距 209px（截图 1260 宽）≈ 底图 180px → **top 差需 ≥ 12.3%**。
-     原来加热 36% / 通风 47% 只差 11% → 两圆相交（重叠）。
-     现统一拉开到 12.6%，并整体略上移给底部留白。 */
-  front: { heatL:[33,35.5], heatR:[67,35.5],
-           ventL:[33,48.1], ventR:[67,48.1] },
-  rear5: { heatL:[33,69.5], heatM:[50,69.5], heatR:[67,69.5],
-           ventL:[33,82.1], ventR:[67,82.1] },
-  rear6: { heatL:[33,69.5], heatR:[67,69.5],
-           ventL:[33,82.1], ventR:[67,82.1] },
-  strg:  [33,19],
+  /* ★★ 2026-10-22 第四次校准（车主："图片用的有问题…跟app相差很大"）：
+     底图换成了 **ic_temperature_bg_x3.webp** —— 经与官方截图逐像素比对，
+     这张才是官方空调页用的那张（清晰带描边、后排连体长椅、5 座布局）。
+     原来的 ictemperaturebgi6 对比度极低（min 123 / std 14.6）是错的图
+     （x3 为 min 96 / std 18.0，与官方一致）。
+     坐标直接在新底图上目视标定：.research/app-icons/x3_calib.png（全部套准）。 */
+  front: { heatL:[33,31], heatR:[67,31],
+           ventL:[33,42], ventR:[67,42] },
+  rear5: { heatL:[33,66], heatM:[50,66], heatR:[67,66],
+           ventL:[33,78], ventR:[67,78] },
+  rear6: { heatL:[33,66], heatR:[67,66],
+           ventL:[33,78], ventR:[67,78] },
+  strg:  [33,17],
 };
 
 // ★ 2026-10-14 统一导航助手：**先问外壳**（lx-navigate 事件），被接管就不改 URL。
@@ -180,8 +175,7 @@ const STYLE = `
         （实测 contrast(2.6) 后整个底图消失，按钮浮在空白上）——
         PIL 的 ImageEnhance.Contrast 与 CSS filter 行为不同，不能照搬。
      改为：轻微提对比 + 略压暗，保留座椅明暗层次。 */
-  .seatbox img.bg { display:block; width:100%; height:auto;
-                    filter:contrast(1.12) brightness(0.97) saturate(0.9); }
+  .seatbox img.bg { display:block; width:100%; height:auto; }
   /* 按钮：绝对定位，尺寸/位置全用百分比（相对底图 1086×1467） */
   /* ★ 2026-10-22 修复方向盘按钮变椭圆：
      原来只给 width:14.4% + aspect-ratio:1/1 —— 但按钮是 flex 容器，
