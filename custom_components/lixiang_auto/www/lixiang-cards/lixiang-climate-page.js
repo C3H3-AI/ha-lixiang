@@ -45,19 +45,35 @@ const DEFAULT_SEAT_BASE = "/local/lixiang-climate";
    /local 仅作"用户想换图"时的覆盖位。 */
 let __seatBase = BUILTIN_SEAT_BASE;
 
-/* ★ 座椅按钮坐标表（百分比，相对底图 1086×1467）
-   来源：官方空调页截图（1260×2844）实测 10 个圆钮中心，
-        换算：x% = x_center/1260，y% = (y_center×1086/1260)/1467
-        已画框验证（.research/app-climate/verify_btns.png）。
+/* ★ 座椅按钮坐标表（百分比，相对底图显示区）
+   来源：官方空调页截图（1260×2844）实测 10 个圆钮中心。
+
+   ★★ 2026-10-22 修正（车主："风扇和加热位置不对，需要往上挪"）：
+     之前 y 用 `y_center×1086/1260/1467` 换算 —— **错了**。
+     那个系数假设"底图比屏幕窄"，但底图实际是**铺满屏宽**的：
+       底图 1086×1467，铺满屏宽 1260 时显示高 = 1260×1467/1086 = 1702
+       起点 y0 = 302（顶栏下方），终点 2004（温度面板上方，实测吻合）
+     正确换算：
+       x% = x_center / 1260 × 100
+       y% = (y_center − 302) / 1702 × 100
+     修正后 y 全部上移约 17.7 个百分点（此前整体偏低，正是"要往上挪"）。
+     x 方向原来就是对的（屏宽比例），未变。
+
    说明：5 座(i6) 与 6 座(i8) 前排相同；后排 5 座有中间座，6 座无。 */
 const SEAT_POS = {
-  front: { heatL:[32.5,41.7], heatR:[67.5,41.7],
-           ventL:[32.5,53.8], ventR:[67.5,53.8] },
-  rear5: { heatL:[33.25,76.1], heatM:[49.88,76.1], heatR:[66.6,76.1],
-           ventL:[33.25,88.4], ventR:[66.6,88.4] },
-  rear6: { heatL:[33.25,76.1], heatR:[66.6,76.1],
-           ventL:[33.25,88.4], ventR:[66.6,88.4] },
-  strg:  [32.5,27.85],
+  /* ★★ 2026-10-22 第二次校准（车主："风扇和加热位置不对，需要往上挪"）：
+     之前用"官方截图坐标÷屏宽"推算 —— 但底图本身带大片留白
+     （L6 底图内容只占 y 13%~86%），按整张图百分比定位必然偏移。
+     现改为**直接在对亮度/对比度增强后的底图上目视标定**，
+     逐个圆套准座椅（校准图：.research/app-icons/l6_calib2.png）。
+     横向沿用官方比例（32.5/67.5/33/50/67），纵向按底图重新标定。 */
+  front: { heatL:[33,36], heatR:[67,36],
+           ventL:[33,47], ventR:[67,47] },
+  rear5: { heatL:[33,71], heatM:[50,71], heatR:[67,71],
+           ventL:[33,82], ventR:[67,82] },
+  rear6: { heatL:[33,71], heatR:[67,71],
+           ventL:[33,82], ventR:[67,82] },
+  strg:  [33,20],
 };
 
 // ★ 2026-10-14 统一导航助手：**先问外壳**（lx-navigate 事件），被接管就不改 URL。
@@ -154,7 +170,13 @@ const STYLE = `
      按钮坐标：由官方截图坐标 ÷1260 得到百分比 → 缩放不跑位。 */
   .seatbox { position:relative; margin:8px 16px 0; border-radius:18px;
              overflow:hidden; background:var(--lx-card); }
-  .seatbox img.bg { display:block; width:100%; height:auto; }
+  /* ★ 2026-10-22：官方 L6 座椅底图对比度很低（亮度 123~250，std 仅 14.6）。
+     ⚠️ 用 CSS contrast() 加强会**把浅色座椅整体推到纯白**、反而更看不见
+        （实测 contrast(2.6) 后整个底图消失，按钮浮在空白上）——
+        PIL 的 ImageEnhance.Contrast 与 CSS filter 行为不同，不能照搬。
+     改为：轻微提对比 + 略压暗，保留座椅明暗层次。 */
+  .seatbox img.bg { display:block; width:100%; height:auto;
+                    filter:contrast(1.12) brightness(0.97) saturate(0.9); }
   /* 按钮：绝对定位，尺寸/位置全用百分比（相对底图 1086×1467） */
   .seatbox .sbtn {
     position:absolute; width:14.4%; aspect-ratio:1/1;
@@ -294,6 +316,31 @@ class LixiangClimatePage extends HTMLElement {
     if (typeof m === "string" && m.includes(".")) return m;
     return (this._autoBind() || {})[f] || null;
   }
+  /**
+   * ★ 2026-10-22 新增：按「中文名 + domain」在 hass.states 里兜底查找实体。
+   *
+   * 背景：本卡主要靠 LixiangAutoBind 自动绑定（按 original_name 匹配），
+   *   但 bind 依赖 hass.entities/hass.devices，某些场景（如 DOM 复用、
+   *   bind 池为空）会解析失败 → 字段静默为 null → 按钮消失。
+   *   对"方向盘加热"这类**唯一且必需**的控件，补一层直接名称匹配。
+   *
+   * 匹配规则：entity_id 以 `domain.` 开头 且 friendly_name 完全等于 name
+   *           （必要时退化为包含匹配）。只在本集成实体里找，避免误命中。
+   */
+  _findByFriendly(name, domain) {
+    const st = (this._hass && this._hass.states) || {};
+    let loose = null;
+    for (const id of Object.keys(st)) {
+      if (domain && id.indexOf(domain + ".") !== 0) continue;
+      // 只在理想汽车集成实体里找（entity_id 含 lixiang 或 li_xiang）
+      if (!/li_?xiang|li_?xiang_auto/i.test(id)) continue;
+      const fn = (st[id] && st[id].attributes && st[id].attributes.friendly_name) || "";
+      if (fn === name) return id;
+      if (!loose && fn && fn.indexOf(name) >= 0) loose = id;
+    }
+    return loose;
+  }
+
   _st(id) { return (id && this._hass) ? this._hass.states[id] : null; }
   _num(id) {
     const s = this._st(id);
@@ -520,8 +567,15 @@ class LixiangClimatePage extends HTMLElement {
     const P = SEAT_POS;
     const rear = is6 ? P.rear6 : P.rear5;
     const defs = [];
-    if (this._eid("steer_heat")) {
-      defs.push({ k: "strg", pos: P.strg, field: "steer_heat", kind: "heat", title: "方向盘加热" });
+    /* ★ 2026-10-22 修复（车主："方向盘没有"）：
+       bind 的 steer_heat 规则是 {name:"方向盘加热", domain:"switch"}，
+       但若该车型 bind 未解析出（或 field 被 config 覆盖成 null），
+       方向盘按钮就整个消失 —— 属于"静默缺失"，用户只会看到少一个钮。
+       加实体名兜底：bind 拿不到时直接按名称在 hass.states 里找 switch。 */
+    const _steer = this._eid("steer_heat") || this._findByFriendly("方向盘加热", "switch");
+    if (_steer) {
+      defs.push({ k: "strg", pos: P.strg, field: "steer_heat", kind: "heat",
+                  title: "方向盘加热", eid: _steer });
     }
     defs.push({ k: "fl_heat", pos: P.front.heatL, field: "seat_fl_heat", kind: "heat", title: "主驾座椅加热" });
     defs.push({ k: "fr_heat", pos: P.front.heatR, field: "seat_fr_heat", kind: "heat", title: "副驾座椅加热" });
@@ -537,12 +591,14 @@ class LixiangClimatePage extends HTMLElement {
     if (!host.__built) {
       host.innerHTML = "";
       defs.forEach(d => {
-        const eid = this._eid(d.field);
+        const eid = d.eid || this._eid(d.field);
         if (!eid) return;                       // 该车型无此座位 → 不渲染
+        d.eid = eid;                            // 记下，状态同步时复用
         const b = document.createElement("button");
         b.type = "button";
         b.className = "sbtn";
         b.dataset.field = d.field;
+        b.dataset.eid = eid;
         b.style.left = d.pos[0] + "%";
         b.style.top = d.pos[1] + "%";
         b.title = d.title;
@@ -579,7 +635,7 @@ class LixiangClimatePage extends HTMLElement {
     }
     // 状态同步
     host.querySelectorAll(".sbtn").forEach(b => {
-      const eid = this._eid(b.dataset.field);
+      const eid = b.dataset.eid || this._eid(b.dataset.field);
       const st = eid ? this._st(eid) : null;
       let on = false;
       if (st) {
