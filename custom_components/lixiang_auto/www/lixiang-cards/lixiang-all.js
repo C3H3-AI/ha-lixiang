@@ -6600,13 +6600,18 @@ const SEAT_POS = {
      现改为**直接在对亮度/对比度增强后的底图上目视标定**，
      逐个圆套准座椅（校准图：.research/app-icons/l6_calib2.png）。
      横向沿用官方比例（32.5/67.5/33/50/67），纵向按底图重新标定。 */
-  front: { heatL:[33,36], heatR:[67,36],
-           ventL:[33,47], ventR:[67,47] },
-  rear5: { heatL:[33,71], heatM:[50,71], heatR:[67,71],
-           ventL:[33,82], ventR:[67,82] },
-  rear6: { heatL:[33,71], heatR:[67,71],
-           ventL:[33,82], ventR:[67,82] },
-  strg:  [33,20],
+  /* ★ 2026-10-22 第三次调整（车主："加热和风扇太近"）：
+     按钮直径 = 底图宽的 14.4% = 156px（底图 1086 宽）→ 半径 78px。
+     官方圆心距 209px（截图 1260 宽）≈ 底图 180px → **top 差需 ≥ 12.3%**。
+     原来加热 36% / 通风 47% 只差 11% → 两圆相交（重叠）。
+     现统一拉开到 12.6%，并整体略上移给底部留白。 */
+  front: { heatL:[33,35.5], heatR:[67,35.5],
+           ventL:[33,48.1], ventR:[67,48.1] },
+  rear5: { heatL:[33,69.5], heatM:[50,69.5], heatR:[67,69.5],
+           ventL:[33,82.1], ventR:[67,82.1] },
+  rear6: { heatL:[33,69.5], heatR:[67,69.5],
+           ventL:[33,82.1], ventR:[67,82.1] },
+  strg:  [33,19],
 };
 
 // ★ 2026-10-14 统一导航助手：**先问外壳**（lx-navigate 事件），被接管就不改 URL。
@@ -6711,18 +6716,32 @@ const STYLE = `
   .seatbox img.bg { display:block; width:100%; height:auto;
                     filter:contrast(1.12) brightness(0.97) saturate(0.9); }
   /* 按钮：绝对定位，尺寸/位置全用百分比（相对底图 1086×1467） */
+  /* ★ 2026-10-22 修复方向盘按钮变椭圆：
+     原来只给 width:14.4% + aspect-ratio:1/1 —— 但按钮是 flex 容器，
+     内含 <img> 时 aspect-ratio 会被内容高度撑破 → 变成竖椭圆（实测）。
+     改为同时锁死 height（用 padding-bottom 技巧不行，直接算比例）：
+       按钮是正方形，边长 = 底图宽 × 14.4%；容器宽度 = 底图宽
+       → 高度用同样的百分比不可行（% 相对高度而非宽度）
+     解法：用 aspect-ratio + overflow:hidden + 禁止内容撑高。 */
+  /* 正方形按钮：width + aspect-ratio 定形；
+     用 grid 居中而非 flex，避免内容（尤其 <img>）把高度撑破成椭圆。 */
   .seatbox .sbtn {
     position:absolute; width:14.4%; aspect-ratio:1/1;
+    box-sizing:border-box; overflow:hidden;
     transform:translate(-50%,-50%);
     border-radius:50%; border:none; cursor:pointer;
     background:#FFF; box-shadow:0 2px 8px rgba(0,0,0,.12);
-    display:flex; align-items:center; justify-content:center;
+    display:grid; place-items:center;
     padding:0; transition:transform .12s, box-shadow .16s;
   }
   .seatbox .sbtn:active { transform:translate(-50%,-50%) scale(.92); }
   .seatbox .sbtn.on { background:var(--lx-blue); }
   .seatbox .sbtn.on svg { stroke:#FFF; fill:#FFF; }
   /* 加热=描边波浪；通风=实心风扇（官方风格） */
+  /* 方向盘用的是官方位图（96×96 正方形）——必须 object-fit:contain，
+     否则被 width/height 双百分比拉成椭圆（实测踩到：蓝色胶囊形）。 */
+  .seatbox .sbtn img.strgi { width:58%; height:58%; object-fit:contain; display:block; }
+  .seatbox .sbtn.on img.strgi { filter:brightness(0) invert(1); }
   .seatbox .sbtn svg { width:52%; height:52%; stroke:#3A3A3A;
                        fill:none; stroke-width:1.7; stroke-linecap:round;
                        stroke-linejoin:round; }
@@ -7107,7 +7126,7 @@ class LixiangClimatePage extends HTMLElement {
        加实体名兜底：bind 拿不到时直接按名称在 hass.states 里找 switch。 */
     const _steer = this._eid("steer_heat") || this._findByFriendly("方向盘加热", "switch");
     if (_steer) {
-      defs.push({ k: "strg", pos: P.strg, field: "steer_heat", kind: "heat",
+      defs.push({ k: "strg", pos: P.strg, field: "steer_heat", kind: "strg",
                   title: "方向盘加热", eid: _steer });
     }
     defs.push({ k: "fl_heat", pos: P.front.heatL, field: "seat_fl_heat", kind: "heat", title: "主驾座椅加热" });
@@ -7137,8 +7156,17 @@ class LixiangClimatePage extends HTMLElement {
         b.title = d.title;
         b.setAttribute("aria-label", d.title);
         // 图标：加热=三条波浪 / 通风=三叶扇（官方是这两个符号，APK 无位图→自绘 SVG）
-        b.innerHTML = d.kind === "heat"
-          ? '<svg viewBox="0 0 24 24"><path d="M4 9c2-2 4-2 6 0s4 2 6 0 4-2 4 0"/><path d="M4 14c2-2 4-2 6 0s4 2 6 0 4-2 4 0"/><path d="M4 19c2-2 4-2 6 0s4 2 6 0 4-2 4 0"/></svg>'
+        b.innerHTML = d.kind === "strg"
+          /* ★ 2026-10-22：方向盘加热用**官方素材** ic_home_steering_on/off.webp
+             （方向盘 + 三条橙色竖直波浪），比自绘 SVG 更准且与 App 一致。 */
+          ? `<img src="${__iconBase}/ic_home_steering_on.webp" alt=""
+                 onerror="__lxIconFallback(this)" class="strgi">`
+          : d.kind === "heat"
+          /* ★ 2026-10-22（车主："加热的方向要转90度"）：
+             原来画的是**横向**波浪（M4 9c2-2... 水平走向），
+             官方是**竖直**的三条 S 曲线（ic_home_steering_on 里那三条橙色波浪）。
+             改为竖向：每条从 (x,4) 到 (x,20)，中段左右摆动。 */
+          ? '<svg viewBox="0 0 24 24"><path d="M8 4c-2 1.6-2 3.4 0 5s2 3.4 0 5 2 3.4 0 5"/><path d="M12 4c-2 1.6-2 3.4 0 5s2 3.4 0 5 2 3.4 0 5"/><path d="M16 4c-2 1.6-2 3.4 0 5s2 3.4 0 5 2 3.4 0 5"/></svg>'
           /* 通风=三叶风扇（对齐官方）。单片叶子用 rotate(0/120/240) 复制，保证三叶均匀 */
           : '<svg viewBox="0 0 24 24"><defs><path id="lxblade" d="M12 12 C12 8.5 13 6 15.2 6 C17.6 6 19 7.8 19 9.8 C19 11.6 17.4 12.6 15 12.6 C13.8 12.6 12.8 12.4 12 12 Z"/></defs>'
             + '<circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/>'
