@@ -211,21 +211,33 @@ const STYLE = `
                        stroke-linejoin:round; }
   .seatbox .sbtn svg g, .seatbox .sbtn svg use,
   .seatbox .sbtn svg path, .seatbox .sbtn svg circle { fill:#3A3A3A; stroke:none; }
-  /* ★ 2026-10-22 档位色阶（车主："扇叶颜色数量会变化"）：
-     1档浅灰 → 2档中灰 → 3档深黑；激活(白底圆)时仍用深色，
-     只有方向盘"已开启"才整圆变蓝+图标转白。 */
-  .seatbox .sbtn[data-level="1"] svg path,
-  .seatbox .sbtn[data-level="1"] svg use,
-  .seatbox .sbtn[data-level="1"] svg circle { fill:#B9BFC7; }
-  .seatbox .sbtn[data-level="1"] svg > path { stroke:#B9BFC7; fill:none; }
-  .seatbox .sbtn[data-level="2"] svg path,
-  .seatbox .sbtn[data-level="2"] svg use,
-  .seatbox .sbtn[data-level="2"] svg circle { fill:#7B838D; }
-  .seatbox .sbtn[data-level="2"] svg > path { stroke:#7B838D; fill:none; }
-  .seatbox .sbtn[data-level="3"] svg path,
-  .seatbox .sbtn[data-level="3"] svg use,
-  .seatbox .sbtn[data-level="3"] svg circle { fill:#1F2430; }
-  .seatbox .sbtn[data-level="3"] svg > path { stroke:#1F2430; fill:none; }
+  /* ★★ 2026-10-22 配色（车主："加热是暖色的线条是吧。空调是蓝色的扇叶是吧。"）
+     官方实测取色：
+       通风开启   = 蓝色  rgb(70,122,250)
+       方向盘加热 = 橙色  rgb(248,135,12)（ic_home_steering_on 里的三条波浪）
+       座椅加热   = 官方截图里全是关闭态 → 纯灰，未见开启配色
+     按车主指示：**加热=暖色线条，通风=蓝色扇叶**。
+     档位通过「数量(1/2/3) + 颜色深浅」双重表达：
+       1档 浅（半透明）/ 2档 中 / 3档 全饱和
+     未开启(level=0) → 深灰，与官方关闭态一致。 */
+  /* 关闭态：深灰线稿 */
+  .seatbox .sbtn[data-level="0"] svg path,
+  .seatbox .sbtn[data-level="0"] svg use,
+  .seatbox .sbtn[data-level="0"] svg circle { fill:#3A3A3A; }
+  .seatbox .sbtn[data-level="0"] svg > path { stroke:#3A3A3A; fill:none; }
+
+  /* 加热：暖色（琥珀→橙） */
+  .seatbox .sbtn[data-kind="heat"][data-level="1"] svg > path { stroke:#F5C08A; fill:none; }
+  .seatbox .sbtn[data-kind="heat"][data-level="2"] svg > path { stroke:#F09B3E; fill:none; }
+  .seatbox .sbtn[data-kind="heat"][data-level="3"] svg > path { stroke:#F8870C; fill:none; }
+
+  /* 通风：蓝色 */
+  .seatbox .sbtn[data-kind="vent"][data-level="1"] svg use,
+  .seatbox .sbtn[data-kind="vent"][data-level="1"] svg circle { fill:#9FC2F8; }
+  .seatbox .sbtn[data-kind="vent"][data-level="2"] svg use,
+  .seatbox .sbtn[data-kind="vent"][data-level="2"] svg circle { fill:#5E93F0; }
+  .seatbox .sbtn[data-kind="vent"][data-level="3"] svg use,
+  .seatbox .sbtn[data-kind="vent"][data-level="3"] svg circle { fill:#467AFA; }
   /* 方向盘只有 1 档：开启时整圆蓝色 + 图标转白 */
   .seatbox .sbtn.on img.strgi { filter:brightness(0) invert(1); }
   /* 加热(波浪)是描边型：只对第一层 path 恢复描边 */
