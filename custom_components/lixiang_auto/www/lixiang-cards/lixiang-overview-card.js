@@ -159,6 +159,24 @@ const STYLE = `
   .fresh { color:#b2c9b9; }
   .stale { color:#dfba83; }
   .details { border-top:1px solid #ffffff0c; }
+  /* ★ 2026-10-22 新增：车辆位置 + 更多车辆数据 两栏容器。
+     默认（窄屏/手机）上下堆叠 → 与原行为一致；
+     ≥900px（电脑）改为左右两栏，避免两段各占整行、屏幕被拉得很长。 */
+  .lower { display:block; }
+  .lower-map .mapsec { padding:0 26px 14px; }
+  @container (min-width: 900px) {
+    .lower { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
+             gap:20px; align-items:start;
+             max-width:1440px; margin:0 auto; padding:0 26px; }
+    /* 两栏时内边距交给 .lower 统一控制，子块不再各自左右留白 */
+    .lower-map .mapsec { padding:0; }
+    .lower-map .lxmap { height:230px; }
+    .lower-detail .details { border-top:none; }
+    .lower-detail .details summary { padding-left:0; padding-right:0; }
+    .lower-detail .detail-grid { padding-left:0; padding-right:0;
+                                 grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 18px; }
+    .lower-detail .note { padding-left:0; padding-right:0; }
+  }
   /* ★ 2026-10-17 车辆位置（复用 HA 官方 ha-map，见 _mapHtml） */
   .mapsec { padding:0 26px 14px; }
   .mapsec .lxmap { display:block; height:190px; border-radius:14px; overflow:hidden;
@@ -513,8 +531,12 @@ class LixiangOverviewCard extends __Base {
         <span>总里程 ${this.fmt("total_km", 1)} km</span>
       </div>
 
-      ${this._mapHtml()}
-
+      <!-- ★ 2026-10-22（车主："电脑上车辆位置和车辆更多信息建议左右布局，不要上下"）：
+           把「车辆位置」和「更多车辆数据」包进 .lower 容器，
+           宽屏(≥900px) → 左右两栏；窄屏 → 保持原上下堆叠。 -->
+      <div class="lower">
+        <div class="lower-map">${this._mapHtml()}</div>
+        <div class="lower-detail">
       <details class="details" ${open ? "open" : ""}>
         <summary>更多车辆数据</summary>
         <div class="detail-grid">
@@ -533,7 +555,9 @@ class LixiangOverviewCard extends __Base {
           实体由本集成的「自动发现」匹配（按实体中文名），个别字段可用卡片配置里的
           <code>entities:</code> 手动指定。
         </div>
-      </details>`;
+      </details>
+        </div>
+      </div>`;
     if (!this._artDone) { this._artDone = true; this._loadArt(); }
     this._wireMap();   // ★ 每次渲染都要重新喂（innerHTML 重建后瓦片容器是新元素）
     this._paintArt();  // ★ 同理：车图 <img> 也是每次重画新建的，必须重新贴 src
