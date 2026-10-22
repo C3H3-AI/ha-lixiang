@@ -126,9 +126,20 @@ const STYLE = `
   .meter-top strong { font-size:23px; font-weight:500; line-height:1.15; }
   .meter-top small { font-size:12px; color:#b7c5d6; }
   .track { height:5px; background:#ffffff12; border-radius:10px; margin:10px 0; overflow:hidden; }
+  /* ★ 2026-10-22 进度条配色改用**官方语义色**（此前是我自选的蓝/米金）：
+     取自 APK drawable：
+       bg_vehicle_power_remaining_progress.xml → 纯电续航 = green_2eed38 #2EED38
+       bg_vehicle_fuel_remaining_progress.xml  → 燃油续航 = blue_ff346eff #346EFF
+       bg_vehicle_endurance_remaining_warn_progress.xml → 告警 = red_f84c4c #F84C4C
+       轨道统一 gray_e5 #E5E5E5
+     ★ 重要纠错：我上一轮曾说"燃油=橙" —— 查证后**是错的**，
+       官方燃油条是**蓝色**，纯电条才是绿色。
+     本卡为深色主题，故在官方色相基础上做轻微提亮渐变（保持可读性），
+     色相与官方一致。 */
+  .track { background:#e5e5e522; }                   /* 官方轨道色 #E5E5E5（深底下取 13% 不透明）*/
   .track i { display:block; height:100%; border-radius:10px;
-             background:linear-gradient(90deg,#4c9aff,#9fd0ff); }
-  .fuel .track i { background:linear-gradient(90deg,#a98d63,#e6d2ab); }
+             background:linear-gradient(90deg,#1fc22a,#2eed38); }   /* 纯电 = 官方绿 */
+  .fuel .track i { background:linear-gradient(90deg,#4a6ee0,#346eff); } /* 燃油 = 官方蓝 */
   .range { display:flex; justify-content:space-between; font-size:11px; color:#aebed0; }
   .range b { font-size:16px; color:#eef4fc; font-weight:500; }
   .range small { font-size:11px; font-weight:400; color:#b4c2d4; }
