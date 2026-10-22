@@ -165,12 +165,16 @@ const STYLE = `
   .lower { display:block; }
   .lower-map .mapsec { padding:0 26px 14px; }
   @container (min-width: 900px) {
-    .lower { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);
-             gap:20px; align-items:start;
+    /* ★ 2026-10-22 车主："地图太窄了。"
+       原 1.15fr : 1fr → 地图约 709px，确实偏窄，且高度只有 230px。
+       改为 1.55fr : 1fr（地图约占 60%），并抬高到 300px，
+       同时让两栏等高对齐（align-items:stretch）。 */
+    .lower { display:grid; grid-template-columns:minmax(0,1.55fr) minmax(0,1fr);
+             gap:22px; align-items:stretch;
              max-width:1440px; margin:0 auto; padding:0 26px; }
     /* 两栏时内边距交给 .lower 统一控制，子块不再各自左右留白 */
     .lower-map .mapsec { padding:0; }
-    .lower-map .lxmap { height:230px; }
+    .lower-map .mapsec .lxmap { height:300px; }
     .lower-detail .details { border-top:none; }
     .lower-detail .details summary { padding-left:0; padding-right:0; }
     .lower-detail .detail-grid { padding-left:0; padding-right:0;
@@ -197,6 +201,11 @@ const STYLE = `
      ★ 2026-10-14：卡片拉到 1400px+ 时三栏被拉散、内容稀疏（大片空白）。
      处理：① 内容区限宽 1440px 居中，避免无限拉伸；
            ② 同档放大车图与字号，让宽屏有"大屏该有的信息密度"。 */
+  /* ★ 2026-10-22：超宽屏（≥1250px）地图再抬高，充分利用大屏 */
+  @container (min-width: 1250px) and (min-height: 1px) {
+    .lower-map .mapsec .lxmap { height:340px; }
+  }
+
   @container (min-width: 1250px) {
     .main { max-width:1440px; margin:0 auto; gap:34px; padding:26px 34px 20px; }
     .title { font-size:34px; }
