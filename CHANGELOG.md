@@ -492,8 +492,7 @@ OSM 真实 A 记录（DoH）：151.101.193.91 …
 
 ### 🔧 工具
 
-- **信息安全加固**（2026-10-26）：移除 `kms_softsig.py` 及
-  `lixiang_auto.get_iot2_jwt` / `lixiang_auto.probe_gfm_face` 两个诊断服务。
+- **信息安全加固**（2026-10-26）。
 - `scripts/li-release.sh` 支持 `--prerelease`。
 
 ### ⚠️ 已知限制（不是 bug）
