@@ -37,7 +37,7 @@ dump_ability:
 get_travel:
   name: 查询行程/陪伴里程
   description: >-
-    查询车辆的行程里程数据（逆向自官方 App 的 travel 接口）。
+    查询车辆的行程里程数据（travel 接口）。
     三种用法（三选一）：
       · 不传参数 → 各月里程汇总
       · year + month → 单月详情（含每日明细）
@@ -81,7 +81,7 @@ get_travel:
 get_charge:
   name: 查询充电记录
   description: >-
-    查询车辆的充电记录（逆向自官方 App 的 bsp-vcp-message 接口）。
+    查询车辆的充电记录（bsp-vcp-message 接口）。
     两种用法：
       · 不传参数 → 按月统计（充电次数 + 总电量）
       · dt ("年-月") + charging_type → 某月明细

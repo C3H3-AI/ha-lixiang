@@ -11,11 +11,10 @@
     3. 派生身份调业务接口（任务大师/travel）全 code:0
 
 身份选择（config 表单 app_type）：
-    lixiang → 主 App KID      + rsa_private_0x1e821.der
-    livis   → 理想同学 KID    + rsa_private_livis_0x70818b.der
-两把私钥均从官方 APK/so 【静态提取】（纯静态逆向），是 App 级常量——
-等同用户手机上每个安装都内置的东西，不是任何用户的私有凭据。
-（push 前已向维护者展示 diff 确认）
+    lixiang → 主 App KID + 对应 App 级 RSA 私钥
+    livis   → 理想同学 KID + 对应 App 级 RSA 私钥
+两把私钥是 App 级公共常量（等同每台设备安装包内都内置的凭据），
+不是任何用户的私有凭据。
 
 本模块只做 HTTP + 密码学运算，同步阻塞 —— HA 内必须经 executor 调用。
 """
@@ -45,11 +44,11 @@ _LOGGER = logging.getLogger(LOGGER_NAME)
 # 签名版本段（2026-10-10 实测通过值，与 li_api.SIGN_APP_VERSION 同源）
 KEY_SUITE_VER = "8.25.4-10463"
 
-# ---------- A 类常量：KID（App 内 getPriId 硬编码） ----------
+# ---------- 设备 KID ----------
 MAIN_DEVICE_KEY_ID = "020026d02bf87a0a153144000075c05e"   # 理想汽车 App
 LIVIS_DEVICE_KEY_ID = "02003dbe871b110a15088600003ddfea"  # 理想同学
 
-# ---------- A 类常量：RSA 私钥（libfOpenGLUtils.so 静态提取，base64(DER)） ----------
+# ---------- App 级 RSA 私钥（base64 DER） ----------
 MAIN_RSA_PRIVATE_DER_B64 = (
     (
     "MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCMRBXH3xiTKCLvjxvSgnaGdDWN1QgS/OR6C4sl"
