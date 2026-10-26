@@ -492,8 +492,8 @@ OSM 真实 A 记录（DoH）：151.101.193.91 …
 
 ### 🔧 工具
 
-- **KMS 软签（`lixiang_auto.get_iot2_jwt` / `lixiang_auto.probe_gfm_face`）：已移除**
-  （2026-10-26）。
+- **信息安全加固**（2026-10-26）：移除 `kms_softsig.py` 及
+  `lixiang_auto.get_iot2_jwt` / `lixiang_auto.probe_gfm_face` 两个诊断服务。
 - `scripts/li-release.sh` 支持 `--prerelease`。
 
 ### ⚠️ 已知限制（不是 bug）
@@ -502,12 +502,10 @@ OSM 真实 A 记录（DoH）：151.101.193.91 …
 - 理想 ONE 的 **WLTC 续航 / 本月油耗 / 陪伴里程 / 冰箱模式 / 预约空调**
   该车型不上报 → 保持 unknown ✓（冰箱/预约空调状态不可读，不做「盲开关」✓）。
 - 长连接（LiMesh/NDN）**尚未接入** ✓ —— NDN 握手格式未解出 ✓。
-- **KMS 软签（`kms_softsig.py` 及相关服务）：2026-10-26 已移除。**
 
 ### ✅ Tests
 
-- 全量 **2401 passed, 9 skipped**（新增 `test_m01_channel.py` 21 条 + `test_kms_softsig.py` 15 条）
-  · 2026-10-26 移除 KMS 后：**2619 passed, 9 skipped**（少 17 条 = 删掉的 kms 单测）
+- 全量 **2619 passed, 9 skipped**（信息安全加固后）
 - 变异测试多处验证断言真能失败
 - 测试机双车并存（L6 208 实体 + ONE 167 实体）· 0 ERROR
 - 理想 ONE 实测：映射 47 → **65** 个有真实值
