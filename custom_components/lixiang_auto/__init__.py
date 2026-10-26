@@ -721,8 +721,6 @@ SERVICE_REFRESH = "refresh"
 SERVICE_DUMP_ABILITY = "dump_ability"
 # ★ 2026-10-11：老平台车型（理想ONE/M01）实时状态通道诊断
 SERVICE_DUMP_REALTIME_STATE = "dump_realtime_state"
-SERVICE_GET_IOT2_JWT = "get_iot2_jwt"          # KMS 软签换长连接 JWT
-SERVICE_PROBE_GFM = "probe_gfm_face"            # 验证 JWT 是否被长连接网关接受
 SERVICE_PROBE_SEND_CMD = "probe_send_command"      # ★ M 系车控通道探测（不会动到车）
 # ★ 2026-10-02：行程/陪伴里程查询服务（逆向自 App travel 接口）
 SERVICE_GET_TRAVEL = "get_travel"
@@ -775,37 +773,6 @@ def _async_register_services(hass: HomeAssistant) -> None:
             except Exception as err:  # noqa: BLE001
                 _LOGGER.error("唤醒失败: %s", err)
 
-    async def _handle_get_iot2_jwt(call) -> dict:
-        """诊断：KMS 软签（软件 Ed25519）换取长连接 iot2 JWT。
-
-        ★ 只读诊断：仅做签名与一次兑换请求，**不建任何长连接**。
-          官方在手机本地用 SE 安全区签名，我们用 App SO 里的出厂兜底密钥做软件签名，
-          服务端同样接受（实测 code=0，JWT 有效期 30 天）。
-
-        ★ 错误码有排查价值（详见 kms_softsig 模块）：
-          144001=参数组合非法 / 144011=keyId 未注册 / 144014=签名不对
-
-        调用：lixiang_auto.get_iot2_jwt
-        返回：{"ok":bool,"jwt":"<已截断>","code":..,"msg":..,"summary":{..}}
-        """
-        api = getattr(hass.data.get(DOMAIN, {}).get(call.data.get("entry_id"), {}) or {},
-                      "li_api", None)
-        if api is None:
-            # 未指定 entry 时用第一个
-            for _eid, _v in hass.data.get(DOMAIN, {}).items():
-                if isinstance(_v, dict) and _v.get("li_api") is not None:
-                    api = _v["li_api"]
-                    break
-        if api is None:
-            return {"ok": False, "msg": "找不到已连接的条目"}
-
-        result = await hass.async_add_executor_job(api.get_iot2_jwt)
-        jwt = result.get("jwt") or ""
-        _LOGGER.info("get_iot2_jwt: ok=%s code=%s msg=%s", result.get("ok"),
-                     result.get("code"), result.get("msg"))
-        # ★ 只回前 40 字符，不把完整 token 写进日志
-        return {**result, "jwt": (jwt[:40] + "…") if len(jwt) > 40 else jwt}
-
     async def _handle_probe_send_command(call) -> dict:
         """★ 2026-10-19：探测 M 系（理想ONE）车控通道 —— **不会动到车**。
 
@@ -828,29 +795,6 @@ def _async_register_services(hass: HomeAssistant) -> None:
         if api is None:
             return {"error": "无可用 li_api（条目未加载？）"}
         return await hass.async_add_executor_job(api.probe_send_command)
-
-    async def _handle_probe_gfm(call) -> dict:
-        """诊断：拿 JWT 去查长连接接入点，验证它**真被网关接受**。
-
-        只读：返回「有哪些 NFD 可连」，不建连、不订阅。
-
-        调用：lixiang_auto.probe_gfm_face
-        """
-        api = getattr(hass.data.get(DOMAIN, {}).get(call.data.get("entry_id"), {}) or {},
-                      "li_api", None)
-        if api is None:
-            for _eid, _v in hass.data.get(DOMAIN, {}).items():
-                if isinstance(_v, dict) and _v.get("li_api") is not None:
-                    api = _v["li_api"]
-                    break
-        if api is None:
-            return {"accepted": False, "msg": "找不到已连接的条目"}
-
-        result = await hass.async_add_executor_job(api.probe_gfm_face)
-        _LOGGER.info("probe_gfm_face: accepted=%s http=%s code=%s faces=%s",
-                     result.get("accepted"), result.get("http_status"),
-                     result.get("code"), result.get("faces"))
-        return result
 
     async def _handle_dump_realtime_state(call) -> dict:
         """诊断：探测 real-time-state（老平台车型的实时状态通道）并写盘。
@@ -1535,10 +1479,6 @@ def _async_register_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, SERVICE_REFRESH, _handle_refresh)
     hass.services.async_register(DOMAIN, SERVICE_WAKEUP, _handle_wakeup)
     hass.services.async_register(DOMAIN, SERVICE_DUMP_ABILITY, _handle_dump_ability)
-    hass.services.async_register(DOMAIN, SERVICE_GET_IOT2_JWT,
-                                 _handle_get_iot2_jwt)
-    hass.services.async_register(DOMAIN, SERVICE_PROBE_GFM,
-                                 _handle_probe_gfm)
 
     hass.services.async_register(DOMAIN, SERVICE_PROBE_SEND_CMD,
                                  _handle_probe_send_command)
