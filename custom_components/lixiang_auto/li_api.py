@@ -219,7 +219,7 @@ def _parse_sentinel_events(r: dict, limit: int = 20) -> dict:
     if isinstance(raw_events, dict):        # 容错：有的版本包一层
         raw_events = raw_events.get("events") or raw_events.get("list") or []
     events: list[dict] = []
-    for ev in (raw_events or [])[: max(0, limit)]:
+    for ev in (raw_events or []):
         if not isinstance(ev, dict):
             continue
         vids = ev.get("videoList")
@@ -228,12 +228,22 @@ def _parse_sentinel_events(r: dict, limit: int = 20) -> dict:
                 vids = json.loads(vids) if vids else []
             except (ValueError, TypeError):
                 vids = []
+        if not isinstance(vids, list):
+            # ★ 与 App 一致：videoList 为 null/非列表 → 空数组
+            #   （RN 反编译：null → new Array(0)；字符串 → JSON.parse）
+            vids = []
+        # ★ 与 App 一致：过滤掉没有视频的事件
+        #   （RN 反编译：.filter(ev => ev.videoList && ev.videoList.length > 0)）
+        if not vids:
+            continue
         events.append({
             "eventId": ev.get("eventId"),
             "startTs": ev.get("uploadStartTs"),
             "status": ev.get("uploadStatus"),
-            "videos": vids if isinstance(vids, list) else [],
+            "videos": vids,
         })
+        if len(events) >= max(0, limit):
+            break
     return {"events": events, "count": len(events)}
 
 

@@ -77,33 +77,36 @@ def test_parse_video_list_is_json_string():
 
 
 def test_parse_video_list_empty_string():
+    """videoList 为空字符串 → 空数组；且该事件被过滤（与 App 一致）。"""
     r = {"code": 0, "data": [
         {"eventId": "e", "uploadStartTs": 1, "uploadStatus": 0,
          "videoList": ""}]}
     out = _parse(r)
-    assert out["events"][0]["videos"] == []
+    assert out["events"] == [] and out["count"] == 0
 
 
 def test_parse_video_list_broken_json():
+    """坏 JSON → 空数组 → 按被过滤（App 同样解析失败后不留坏事件）。"""
     r = {"code": 0, "data": [
         {"eventId": "e", "uploadStartTs": 1, "uploadStatus": 0,
          "videoList": "{not-json"}]}
     out = _parse(r)
-    assert out["events"][0]["videos"] == []
+    assert out["events"] == []
 
 
 def test_parse_dict_wrapped_data():
     """容错：data 有时是 {"events":[...]} 包一层。"""
     r = {"code": 0, "data": {"events": [
         {"eventId": "e", "uploadStartTs": 1, "uploadStatus": 1,
-         "videoList": "[]"}]}}
+         "videoList": json.dumps([{"videoFilekey": "v"}])}]}}
     out = _parse(r)
     assert out["count"] == 1
 
 
 def test_parse_limit():
     evs = [{"eventId": f"e{i}", "uploadStartTs": i, "uploadStatus": 1,
-            "videoList": "[]"} for i in range(10)]
+            "videoList": json.dumps([{"videoFilekey": f"v{i}"}])}
+           for i in range(10)]
     out = _parse({"code": 0, "data": evs}, limit=3)
     assert out["count"] == 3
 
@@ -116,7 +119,8 @@ def test_parse_error_passthrough():
 def test_parse_skips_non_dict_entries():
     r = {"code": 0, "data": ["junk", None,
                              {"eventId": "ok", "uploadStartTs": 1,
-                              "uploadStatus": 1, "videoList": "[]"}]}
+                              "uploadStatus": 1,
+                              "videoList": json.dumps([{"videoFilekey": "v"}])}]}
     out = _parse(r)
     assert out["count"] == 1 and out["events"][0]["eventId"] == "ok"
 
@@ -136,3 +140,38 @@ def test_service_constant_matches_yaml():
     src = open("custom_components/lixiang_auto/__init__.py",
                encoding="utf-8").read()
     assert 'SERVICE_GET_SENTINEL_VIDEOS = "get_sentinel_videos"' in src
+
+
+# ---------- ★ 与 App 反编译行为对照（RN fetchVideoList）----------
+
+def test_video_list_null_becomes_empty_array():
+    """App: videoList === null → new Array(0)。"""
+    r = {"code": 0, "data": [
+        {"eventId": "a", "uploadStartTs": 1, "uploadStatus": 1,
+         "videoList": None}]}
+    out = _parse(r)
+    # null → 空数组 → 该事件被过滤（App 的 filter 只留有视频的）
+    assert out["events"] == []
+
+
+def test_filters_events_without_videos():
+    """App: .filter(ev => ev.videoList && ev.videoList.length > 0)。"""
+    r = {"code": 0, "data": [
+        {"eventId": "empty", "uploadStartTs": 1, "uploadStatus": 1,
+         "videoList": "[]"},
+        {"eventId": "has", "uploadStartTs": 2, "uploadStatus": 2,
+         "videoList": json.dumps([{"videoFilekey": "v"}])},
+    ]}
+    out = _parse(r)
+    assert out["count"] == 1
+    assert out["events"][0]["eventId"] == "has"
+
+
+def test_limit_counts_after_filter():
+    """limit 作用于过滤后的条数（与 App 列表语义一致）。"""
+    evs = [{"eventId": f"e{i}", "uploadStartTs": i, "uploadStatus": 1,
+            "videoList": "[]"} for i in range(5)]
+    evs.append({"eventId": "real", "uploadStartTs": 9, "uploadStatus": 1,
+                "videoList": json.dumps([{"videoFilekey": "v"}])})
+    out = _parse({"code": 0, "data": evs}, limit=3)
+    assert out["count"] == 1 and out["events"][0]["eventId"] == "real"
