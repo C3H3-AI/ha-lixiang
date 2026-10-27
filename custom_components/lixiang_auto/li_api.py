@@ -203,6 +203,50 @@ EP_AC_APPOINTMENT = "/ssp-as-mobile-api/v1-0/vehicles/ac-appointment-update"
 #: ★ 2026-10-18：预约充电（M 系专属，取证自 NetApiConst.chargeAppointmentUpdate）
 EP_CHARGE_APPOINTMENT = "/ssp-as-mobile-api/v1-0/vehicles/charge-appointment-update"
 EP_SVM_TAKE_PHOTO = "/ssp-as-mobile-api/v1-0/vehicles/svm/take-photo"
+#: 哨兵视频列表（2026-10-27，L7 车主提供规格：路径以 "/" 结尾、
+#:   VIN 为最后一段；响应 data 为近 7 天事件列表）。
+EP_SENTINEL_VIDEOS = "/ssp-travel-x-service/v1-0/sentinel/videos/"
+
+def _parse_sentinel_events(r: dict, limit: int = 20) -> dict:
+    """解析哨兵视频列表响应 → {"events": [...], "count": n} / {"error": ...}。
+
+    ★ videoList 在响应里是 JSON 字符串，需二次解析（规格关键点）。
+    模块级纯函数，便于单测。
+    """
+    if r.get("code") not in (0, None):
+        return {"error": f"code={r.get('code')} msg={r.get('msg')}"[:200]}
+    raw_events = r.get("data")
+    if isinstance(raw_events, dict):        # 容错：有的版本包一层
+        raw_events = raw_events.get("events") or raw_events.get("list") or []
+    events: list[dict] = []
+    for ev in (raw_events or []):
+        if not isinstance(ev, dict):
+            continue
+        vids = ev.get("videoList")
+        if isinstance(vids, str):
+            try:
+                vids = json.loads(vids) if vids else []
+            except (ValueError, TypeError):
+                vids = []
+        if not isinstance(vids, list):
+            # ★ 与 App 一致：videoList 为 null/非列表 → 空数组
+            #   （RN 反编译：null → new Array(0)；字符串 → JSON.parse）
+            vids = []
+        # ★ 与 App 一致：过滤掉没有视频的事件
+        #   （RN 反编译：.filter(ev => ev.videoList && ev.videoList.length > 0)）
+        if not vids:
+            continue
+        events.append({
+            "eventId": ev.get("eventId"),
+            "startTs": ev.get("uploadStartTs"),
+            "status": ev.get("uploadStatus"),
+            "videos": vids,
+        })
+        if len(events) >= max(0, limit):
+            break
+    return {"events": events, "count": len(events)}
+
+
 EP_OTA_UPGRADE = "/ssp-as-mobile-api/v1-0/vehicles/ota/upgrade"
 EP_MAINT_PLAN = "/ssp-as-mobile-api/v1-0/vehicles/maint/plan/"
 EP_MAINT_RESET = "/ssp-as-mobile-api/v1-0/vehicles/maint/item/reset"
@@ -1806,6 +1850,46 @@ class LiApiClient:
         base = (f"vehicle/svm_photo/{ct}/{day}/{self._vin}"
                 f"/data/data_center/upload/{stamp}")
         return [f"{base}picIn{a}.jpg" for a in self.SVM_ANGLES]
+
+
+    def sentinel_videos(self, limit: int = 20) -> dict:
+        """哨兵视频事件列表（只读）。
+
+        返回 ``{"events": [...], "count": n}``；失败时含 ``error``。
+        每个 event：eventId / uploadStartTs(ms) / uploadStatus /
+        videos:[{coverFilekey, eventDirection, videoFilekey}]。
+        ★ videoList 在响应里是 **JSON 字符串**（不是数组），需二次解析。
+        这里不换下载 URL（URL 有时效，按需调 get_svm_photo_urls）。
+        """
+        path = f"{EP_SENTINEL_VIDEOS}{urllib.parse.quote(self._vin or '', safe='')}"
+        try:
+            r = self._signed_call_travel("GET", path, "", self._travel_bearer())
+            if r.get("code") == 100105:
+                r = self._signed_call_travel("GET", path, "", self._travel_bearer(True))
+        except Exception as e:  # noqa: BLE001
+            return {"error": f"{type(e).__name__}: {e}"[:200]}
+        if r.get("code") not in (0, None):
+            return {"error": f"code={r.get('code')} msg={r.get('msg')}"[:200]}
+        raw_events = r.get("data")
+        if isinstance(raw_events, dict):        # 容错：有的版本包一层
+            raw_events = raw_events.get("events") or raw_events.get("list") or []
+        events: list[dict] = []
+        for ev in (raw_events or [])[: max(0, limit)]:
+            if not isinstance(ev, dict):
+                continue
+            vids = ev.get("videoList")
+            if isinstance(vids, str):
+                try:
+                    vids = json.loads(vids) if vids else []
+                except (ValueError, TypeError):
+                    vids = []
+            events.append({
+                "eventId": ev.get("eventId"),
+                "startTs": ev.get("uploadStartTs"),
+                "status": ev.get("uploadStatus"),
+                "videos": vids if isinstance(vids, list) else [],
+            })
+        return {"events": events, "count": len(events)}
 
     def get_svm_photo_urls(self, file_keys: list[str]) -> dict:
         """OSS key → 签名 URL。

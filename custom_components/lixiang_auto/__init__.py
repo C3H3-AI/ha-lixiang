@@ -726,6 +726,7 @@ SERVICE_PROBE_SEND_CMD = "probe_send_command"      # ★ M 系车控通道探测
 SERVICE_GET_TRAVEL = "get_travel"
 SERVICE_GET_CHARGE = "get_charge"
 SERVICE_GET_SVM_PHOTO = "get_svm_photo"
+SERVICE_GET_SENTINEL_VIDEOS = "get_sentinel_videos"
 SERVICE_CREATE_TASK = "create_task"
 SERVICE_GET_TASKS = "get_tasks"
 SERVICE_UPDATE_TASK = "update_task"
@@ -1103,6 +1104,36 @@ def _async_register_services(hass: HomeAssistant) -> None:
             except Exception as err:  # noqa: BLE001
                 _LOGGER.error("充电查询异常: %s", err)
                 result[entry.data.get(CONF_VIN) or eid] = {"error": str(err)}
+        return result
+
+    async def _handle_get_sentinel_videos(call) -> ServiceResponse:
+        """查询哨兵视频事件列表（只读，近 7 天）。
+
+        参数：
+          · vin   可选，多车时指定
+          · limit 可选，最多返回条数（默认 20）
+
+        返回：``{vin: {count, events: [...], error?}}``
+        每个 event：eventId / startTs(ms) / status /
+        videos:[{coverFilekey, eventDirection, videoFilekey}]。
+        下载 URL 有时效 —— 拿 videoFilekey 调 lixiang_auto.get_svm_photo 系的
+        OIS 交换（get_svm_photo_urls）按需获取。
+        """
+        data = call.data or {}
+        target_vin = data.get("vin")
+        limit = int(data.get("limit") or 20)
+        result: dict = {}
+        for eid, d in (hass.data.get(DOMAIN) or {}).items():
+            api = (d or {}).get("li_api")
+            vin = (d or {}).get("vin") or getattr(api, "_vin", None)
+            if api is None or not vin:
+                continue
+            if target_vin and vin != target_vin:
+                continue
+            result[vin] = await hass.async_add_executor_job(
+                api.sentinel_videos, limit)
+        if not result:
+            result["error"] = "无可用条目（未登录或 vin 不匹配）"
         return result
 
     async def _handle_get_svm_photo(call) -> ServiceResponse:
@@ -1491,6 +1522,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
                                   supports_response=SupportsResponse.OPTIONAL)
     hass.services.async_register(DOMAIN, SERVICE_GET_SVM_PHOTO, _handle_get_svm_photo,
                                   supports_response=SupportsResponse.OPTIONAL)
+    hass.services.async_register(DOMAIN, SERVICE_GET_SENTINEL_VIDEOS,
+                                 _handle_get_sentinel_videos,
+                                 supports_response=SupportsResponse.OPTIONAL)
     hass.services.async_register(DOMAIN, SERVICE_CREATE_TASK, _handle_create_task,
                                   supports_response=SupportsResponse.OPTIONAL)
     hass.services.async_register(DOMAIN, SERVICE_GET_TASKS, _handle_get_tasks,

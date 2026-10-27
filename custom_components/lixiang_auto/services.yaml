@@ -109,6 +109,28 @@ get_charge:
           min: 0
           max: 4
 
+get_sentinel_videos:
+  name: 查询哨兵视频事件列表
+  description: >-
+    查询近 7 天的哨兵视频事件（只读）。返回事件列表：
+    eventId / 开始时间（毫秒时间戳）/ 上传状态 / 视频文件 key 列表。
+    下载链接有时效 —— 拿 videoFilekey 通过驻车照片的 OIS 交换按需获取。
+  fields:
+    vin:
+      name: VIN
+      description: 只处理该 VIN 的条目（留空 = 全部）
+      required: false
+      selector:
+        text:
+    limit:
+      name: 条数上限
+      description: 最多返回的事件数（默认 20）
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 100
+
 get_svm_photo:
   name: 查询驻车照片
   description: >-
