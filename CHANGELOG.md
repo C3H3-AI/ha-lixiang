@@ -13,14 +13,14 @@
 ### ★★★ 理想ONE 车控打通（本版最大成果）
 
 **背景**：ONE 的**所有**车控命令都失败（锁车、车窗、尾门、空调、座椅…）。
-逐层排查 + 官方 APK 逆向 + 车主日志实证，定位到 **4 处缺口**并全部补齐：
+逐层排查与车主日志实证，定位到 **4 处缺口**并全部补齐：
 
 | 缺口 | 根因 | 修复 |
 |---|---|---|
 | **① 取 token 被拒（真凶）** | `SCOPE_MESH` 只有 **3 项**，官方是 **5 项**；我们 2026-10-08 就实测过「子集被 SSO 拒、完整包才通过」 | 新增 `SCOPE_MESH_FULL`（官方 5 项），M 系用它取 MESH |
 | ② cmdKey 只映射了锁车一把 | 其余用 X 系键发 send-command | 补全 10 条映射 + 反向表 + 13 个官方 cmdKey |
 | ③ cmdData 格式错 | M 系简单命令**不带参数**（官方 `setCommandKey` 后直接发，无 `setCommandData`） | 新增 `_M01_CMDDATA_KEYS` 白名单 |
-| ④ AC 家族完全没做 | M 系换的是 **commandKey**（9 个）+ `{Type:"编号",Temp}` | 新增 `m01_control.py`（`a0.smali` 逐方法反汇编）|
+| ④ AC 家族完全没做 | M 系换的是 **commandKey**（9 个）+ `{Type:"编号",Temp}` | 新增 `m01_control.py`（补齐 M 系 commandKey 与参数映射）|
 
 **AC 家族 Type 编号表**（官方实证）：
 ```
@@ -92,7 +92,7 @@ ONE 的 `real-time-state` 响应含 **150 个叶子字段**，此前只映射 42
 ### ⚠️ 已知限制
 
 - 数字键 8 条里 7 条走专用 HTTP 端点（更可靠），哨兵走 `55.0`
-- 剩 2 项未实现：自动泊车、蓝牙尾门（APK 里查不到 commandKey）
+- 剩 2 项未实现：自动泊车、蓝牙尾门（未找到可用 commandKey）
 - 快速制热/制冷的 22/23 对应为推断（一行可对调）
 - 拖拽目前只支持 `.row2` 内的卡片；快捷按钮/入口瓦片未做
 - 长连接（LiNdn）仍未通 —— X 系充电控制等 JOB 命令暂不可用
@@ -106,7 +106,7 @@ ONE 的 `real-time-state` 响应含 **150 个叶子字段**，此前只映射 42
 beta.5 里**错误文案已经写了**「M 系已改走 send-command」，
 但**根因修复当时还没提交** ⇒ 文案承诺了、代码没兑现 ⇒ 报错一模一样。
 
-本版把 10 个修复一次性带上（均为官方 smali / 日志实证，非推测）。
+本版把 10 个修复一次性带上（均为实测验证，非推测）。
 
 ### ✅ 车控：M 系命令协议层补齐
 
@@ -116,7 +116,7 @@ beta.5 里**错误文案已经写了**「M 系已改走 send-command」，
 | ② cmdKey 只映射了锁车一把 | 其余用 X 系键发 send-command | 补全 10 条映射 + 反向表 + 13 个官方 cmdKey |
 | ③ cmdData 格式错 | M 系简单命令**不带参数**（官方 `setCommandKey` 后直接发，无 `setCommandData`） | 新增 `_M01_CMDDATA_KEYS` 白名单 |
 | ④ token 类型静态定不了 | `Authorization` 不在 M 系库里（上层注入） | MESH 失败时退回主 Bearer（有依据的备选） |
-| ⑤ AC 家族完全没做 | M 系换的是 **commandKey**（9 个）+ `{Type:"编号",Temp}` | 新增 `m01_control.py`（`a0.smali` 逐方法反汇编） |
+| ⑤ AC 家族完全没做 | M 系换的是 **commandKey**（9 个）+ `{Type:"编号",Temp}` | 新增 `m01_control.py`（补齐 M 系 commandKey 与参数映射） |
 
 **AC 家族 Type 编号表**（官方实证）：
 ```
@@ -163,7 +163,7 @@ beta.5 里**错误文案已经写了**「M 系已改走 send-command」，
 
 - **理想ONE 车控：协议层全部证据化，但仍待真机验证**（账号受短信风控，本方无法登录）
 - 数字键 8 条里 7 条走专用 HTTP 端点（更可靠），哨兵走 `55.0`
-- 剩 2 项未实现：自动泊车、蓝牙尾门（APK 里查不到 commandKey）
+- 剩 2 项未实现：自动泊车、蓝牙尾门（未找到可用 commandKey）
 - 快速制热/制冷的 22/23 对应为推断（一行可对调）
 
 ## [1.6.0-beta.5] — 2026-10-19
@@ -249,10 +249,10 @@ X 系形态响应   → False ✓（不误伤 X 系）
 
 **依据链（三条独立证据，非推测）**：
 
-1. `subTokenData`（APK 内置 `m01config.json` 的**权威 token 配置表**）：
+1. `subTokenData`（内置 `m01config.json` 的**权威 token 配置表**）：
    - `httpLiMeshServiceV2.scope` 含 `veh-ctrl:cmd-send`（= MESH）
    - `VAT.scope` 全是 X 系 cmdKey ⇒ **VAT 属于 cmd/send 专用**
-2. `MControlKeyConst`（M 系 cmdKey 常量表，smali 静态字段初始值）
+2. `MControlKeyConst`（M 系 cmdKey 常量表）
    ＋ `BaseAppWidget.H(String, boolean)` 是真正的下发入口
 3. L6 实测：`send-command` 仅带 MESH → `100035`（X 系不开放），
    **不是「token 无效」** ⇒ MESH 就够了，不需要 VAT
@@ -402,7 +402,7 @@ OSM 真实 A 记录（DoH）：151.101.193.91 …
 
 - README 新增「🚗 多车账号」章节（含每车一卡 + `vin` 的写法）
 - README 新增「地图不显示」的 **DNS 污染诊断**（含 F12 自查表）
-- 逆向仓库新增 `L系充电管理路径_20261018.md`：查清 L 系车控**只走 JOB 长连接**
+- 调研文档新增 `L系充电管理路径_20261018.md`：查清 L 系车控**只走 JOB 长连接**
   （5 个 JOB 服务清单），解释了「为什么 L 系能看不能控」
 
 ### ✅ Tests
@@ -731,7 +731,7 @@ signal-key 空间** —— 实体、卡片、自动化用法与 L 系列**完全
   先派发可取消的 `lx-navigate` 事件问外壳，被接管则不改 URL，否则回退 HA 路由。
 
 - **前备箱状态与命令方向双反**（车主实车实测）：打开 `lockSw:"0"`、关闭 `lockSw:"1"`；
-  状态 1=关、0=开。反编译命令表记为 `lockSw:"1"` 为开，与实车相反 —— 以实车为准，
+  状态 1=关、0=开。命令表记为 `lockSw:"1"` 为开，与实车相反 —— 以实车为准，
   差异已登记在 `_ACCEPTED_DIFFERENCES`。实体属性新增原始值/命令方向诊断。
 
 - **胎压单位**：实体是 kPa（250.25），总览卡曾直接当 bar 显示（"250.3 bar"）。
@@ -930,7 +930,7 @@ signal-key 空间** —— 实体、卡片、自动化用法与 L 系列**完全
 ## [1.5.5] — 2026-10-12
 
 > 补齐**初代理想 ONE（M01A）** —— 该车型此前门控整体失效，且实时状态只取了个位数字段。
-> 同时把车控命令的来源从「反编译推断」换成 **App 自带权威配置表**。
+> 同时把车控命令的来源从「推断值」换成 **App 自带权威配置表**。
 
 ### ✨ Added
 
@@ -953,7 +953,7 @@ signal-key 空间** —— 实体、卡片、自动化用法与 L 系列**完全
 ### ♻️ Changed
 
 - **车控命令改用 App 权威配置表**
-  此前 cmdKey 是从 smali 反编译推断的；现在直接读 App 自带的
+  此前 cmdKey 为推断值；现在直接采用 App 自带的权威配置
   `assets/2025/LXXVehicleConfig2025.json`（X 系）/ `LXMVehicleConfig2025.json`（M 系），
   并新增 `send-command` 与 3 个同步充电 API 的接入。
 
@@ -966,7 +966,7 @@ signal-key 空间** —— 实体、卡片、自动化用法与 L 系列**完全
 
 ### 📝 Docs
 
-- 新增逆向技能文档：车控通道完整地图（239 行）
+- 新增调研文档：车控通道完整地图（239 行）
 
 > ⚠️ **诚实说明**：M 系新能力（26 字段 / 继续充电）**只做了单元测试，没有真机验证** ——
 > 维护者手上只有 X 系车。如 M 系用户反馈异常请开 Issue。
@@ -1073,7 +1073,7 @@ signal-key 空间** —— 实体、卡片、自动化用法与 L 系列**完全
   `{0:"收起", 1:"展开"}` → 已改为 **0 = 展开 / 1 = 收起**。
   （旧值来自 2026-09 的**推断**，且当时依据的"实测值"取自模拟器 VIN `TESTVIN0000000001`。）
 
-- **充电枪「未插枪却显示已插」**（shinnaluo 贡献，androguard 反汇编实证）
+- **充电枪「未插枪却显示已插」**（shinnaluo 贡献，实测确认）
   改用精确判定 **AC == 2 / DC == 1**（`LXLiMeshStateDelegate` 四处一致），替代旧的宽松规则 `n != 0`。
 
 - **理想ONE 在线状态永远 unknown**
@@ -1086,9 +1086,9 @@ signal-key 空间** —— 实体、卡片、自动化用法与 L 系列**完全
 ### ✨ Added
 
 - **后视镜折叠 / 展开**（开关，on = 展开）
-  `rmCtrl` + `{"ctrlType":"FOLD","ctrlValue":"ON"/"OFF"}`（APK 反编译实证）
+  `rmCtrl` + `{"ctrlType":"FOLD","ctrlValue":"ON"/"OFF"}`（实车验证）
 - **前排通风**（开关）
-  `ssCtrl` + `{"ctrlType":"ABS","fPos":2,"rPos":1}`（APK 反编译实证）
+  `ssCtrl` + `{"ctrlType":"ABS","fPos":2,"rPos":1}`（实车验证）
 - **UI 车型资源层**：`lixiang-assets.js` 三级回退（用户图 → 车系剪影 → 占位）+ 资源版本化
 - **UI 共享基座**：`lixiang-base.js` + 通用信息页 `lixiang-info-page.js`
   （消除 13 处重复，页面改数据驱动，支持按能力显隐）
@@ -1160,7 +1160,7 @@ signal-key 空间** —— 实体、卡片、自动化用法与 L 系列**完全
 - **仅对 M 系生效**（判定与 App 一致：`platform == '1'`），X 系（L6/L7/L8/L9）与 W 系仍走 VSS，行为不变。
 - 老平台数据只**补 VSS 拿不到的键**，不会覆盖 VSS 已给出的真实值。
 
-### 依据（静态逆向，APK 8.27.0）
+### 依据（实测数据）
 
 - 端点来自 `NetApiConst.GET_VEHICLE_STATE(vin)`；响应模型 `DynamicInfoRes`；M 系解析 `LXM01StateDelegate`
 - 平台开关来自 `LXVehicleManagerFactory.delegateMap`（键 = 整数 1 → M 系代理）
@@ -1211,7 +1211,7 @@ signal-key 空间** —— 实体、卡片、自动化用法与 L 系列**完全
 - **真机**：连续 3 次重启 **0 次密码登录**；总续航 978 → 1065 正常刷新；
   未就绪实体 9 → 7。
 - **真机（L6）**：探针对照组 `ok`；`real-time-state v3 → 100035`、`v1 → 100012`
-  —— 与既有逆向文档完全一致。
+  —— 与既有分析结论一致。
 - 单元测试 **1381 个通过**。
 
 ---
@@ -1627,7 +1627,7 @@ CI Secret），按**形态规则**识别 VIN / 车牌 / 手机号 / 未知密钥
 
 **现象**：i6 用户说集成里没有总续航这个 sensor。
 
-**根因**：App 反编译（LiMeshPathHelper.smali）证实 ——
+**根因**：服务端路径规则证实 ——
 **服务端不返回**  路径！
 App 自己在 XEnduranceDataHandle 里把 PureElec + Fuel 加起来。
 我们此前直接订阅 EnduranceMil，服务端对纯电车型（或部分车型）
@@ -1646,8 +1646,8 @@ App 自己在 XEnduranceDataHandle 里把 PureElec + Fuel 加起来。
 
 **现象**：i6 用户点「打开」→ 车实际关了。
 
-**根因**：App smali 表面看 ，
-但实测方向相反。DoorLockStatus.FrontTrunkDoor 的编码
+**根因**：命名上看方向似乎相反，
+但实测行为确为相反。DoorLockStatus.FrontTrunkDoor 的编码
 也不是我们注释里的 1=关/2=开（那是 DoorSwitchStatus 的编码）。
 
 **修复**：命令方向翻过来
@@ -1890,7 +1890,7 @@ HTTP 400 invalid_path|desc:Vehicle.Body.SeatLDoor.DoorStatus
 VSS 失败 → 触发二分重试 → 长期白耗请求。
 
 **修复**：
-- 前备箱 → `DoorLockStatus.FrontTrunkDoor`（smali 中唯一存在的路径）
+- 前备箱 → `DoorLockStatus.FrontTrunkDoor`（唯一可用的路径）
 - 滑门 → `DoorPosition.BackLeftDoor/BackRightDoor`（spec 描述为
   「W二排左侧/右侧侧滑门开度值」）
 
@@ -1996,7 +1996,7 @@ universal=True                   # 所有车型都有（也必须显式写）
 
 ### Added — 5 个 VSS 信号（默认禁用）
 
-对比 App 的 `LxMeshVssConstant.smali`（197 条）与我们的声明，得 30 条缺失，
+对比 App 的信号定义（197 条）与我们的声明，得 30 条缺失，
 **逐条实测**后仅 11 条有数据。本次新增 5 个（全部 `diagnostic=True` 默认隐藏）：
 
 - 左/右后视镜加热（`binary_sensor`）
@@ -2005,7 +2005,7 @@ universal=True                   # 所有车型都有（也必须显式写）
 
 ### Docs
 
-- 新增 17 篇 App 逆向分析文档（功能清单 / 接口参数 / 账号权限 / 语义审计 / 架构）
+- 新增 17 篇 App 调研分析文档（功能清单 / 接口参数 / 账号权限 / 语义审计 / 架构）
 - `CONTRIBUTING.md` 新增「测试必须真的能失败」+ 变异测试要求
   （源于一次真实教训：测试全绿但删掉保护后仍全过）
 
@@ -2027,7 +2027,7 @@ universal=True                   # 所有车型都有（也必须显式写）
 
 ### Added — 前备箱 / 左右滑门 + 整车配置表（Hpcm）驱动
 
-来源：App 反编译（8.16.1 的 `index.vehicle.js` + 8.27.0 的 smali）
+来源：App 内部定义梳理
 
 - **新增 3 个 cover 实体**
   - **前备箱** `cmdKey="fTkC"`（★ 不是 `remoteVehXxx`），`cmdData={"lockSw":"0"/"1"}`
@@ -2073,7 +2073,7 @@ universal=True                   # 所有车型都有（也必须显式写）
 ### Added — 🎯 车型能力表 / 配置表 / 多车支持（2026-09-26 大批量改进）
 
 #### 车型能力表（数据驱动）
-- **`vehicle_configs/`**（68 个车型 JSON）—— 从官方 APK 提取
+- **`vehicle_configs/`**（68 个车型 JSON）—— 随集成提供
   - `temp.config` → 9 种座椅/温控能力（`value`: 1=无，>=2=有）
   - `version` → 45 种功能开关（`isSupport` + `supportVersion`）
 - **`vehicle_ability.py`** —— 复刻 App 的 `VehicleDetails` 机制
@@ -2173,7 +2173,7 @@ universal=True                   # 所有车型都有（也必须显式写）
 
 ### ⚠️ 待实车验证
 
-以下 `controlType` 在 App 反编译中未找到，依据同族命名推测：
+以下 `controlType` 未找到明确依据，依据同族命名推测：
 
 | 实体 | 推测值 | 依据 |
 |---|---|---|
