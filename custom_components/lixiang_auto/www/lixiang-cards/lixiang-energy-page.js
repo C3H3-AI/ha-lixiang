@@ -284,10 +284,10 @@ class LixiangEnergyPage extends HTMLElement {
     root.className = "root"; root.dataset.theme = (this._config && this._config.theme) || "light";
     root.innerHTML = `
       <div class="topbar">
-        <img class="back" id="back" src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="返回">
+        <img class="back" id="back" src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt="返回">
         <h1>${I18N.title}</h1>
         <div class="refresh" id="refresh" role="button" tabindex="0" aria-label="刷新">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt=""></div>
       </div>
 
       <div class="hello" id="hello">—</div>

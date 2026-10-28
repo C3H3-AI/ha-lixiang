@@ -499,7 +499,7 @@ class LixiangClimatePage extends HTMLElement {
       <div class="top">
         <div class="toprow">
           <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-            <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="">
+            <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt="">
           </div>
           <div class="stat">
             <div class="st"><div class="v" id="v-room">—</div><div class="l">车内温度</div></div>
