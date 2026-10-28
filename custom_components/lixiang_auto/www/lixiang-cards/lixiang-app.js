@@ -176,6 +176,24 @@ class LixiangApp extends HTMLElement {
       };
       history.pushState = window.__lxNavHook;
     }
+    // ★ 2026-10-28 修「手机右划返回退到 HA 主界面」：
+    //   外壳拦截 pushState 后只做内部切换、不入历史栈 →
+    //   右划触发浏览器 history.back()，栈里没有我们的页面，直接退回 HA 视图。
+    //   修法：进入二级页时压一个**带标记、URL 不变**的栈位（URL 不变 → HA 不会切视图），
+    //   再用 capture 阶段的 popstate 抢在 HA 之前接管：二级页 → 切回内部主页。
+    if (!window.__lxPopHook) {
+      window.__lxPopHook = function (ev) {
+        let handled = false;
+        for (const t of window.__lxNavTargets) {
+          if (typeof t._onPop === "function" && t._onPop(ev)) handled = true;
+        }
+        // 拦下 HA 的响应（否则它会自己切视图）
+        if (handled && typeof ev.stopImmediatePropagation === "function") {
+          ev.stopImmediatePropagation();
+        }
+      };
+      window.addEventListener("popstate", window.__lxPopHook, true);
+    }
     window.__lxNavRefs += 1;
     window.__lxNavTargets.add(this);
   }
@@ -187,6 +205,10 @@ class LixiangApp extends HTMLElement {
     if (window.__lxNavRefs <= 0 && window.__lxNavOrigPush) {
       history.pushState = window.__lxNavOrigPush;
       window.__lxNavHook = null;
+      if (window.__lxPopHook) {
+        window.removeEventListener("popstate", window.__lxPopHook, true);
+        window.__lxPopHook = null;
+      }
       window.__lxNavTargets = new Set();
     }
   }
@@ -217,7 +239,9 @@ class LixiangApp extends HTMLElement {
   show(key) {
     if (!PAGES[key] || !this._mount) return;
     if (this._current === key) return;
+    const prev = this._current;
     this._current = key;
+    this._syncHistory(prev, key);
 
     // 只创建一次，之后复用（保留子卡片的内部状态，如滚动位置/已展开月份）
     const tag = PAGES[key];
@@ -235,6 +259,58 @@ class LixiangApp extends HTMLElement {
 
     // 同步 hass（子卡片依赖它渲染）
     this._pushHass();
+  }
+
+  /**
+   * 维护浏览器历史栈，使「左上返回按钮」与「手机右划」行为一致。
+   *
+   * ★ 2026-10-28：此前只拦截 pushState 做内部切换、**不入栈**，
+   *   导致右划 history.back() 直接退回 HA 主界面。
+   *   现在：进二级页压一个带 __lxNav 标记、**URL 不变**的栈位
+   *   （URL 不变 → HA 不会去切不存在的视图），回主页时把该位弹掉。
+   */
+  _syncHistory(prev, key) {
+    if (this._popping) return;              // popstate 触发的切换，不再动栈
+    const orig = window.__lxNavOrigPush;
+    if (!orig) return;
+    const st = history.state || {};
+    try {
+      if (prev === "app" && key !== "app") {
+        // 进入二级页：压栈（URL 保持不动）
+        const next = Object.assign({}, st, { __lxNav: key });
+        orig.call(history, next, "", location.href);
+      } else if (prev && prev !== "app" && key === "app") {
+        // 返回按钮回主页：栈顶是我们的标记位就弹掉，保持栈平衡
+        if (st && st.__lxNav) history.back();
+      }
+    } catch (e) {
+      // 历史栈操作失败不应影响页面切换
+      console.warn("[lixiang-app] 历史栈同步失败", e);
+    }
+  }
+
+  /**
+   * popstate 接管：手机右划 / 浏览器后退时，若当前在二级页 →
+   * 切回内部主页并拦下 HA 的默认响应。
+   * 返回 true 表示「已接管」。
+   */
+  _onPop(ev) {
+    if (!this._mount || !this._current || this._current === "app") return false;
+    this._popping = true;
+    try {
+      this.show("app");
+    } finally {
+      this._popping = false;
+    }
+    // 若栈里还有我们的标记位（连续右划），继续保持内部态
+    const st = history.state || {};
+    if (st.__lxNav && window.__lxNavOrigPush) {
+      try {
+        window.__lxNavOrigPush.call(
+          history, Object.assign({}, st, { __lxNav: "app" }), "", location.href);
+      } catch (e) { /* 忽略 */ }
+    }
+    return true;
   }
 
   _childConfig() {
