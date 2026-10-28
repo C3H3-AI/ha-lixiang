@@ -1554,6 +1554,10 @@ const STYLE = `
   .sentry .s { font-size:12px; color:var(--lx-t3); margin-top:3px; }
   .sentry.on .t { color:var(--lx-blue); }
 
+  /* ★ 2026-10-28 入口区：**固定两列，卡片自适应缩放**（与官方 App 一致）。
+     车主："App 在手机上显示两列，会自动缩放" —— 因此不按宽度加列。
+     minmax(0,1fr) 让每列随容器等比伸缩；min-width:0（见 .wrap > * 规则）
+     保证文字不撑破格子。 */
   .entries { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
   /* ★ 2026-10-21：功能卡高度变量 —— 右列（电量/哨兵）与功能卡等高，
      统一由它推导，避免两处写死后不同步。 */
