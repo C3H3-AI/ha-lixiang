@@ -516,11 +516,11 @@ class LixiangChargePage extends HTMLElement {
     root.innerHTML = `
       <div class="ptr" id="ptr"><div class="sp"></div><div class="tx">下拉刷新</div></div>
       <div class="topbar">
-        <img class="back" id="back" src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="返回">
+        <img class="back" id="back" src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt="返回">
         <h1>${I18N.title}</h1>
         <button class="reclink" id="go-records" type="button">${I18N.records}</button>
         <div class="refresh" id="refresh" role="button" tabindex="0" aria-label="刷新数据">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="" style="transform:rotate(-90deg)">
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt="" style="transform:rotate(-90deg)">
         </div>
       </div>
       <div class="hero">

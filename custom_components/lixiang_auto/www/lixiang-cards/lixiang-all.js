@@ -496,7 +496,7 @@ class LixiangVehicleInfoPage extends HTMLElement {
     root.innerHTML = `
       <div class="topbar">
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt=""></div>
         <h1>车辆信息</h1>
       </div>
 
@@ -3839,11 +3839,11 @@ class LixiangChargePage extends HTMLElement {
     root.innerHTML = `
       <div class="ptr" id="ptr"><div class="sp"></div><div class="tx">下拉刷新</div></div>
       <div class="topbar">
-        <img class="back" id="back" src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="返回">
+        <img class="back" id="back" src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt="返回">
         <h1>${I18N.title}</h1>
         <button class="reclink" id="go-records" type="button">${I18N.records}</button>
         <div class="refresh" id="refresh" role="button" tabindex="0" aria-label="刷新数据">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="" style="transform:rotate(-90deg)">
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt="" style="transform:rotate(-90deg)">
         </div>
       </div>
       <div class="hero">
@@ -4862,10 +4862,10 @@ class LixiangEnergyPage extends HTMLElement {
     root.className = "root"; root.dataset.theme = (this._config && this._config.theme) || "light";
     root.innerHTML = `
       <div class="topbar">
-        <img class="back" id="back" src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="返回">
+        <img class="back" id="back" src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt="返回">
         <h1>${I18N.title}</h1>
         <div class="refresh" id="refresh" role="button" tabindex="0" aria-label="刷新">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt=""></div>
       </div>
 
       <div class="hello" id="hello">—</div>
@@ -5476,7 +5476,7 @@ class LixiangHealthPage extends HTMLElement {
     root.innerHTML = `
       <div class="topbar">
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt=""></div>
         <h1>车辆健康</h1>
       </div>
 
@@ -5951,10 +5951,10 @@ class LixiangSettingPage extends HTMLElement {
     root.innerHTML = `
       <div class="ptr" id="ptr"><div class="sp"></div><div class="tx">下拉刷新</div></div>
       <div class="topbar">
-        <img class="back" id="back" src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="返回">
+        <img class="back" id="back" src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt="返回">
         <h1>车辆设置</h1>
         <div class="refresh" id="refresh" role="button" tabindex="0" aria-label="刷新">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="" style="transform:rotate(-90deg)">
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt="" style="transform:rotate(-90deg)">
         </div>
       </div>
 
@@ -6452,10 +6452,10 @@ class LixiangScenePage extends HTMLElement {
       </div>
       <div class="topbar">
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt=""></div>
         <h1>情景模式</h1>
         <div class="refresh" id="refresh" role="button" tabindex="0" aria-label="刷新">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt=""></div>
       </div>
       ${big}
       <div class="duo">${small}</div>
@@ -7044,7 +7044,7 @@ class LixiangClimatePage extends HTMLElement {
       <div class="top">
         <div class="toprow">
           <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-            <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="">
+            <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt="">
           </div>
           <div class="stat">
             <div class="st"><div class="v" id="v-room">—</div><div class="l">车内温度</div></div>
@@ -7703,7 +7703,7 @@ class LixiangSeatPage extends HTMLElement {
       <div class="top">
         <div class="toprow">
           <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-            <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
+            <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt=""></div>
           <div class="stat">
             <div class="st"><div class="v" id="v-room">—</div><div class="l">车内温度</div></div>
             <div class="st"><div class="v good" id="v-aqi">—</div><div class="l">空气</div></div>
@@ -8191,7 +8191,7 @@ class LixiangLocationPage extends HTMLElement {
           <div id="coords">定位获取中…</div>
         </div>
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt=""></div>
         <div class="floats">
           <div class="fbtn" id="btn-flash" role="button" tabindex="0" aria-label="闪灯">
             <img src="${__iconBase}/ic_home_lightning.png" alt="" onerror="this.style.visibility='hidden'">闪灯</div>
@@ -9017,7 +9017,7 @@ class LixiangTaskPage extends HTMLElement {
     root.innerHTML = `
       <div class="topbar">
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt=""></div>
         <h1>任务大师</h1>
         <div class="help" id="help" role="button" tabindex="0" aria-label="帮助">帮助</div>
       </div>
@@ -9890,10 +9890,10 @@ class LixiangAdPage extends HTMLElement {
     root.innerHTML=`
       <div class="ptr" id="ptr"><div class="sp"></div><div class="tx">下拉刷新</div></div>
       <div class="topbar">
-        <img class="back" id="back" src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="返回">
+        <img class="back" id="back" src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt="返回">
         <h1>智驾统计</h1>
         <div class="refresh" id="refresh" role="button" tabindex="0" aria-label="刷新">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt="" style="transform:rotate(-90deg)">
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt="" style="transform:rotate(-90deg)">
         </div>
       </div>
       <div class="hero">

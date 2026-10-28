@@ -328,7 +328,7 @@ class LixiangTaskPage extends HTMLElement {
     root.innerHTML = `
       <div class="topbar">
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt=""></div>
         <h1>任务大师</h1>
         <div class="help" id="help" role="button" tabindex="0" aria-label="帮助">帮助</div>
       </div>

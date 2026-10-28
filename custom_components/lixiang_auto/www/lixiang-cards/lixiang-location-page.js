@@ -284,7 +284,7 @@ class LixiangLocationPage extends HTMLElement {
           <div id="coords">定位获取中…</div>
         </div>
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt=""></div>
         <div class="floats">
           <div class="fbtn" id="btn-flash" role="button" tabindex="0" aria-label="闪灯">
             <img src="${__iconBase}/ic_home_lightning.png" alt="" onerror="this.style.visibility='hidden'">闪灯</div>

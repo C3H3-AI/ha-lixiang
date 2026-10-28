@@ -267,10 +267,10 @@ class LixiangScenePage extends HTMLElement {
       </div>
       <div class="topbar">
         <div class="back" id="back" role="button" tabindex="0" aria-label="返回">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt=""></div>
         <h1>情景模式</h1>
         <div class="refresh" id="refresh" role="button" tabindex="0" aria-label="刷新">
-          <img src="${__iconBase}/ic_home_return.webp" onerror="__lxIconFallback(this)" alt=""></div>
+          <img src="${__iconBase}/ic_home_return_left.webp" onerror="__lxIconFallback(this)" alt=""></div>
       </div>
       ${big}
       <div class="duo">${small}</div>
