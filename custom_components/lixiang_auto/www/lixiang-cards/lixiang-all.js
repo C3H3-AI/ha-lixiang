@@ -1554,6 +1554,10 @@ const STYLE = `
   .sentry .s { font-size:12px; color:var(--lx-t3); margin-top:3px; }
   .sentry.on .t { color:var(--lx-blue); }
 
+  /* ★ 2026-10-28 入口区：**固定两列，卡片自适应缩放**（与官方 App 一致）。
+     车主："App 在手机上显示两列，会自动缩放" —— 因此不按宽度加列。
+     minmax(0,1fr) 让每列随容器等比伸缩；min-width:0（见 .wrap > * 规则）
+     保证文字不撑破格子。 */
   .entries { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
   /* ★ 2026-10-21：功能卡高度变量 —— 右列（电量/哨兵）与功能卡等高，
      统一由它推导，避免两处写死后不同步。 */
@@ -1743,10 +1747,18 @@ const STYLE = `
        这条规则是隐藏功能能否生效的前提。 */
     .card[hidden], .entry[hidden], .q[hidden] { display:none !important; }
 
-    @container (max-width: 340px) {
+    /* ★ 2026-10-28 修「有些人入口只显示 1 列」：
+       原阈值 340px 太容易命中 —— 实测两种场景都会掉成单列：
+         ① 视口 ≤340px（iPhone SE 1 代 320px 等）
+         ② **卡片被放进 ≤340px 的容器**（HA 桌面端分栏 / 平板多列 / 窄侧边栏）
+            ← 桌面和平板上极易触发，这就是"有些人只看到 1 列"的主因
+       官方 App 在任何手机宽度下入口都是**并排两列**，
+       因此 .entries 一律保持两列（不再收单列）；
+       只有极窄（≤300px）才让 .row2（空调/位置大卡）叠起来，
+       否则两张大卡各占 130px 会挤爆。 */
+    @container (max-width: 300px) {
       .quick { grid-template-columns: repeat(2, minmax(0,1fr)); }
       .row2 { grid-template-columns: minmax(0,1fr); }
-      .entries { grid-template-columns: minmax(0,1fr); }
     }
 `;
 
