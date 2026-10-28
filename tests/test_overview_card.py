@@ -438,9 +438,11 @@ class TestAppHomeLayoutRegressions:
             if seg > 0:
                 assert ".quick { grid-template-columns: repeat(2" not in s[seg:seg + 200], (
                     "≤%dpx 段里仍有快捷按钮 2 列 —— 手机宽度会被误伤" % thr)
-        j = s.find("@container (max-width: 340px)")
-        assert j > 0, "缺 ≤340px 的窄屏段（快捷按钮 2 列应在这里）"
-        assert ".quick { grid-template-columns: repeat(2" in s[j:j + 200], "≤340px 段里没有 2 列规则"
+        # ★ 2026-10-28：阈值 340 → 300。340 会误伤「卡片被放进窄容器」
+        #   （HA 桌面分栏/平板多列），导致入口掉成 1 列（用户多次反馈）。
+        j = s.find("@container (max-width: 300px)")
+        assert j > 0, "缺 ≤300px 的窄屏段（快捷按钮 2 列应在这里）"
+        assert ".quick { grid-template-columns: repeat(2" in s[j:j + 200], "≤300px 段里没有 2 列规则"
 
     def test_car_image_leaves_side_margins(self):
         """车图要缩窄并居中，两侧留白给胎压标签（车主：胎压还在车子上）。"""
@@ -632,7 +634,7 @@ class TestQuickActiveState:
           · 下方两卡  一行 **2 个**（空调 + 地图）
           · 入口瓦片  一行 **2 个**（车辆健康|任务大师 / 钥匙管理|情景模式 / 车辆设置）
         我先后把 .row2 与 .entries 写在 `≤480px` 里收成一列 —— 都命中了手机宽度，全错。
-        现在：≤480 一律不收；只在极窄 ≤340px 才收。
+        现在：≤480 一律不收；只在极窄 ≤300px 才收（且 .entries 永远两列）。
         """
         s = self._src()
         i = s.find("@container (max-width: 480px)")
@@ -643,13 +645,17 @@ class TestQuickActiveState:
                 f"≤480px 段又把 {sel} 收成一列了（手机宽度应与官方一样多列）")
         assert ".quick { grid-template-columns: repeat(2" not in blk, (
             "≤480px 段又把快捷按钮收成 2 列了（官方手机宽度是 4 列）")
-        # 极窄兜底必须齐
-        j = s.find("@container (max-width: 340px)")
+        # 极窄兜底必须齐（★ 2026-10-28：阈值 340→300；
+        #   .entries 不再收单列 —— 官方 App 任何手机宽度都是并排两列，
+        #   收单列会让「卡片在窄容器里」的用户只看到 1 列（多次反馈））
+        j = s.find("@container (max-width: 300px)")
         assert j > 0
         tail = s[j:j + 400]
-        for frag in (".quick { grid-template-columns: repeat(2", ".row2 { grid-template-columns: minmax(0,1fr)",
-                     ".entries { grid-template-columns: minmax(0,1fr)"):
-            assert frag in tail, f"≤340px 段缺兜底：{frag}"
+        for frag in (".quick { grid-template-columns: repeat(2",
+                     ".row2 { grid-template-columns: minmax(0,1fr)"):
+            assert frag in tail, f"≤300px 段缺兜底：{frag}"
+        assert ".entries { grid-template-columns: minmax(0,1fr)" not in tail, (
+            "≤300px 段不许把 .entries 收成单列（用户会只看到 1 列）")
 
     def test_charge_page_has_official_four_metrics(self):
         """★ 官方充电页 4 项指标：充电效率 / 充电功率 / 输入电流 / 输入电压。

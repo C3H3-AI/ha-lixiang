@@ -112,11 +112,13 @@ class TestAppHomeMobileBreakpoints:
           同时 480px 段**不能**再收 .row2/.entries（那正是"看到一列"的根因）。
         """
         s = _strip_comments(APP_HOME.read_text(encoding="utf-8"))
-        i = s.find("@container (max-width: 340px)")
-        assert i > 0, "缺 ≤340px 窄屏断点（阈值必须低于官方实测的 358px）"
+        # ★ 2026-10-28：340 → 300。340 会让「卡片在窄容器中」
+        #   （HA 桌面分栏/平板多列，容器常 ≤340px）掉成单列，用户反馈"只显示 1 列"。
+        i = s.find("@container (max-width: 300px)")
+        assert i > 0, "缺 ≤300px 窄屏断点（阈值必须低于官方实测的 358px）"
         seg = s[i:i + 600]
         assert "repeat(2,minmax(0,1fr))" in seg.replace(" ", ""), (
-            "≤340px 段里没有把 .quick 收成 2 列")
+            "≤300px 段里没有把 .quick 收成 2 列")
 
     def test_480_breakpoint_keeps_two_cards_side_by_side(self):
         """★ ≤480px 段里绝不能再收 .row2/.entries —— 官方手机宽度下两卡是并排的。
@@ -138,14 +140,19 @@ class TestAppHomeMobileBreakpoints:
         assert ".entries" not in rules, (
             "≤480px 里又在 .entries 上设了列数（会让手机宽度变一列）")
 
-    def test_narrow_breakpoint_covers_row2_and_entries(self):
-        """极窄（≤340px）才收 .row2 / .entries（单列堆叠）。"""
+    def test_narrow_breakpoint_covers_row2_only(self):
+        """极窄（≤300px）只收 .row2；.entries 永远两列。
+
+        ★ 2026-10-28：此前要求 .entries 也收单列 —— 这与官方 App 行为相反，
+          且导致「卡片在窄容器里」的用户只看到 1 列（车主反馈）。
+        """
         s = _strip_comments(APP_HOME.read_text(encoding="utf-8"))
-        i = s.find("@container (max-width: 340px)")
+        i = s.find("@container (max-width: 300px)")
         assert i > 0
         seg = s[i:i + 600]
-        assert ".row2" in seg and ".entries" in seg, (
-            "≤340px 段没覆盖 .row2 / .entries")
+        assert ".row2" in seg, "≤300px 段应覆盖 .row2（大卡叠起来）"
+        assert ".entries" not in seg, (
+            "≤300px 段不许动 .entries —— 官方任何手机宽度都是并排两列")
 
 
 class TestNoStrayBacktickInStyleTemplate:

@@ -1743,10 +1743,18 @@ const STYLE = `
        这条规则是隐藏功能能否生效的前提。 */
     .card[hidden], .entry[hidden], .q[hidden] { display:none !important; }
 
-    @container (max-width: 340px) {
+    /* ★ 2026-10-28 修「有些人入口只显示 1 列」：
+       原阈值 340px 太容易命中 —— 实测两种场景都会掉成单列：
+         ① 视口 ≤340px（iPhone SE 1 代 320px 等）
+         ② **卡片被放进 ≤340px 的容器**（HA 桌面端分栏 / 平板多列 / 窄侧边栏）
+            ← 桌面和平板上极易触发，这就是"有些人只看到 1 列"的主因
+       官方 App 在任何手机宽度下入口都是**并排两列**，
+       因此 .entries 一律保持两列（不再收单列）；
+       只有极窄（≤300px）才让 .row2（空调/位置大卡）叠起来，
+       否则两张大卡各占 130px 会挤爆。 */
+    @container (max-width: 300px) {
       .quick { grid-template-columns: repeat(2, minmax(0,1fr)); }
       .row2 { grid-template-columns: minmax(0,1fr); }
-      .entries { grid-template-columns: minmax(0,1fr); }
     }
 `;
 
