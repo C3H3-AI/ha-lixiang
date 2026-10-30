@@ -897,6 +897,17 @@ const STYLE = `
   .sentry .t { font-size:15px; }
   .sentry .s { font-size:12px; color:var(--lx-t3); margin-top:3px; }
   .sentry.on .t { color:var(--lx-blue); }
+  .sentry .tx { min-width:0; flex:1; }
+  /* 卡内一键开关（与页面顶部的开关同一语义；点击不冒泡到卡片导航） */
+  .sentry .ssw { flex:0 0 auto; width:38px; height:22px; border:none; padding:0;
+                 border-radius:11px; background:#D9DCE1; position:relative;
+                 cursor:pointer; transition:background .16s; }
+  .sentry .ssw i { position:absolute; top:2px; left:2px; width:18px; height:18px;
+                   border-radius:50%; background:#FFF; transition:transform .16s;
+                   box-shadow:0 1px 3px rgba(0,0,0,.18); }
+  .sentry .ssw.on { background:var(--lx-blue); }
+  .sentry .ssw.on i { transform:translateX(16px); }
+  .sentry .ssw:disabled { opacity:.5; cursor:default; }
 
   /* ★ 2026-10-28 入口区：**固定两列，卡片自适应缩放**（与官方 App 一致）。
      车主："App 在手机上显示两列，会自动缩放" —— 因此不按宽度加列。
@@ -1565,7 +1576,12 @@ class LixiangAppHome extends HTMLElement {
             </div>
             <div class="card sentry" id="c-sentry" role="button" tabindex="0">
               <img src="${__iconBase}/ic_home_sentry.png" alt="" onerror="this.style.visibility='hidden'">
-              <div><div class="t">哨兵模式</div><div class="s" id="v-sentry">—</div></div>
+              <div class="tx"><div class="t">哨兵模式</div><div class="s" id="v-sentry">—</div></div>
+              <!-- ★ 2026-10-28：卡片主体改为「进哨兵视频页」，但一键开关不能丢 ——
+                   卡内保留独立小开关（点击 stopPropagation，不触发导航）。 -->
+              <button type="button" class="ssw" id="sentry-sw" aria-label="切换哨兵模式">
+                <i></i>
+              </button>
             </div>
           </div>
         </div>
@@ -1920,21 +1936,36 @@ class LixiangAppHome extends HTMLElement {
       shotEl.addEventListener("click", shoot);
     }
 
-    // 哨兵卡：点击直接切换（可控制），键盘同样支持
+    // 哨兵卡：★ 2026-10-28 改为「点进去看哨兵视频」（车主："哨兵卡点进去"）。
+    //   开关挪到哨兵页顶部（那里有完整上下文），首页卡片作为纯入口。
     const senEl = this.querySelector("#c-sentry");
     if (senEl) {
-      const act = async () => {
-        const eid = this._eid("sentry");
-        if (!eid) { this._toast("哨兵模式未接入", "err"); return; }
-        if (!this._online()) { this._toast("车辆离线，操作不可用", "err"); return; }
-        const on = this._on(eid);
-        try {
-          await this._hass.callService("switch", on ? "turn_off" : "turn_on", { entity_id: eid });
-          this._toast(on ? "哨兵模式已关闭" : "哨兵模式已开启", "ok");
-        } catch (e) { this._toast("切换失败：" + ((e && e.message) || "未知"), "err"); }
-      };
-      this._a11y(senEl, "切换哨兵模式", act);
+      const act = () => go(nav.sentry || "/lixiang/sentry");
+      this._a11y(senEl, "查看哨兵视频", act);
       senEl.addEventListener("click", act);
+
+      // 卡内一键开关：切换哨兵，不触发上面的导航（stopPropagation）
+      const swEl = this.querySelector("#sentry-sw");
+      if (swEl) {
+        const toggle = async (e) => {
+          if (e) { e.preventDefault(); e.stopPropagation(); }
+          const eid = this._eid("sentry");
+          if (!eid) { this._toast("哨兵模式未接入", "err"); return; }
+          if (!this._online()) { this._toast("车辆离线，操作不可用", "err"); return; }
+          const on = this._on(eid);
+          try {
+            await this._hass.callService("switch", on ? "turn_off" : "turn_on",
+              { entity_id: eid });
+            this._toast(on ? "哨兵模式已关闭" : "哨兵模式已开启", "ok");
+          } catch (err) {
+            this._toast("切换失败：" + ((err && err.message) || "未知"), "err");
+          }
+        };
+        swEl.addEventListener("click", toggle);
+        swEl.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") toggle(e);
+        });
+      }
     }
     // ★ 2026-10-21：全部接完才算"已接线"（见函数开头说明）。
     this._navWired = true;
@@ -2414,6 +2445,11 @@ class LixiangAppHome extends HTMLElement {
 
     const sen = this._eid("sentry") ? this._on(this._eid("sentry")) : false;
     const senEl = q("#c-sentry"); if (senEl) senEl.className = "card sentry" + (sen ? " on" : "");
+    const swEl = q("#sentry-sw");
+    if (swEl) {
+      swEl.classList.toggle("on", !!sen);
+      swEl.setAttribute("aria-pressed", sen ? "true" : "false");
+    }
     q("#v-sentry").textContent = this._eid("sentry") ? (sen ? "已激活" : "未激活") : "未接入";
 
     // ★ 插电标识（对齐 App：插枪时才有充电桩/插枪提示）。

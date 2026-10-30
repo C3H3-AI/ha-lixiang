@@ -109,6 +109,26 @@ get_charge:
           min: 0
           max: 4
 
+get_file_urls:
+  name: 查询文件签名链接
+  description: >-
+    把 OSS 文件 key（filekey）换成有时效的签名下载链接（只读）。
+    哨兵视频/封面、驻车照片等都走这个换链。链接会过期，需按需重新换取。
+  fields:
+    file_keys:
+      name: 文件 key 列表
+      description: 逗号分隔的 filekey（哨兵视频的 videoFilekey / coverFilekey）
+      required: true
+      example: "vehicle/sentry/xxx.mp4,vehicle/sentry/xxx.jpg"
+      selector:
+        text:
+    vin:
+      name: VIN
+      description: 只处理该 VIN 的条目（留空 = 全部）
+      required: false
+      selector:
+        text:
+
 get_sentinel_videos:
   name: 查询哨兵视频事件列表
   description: >-

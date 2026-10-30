@@ -63,6 +63,7 @@ const PAGES = {
   task: "lixiang-task-page",
   ad: "lixiang-ad-page",
   bindings: "lixiang-bindings-card",
+  sentry: "lixiang-sentry-page",
 };
 
 /** 全部子卡片文件名（用于动态加载） */

@@ -727,6 +727,7 @@ SERVICE_GET_TRAVEL = "get_travel"
 SERVICE_GET_CHARGE = "get_charge"
 SERVICE_GET_SVM_PHOTO = "get_svm_photo"
 SERVICE_GET_SENTINEL_VIDEOS = "get_sentinel_videos"
+SERVICE_GET_FILE_URLS = "get_file_urls"
 SERVICE_CREATE_TASK = "create_task"
 SERVICE_GET_TASKS = "get_tasks"
 SERVICE_UPDATE_TASK = "update_task"
@@ -1104,6 +1105,52 @@ def _async_register_services(hass: HomeAssistant) -> None:
             except Exception as err:  # noqa: BLE001
                 _LOGGER.error("充电查询异常: %s", err)
                 result[entry.data.get(CONF_VIN) or eid] = {"error": str(err)}
+        return result
+
+    async def _handle_get_file_urls(call) -> ServiceResponse:
+        """OSS filekey → 签名 URL（只读，通用）。
+
+        参数：
+          · file_keys  必填，filekey 列表（或逗号分隔字符串）
+          · vin        可选，多车时指定
+
+        返回：``{vin: {"urls": {key: url}, "error"?: str}}``
+
+        用途：哨兵视频/封面、驻车照片等 OSS 对象都需要先换签名 URL
+        才能给浏览器加载（URL 有时效，故不缓存、按需换取）。
+        """
+        data = call.data or {}
+        keys = data.get("file_keys") or []
+        if isinstance(keys, str):
+            keys = [k.strip() for k in keys.split(",") if k.strip()]
+        keys = [str(k) for k in keys if k]
+        if not keys:
+            return {"error": "file_keys 不能为空"}
+        target_vin = data.get("vin")
+        result: dict = {}
+        for eid, d in (hass.data.get(DOMAIN) or {}).items():
+            api = (d or {}).get("li_api")
+            vin = (d or {}).get("vin") or getattr(api, "_vin", None)
+            if api is None or not vin:
+                continue
+            if target_vin and vin != target_vin:
+                continue
+            raw = await hass.async_add_executor_job(api.get_svm_photo_urls, keys)
+            code = raw.get("code")
+            if code not in (None, 0):
+                result[vin] = {"error": f"code={code} {raw.get('message') or raw.get('msg') or ''}".strip()}
+                continue
+            data_obj = raw.get("data")
+            urls = {}
+            if isinstance(data_obj, dict):
+                urls = data_obj.get("urls") or data_obj
+            elif isinstance(data_obj, list):
+                for item in data_obj:
+                    if isinstance(item, dict) and item.get("url"):
+                        urls[item.get("fileKey") or item.get("key") or ""] = item["url"]
+            result[vin] = {"urls": urls}
+        if not result:
+            result["error"] = "无可用条目（未登录或 vin 不匹配）"
         return result
 
     async def _handle_get_sentinel_videos(call) -> ServiceResponse:
@@ -1524,6 +1571,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
                                   supports_response=SupportsResponse.OPTIONAL)
     hass.services.async_register(DOMAIN, SERVICE_GET_SENTINEL_VIDEOS,
                                  _handle_get_sentinel_videos,
+                                 supports_response=SupportsResponse.OPTIONAL)
+    hass.services.async_register(DOMAIN, SERVICE_GET_FILE_URLS,
+                                 _handle_get_file_urls,
                                  supports_response=SupportsResponse.OPTIONAL)
     hass.services.async_register(DOMAIN, SERVICE_CREATE_TASK, _handle_create_task,
                                   supports_response=SupportsResponse.OPTIONAL)
