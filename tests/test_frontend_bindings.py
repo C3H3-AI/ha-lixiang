@@ -51,6 +51,8 @@ ALLOWED_SERVICES = {
     "lixiang_auto": {
         "wakeup", "refresh", "dump_ability", "get_travel", "get_charge",
         "get_svm_photo", "create_task", "get_tasks", "update_task", "delete_task",
+        # ★ 2026-10-28 哨兵视频页用：列表 + filekey 换签名链接
+        "get_sentinel_videos", "get_file_urls",
     },
 }
 

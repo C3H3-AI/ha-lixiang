@@ -37,7 +37,7 @@ APP = CARDS / "lixiang-app.js"
 #: 应与内部页面表一致的子卡片
 EXPECT_PAGES = {
     "app", "charge", "energy", "health", "setting", "scene", "climate",
-    "seat", "location", "vinfo", "task", "ad", "bindings",
+    "seat", "location", "vinfo", "task", "ad", "bindings", "sentry",
 }
 
 

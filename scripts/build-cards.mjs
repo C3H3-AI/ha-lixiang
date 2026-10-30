@@ -52,6 +52,7 @@ const ORDER = [
   "lixiang-location-page.js",
   "lixiang-task-page.js",
   "lixiang-ad-page.js",
+  "lixiang-sentry-page.js",
   "lixiang-bindings-card.js",
   "lixiang-overview-card.js",
   "lixiang-app.js",           // 外壳最后（它会引用各子卡片元素名）

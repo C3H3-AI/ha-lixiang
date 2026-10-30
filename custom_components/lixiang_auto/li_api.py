@@ -1874,7 +1874,7 @@ class LiApiClient:
         if isinstance(raw_events, dict):        # 容错：有的版本包一层
             raw_events = raw_events.get("events") or raw_events.get("list") or []
         events: list[dict] = []
-        for ev in (raw_events or [])[: max(0, limit)]:
+        for ev in (raw_events or []):
             if not isinstance(ev, dict):
                 continue
             vids = ev.get("videoList")
@@ -1883,12 +1883,20 @@ class LiApiClient:
                     vids = json.loads(vids) if vids else []
                 except (ValueError, TypeError):
                     vids = []
+            if not isinstance(vids, list):
+                vids = []
+            # 与 App 一致：列表只保留含视频的事件。
+            if not vids:
+                continue
             events.append({
                 "eventId": ev.get("eventId"),
                 "startTs": ev.get("uploadStartTs"),
                 "status": ev.get("uploadStatus"),
-                "videos": vids if isinstance(vids, list) else [],
+                "videos": vids,
             })
+            # limit 按过滤后的有效事件计数（与 App 的列表语义一致）。
+            if len(events) >= max(0, limit):
+                break
         return {"events": events, "count": len(events)}
 
     def get_svm_photo_urls(self, file_keys: list[str]) -> dict:
