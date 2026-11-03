@@ -85,18 +85,18 @@ data:
 | 服务列表里没有 create_task 等 | `__init__.py` / `services.yaml` 未部署 | 覆盖这两个文件并**重启 HA**（重载集成无效，Python 模块有 import 缓存） |
 | 创建/更新报 LiApiError | 服务端拒绝（参数/权限） | 读错误文本中的服务端响应；检查 conditionType/actionType 是否字典外编造 |
 | update 后字段"被改回" | 不会——除非没等自动刷新就看 | 等几秒（写后自动 invalidate+refresh）；仍异常则调 `lixiang_auto.refresh` |
-| 找不到任务开关实体 | v1.6.2 起已移除 | 不是故障；用 `update_task` 传 `config_id` + `enabled` 启停 |
+| 找不到任务开关实体 | v1.7 起已移除 | 不是故障；用 `update_task` 传 `config_id` + `enabled` 启停 |
 
 ## 部署文件清单（任务大师功能涉及）
 
 `li_api.py`（接口+build_task_payload）、`coordinator.py`（拉取/缓存/错误上浮）、
 `sensor.py`（列表传感器）、`__init__.py` + `services.yaml`
-（★ v1.6.2 起任务开关实体已移除，见下文「为什么不生成任务开关实体」）
+（★ v1.7 起任务开关实体已移除，见下文「为什么不生成任务开关实体」）
 （四个服务）。验证：`PYTHONUTF8=1 python -m pytest tests/ -q`（上游仓库，1136+ 通过）。
 
 更完整的请求/响应样例、端点与鉴权说明见 [references/schema.md](references/schema.md)。
 
-## 为什么不生成任务开关实体（v1.6.2 起）
+## 为什么不生成任务开关实体（v1.7 起）
 
 **曾经的实现**：按 `data["tasks"]` 为每个任务动态注册一个
 `switch.理想LX_<任务名>`，切换时 `payload = dict(task)` 后整条 `update_task` 回传。

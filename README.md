@@ -70,7 +70,7 @@
 - `sensor.任务大师` —— 只读汇总：任务总数、启用数、每个任务的名称/启停/条件动作摘要
 - 服务 `get_tasks` / `create_task` / `update_task` / `delete_task` —— 按需调用
 
-> **v1.6.2 起不再为每个任务生成启停开关实体。**
+> **v1.7 起不再为每个任务生成启停开关实体。**
 > 旧实体的启停走 `update-task` 全量回传，用的是集成缓存里的任务快照（10 分钟轮询），
 > 在 App 改完任务后再点 HA 开关会把旧快照覆盖回线上，冲掉 App 上的修改。
 > 要启停任务请用 `lixiang_auto.update_task`（只传 `config_id` + `enabled`），

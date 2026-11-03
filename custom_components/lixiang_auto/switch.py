@@ -287,7 +287,7 @@ async def _purge_legacy_task_switches(hass: HomeAssistant,
                                      config_entry: ConfigEntry) -> None:
     """清理历史遗留的任务大师单任务开关实体（★ 2026-11-03）。
 
-    v1.6.2 起不再生成 `switch.<任务名>`（原因见 setup 内注释：
+    v1.7 起不再生成 `switch.<任务名>`（原因见 setup 内注释：
     旧实现会用 10 分钟前的任务快照整条回传 update_task，冲掉 App 的修改）。
     但 HA 对「平台不再提供」的实体只标记 unavailable，不会从注册表删除 ——
     升级用户会留下一堆永远不可用的废实体。这里主动删掉它们。
