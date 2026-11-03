@@ -65,9 +65,16 @@
 
 ### 任务大师
 
-读取车机端的「任务大师」任务列表，支持创建、更新、删除任务，
-并根据车上的任务数量动态注册对应的启停开关。
-在 App 里新增任务后，HA 中的开关会自动出现。
+读取车机端的「任务大师」任务列表，支持创建、更新、删除、启停任务。
+
+- `sensor.任务大师` —— 只读汇总：任务总数、启用数、每个任务的名称/启停/条件动作摘要
+- 服务 `get_tasks` / `create_task` / `update_task` / `delete_task` —— 按需调用
+
+> **v1.6.2 起不再为每个任务生成启停开关实体。**
+> 旧实体的启停走 `update-task` 全量回传，用的是集成缓存里的任务快照（10 分钟轮询），
+> 在 App 改完任务后再点 HA 开关会把旧快照覆盖回线上，冲掉 App 上的修改。
+> 要启停任务请用 `lixiang_auto.update_task`（只传 `config_id` + `enabled`），
+> 它会先拉线上最新再只改该字段。
 
 ### 前端卡片
 
@@ -239,7 +246,7 @@ config/
 |---|---|
 | `lixiang_auto.get_tasks` | 查询任务列表 |
 | `lixiang_auto.create_task` | 创建任务 |
-| `lixiang_auto.update_task` | 更新任务（只传要改的字段）|
+| `lixiang_auto.update_task` | 更新/启停任务（只传要改的字段；先拉线上最新再合并，不会用旧快照覆盖）|
 | `lixiang_auto.delete_task` | 删除任务 |
 
 ### 车控排障

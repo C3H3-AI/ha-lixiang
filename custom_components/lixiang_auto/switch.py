@@ -283,6 +283,42 @@ SWITCHES = (
 )
 
 
+async def _purge_legacy_task_switches(hass: HomeAssistant,
+                                     config_entry: ConfigEntry) -> None:
+    """清理历史遗留的任务大师单任务开关实体（★ 2026-11-03）。
+
+    v1.6.2 起不再生成 `switch.<任务名>`（原因见 setup 内注释：
+    旧实现会用 10 分钟前的任务快照整条回传 update_task，冲掉 App 的修改）。
+    但 HA 对「平台不再提供」的实体只标记 unavailable，不会从注册表删除 ——
+    升级用户会留下一堆永远不可用的废实体。这里主动删掉它们。
+
+    只删本配置条目下、unique_id 含 `_task_` 的条目；`_task_master`
+    （任务大师汇总传感器）显式排除，绝不误删。
+    """
+    try:
+        from homeassistant.helpers import entity_registry as er
+    except ImportError:  # 极老版本兜底
+        return
+    reg = er.async_get(hass)
+    gone: list[str] = []
+    try:
+        for reg_entry in er.async_entries_for_config_entry(
+                reg, config_entry.entry_id):
+            uid = reg_entry.unique_id or ""
+            if "_task_" in uid and not uid.endswith("_task_master"):
+                gone.append(reg_entry.entity_id)
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("扫描历史任务开关失败: %s", err)
+        return
+    for eid in gone:
+        try:
+            reg.async_remove(eid)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("删除历史任务开关 %s 失败: %s", eid, err)
+    if gone:
+        _LOGGER.info("清理历史任务大师开关实体: %d 个", len(gone))
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -323,29 +359,26 @@ async def async_setup_entry(
         for spec in specs
     ])
 
-    # ★ 任务大师动态开关（2026-10-07）：随 data["tasks"] 增量注册；
-    #   任务删除 → 实体 available=False（保注册，不产生僵尸/丢历史）。
-    _task_seen: set[str] = set()
-
-    def _add_task_switches() -> None:
-        tasks = (coordinator.data or {}).get("tasks")
-        if not isinstance(tasks, list):
-            return
-        fresh = []
-        for t in tasks:
-            cid = t.get("configId") if isinstance(t, dict) else None
-            if cid and cid not in _task_seen:
-                _task_seen.add(cid)
-                fresh.append(LiTaskSwitch(
-                    coordinator, li_api, device_info, vin,
-                    cid, t.get("configName") or cid))
-        if fresh:
-            _LOGGER.info("注册任务大师开关: %d 个", len(fresh))
-            async_add_entities(fresh)
-
-    _add_task_switches()
-    config_entry.async_on_unload(
-        coordinator.async_add_listener(_add_task_switches))
+    # ★ 2026-11-03：任务大师「每任务一个启停开关」已**停止生成**。
+    #
+    #   原因（车主实测反馈 + 代码复核）：
+    #   1) 危害：本实体切换走 update-task **全量回传**，而 payload 取自
+    #      coordinator 的任务快照（TASK_POLL_INTERVAL_SECONDS = 600 秒）。
+    #      用户在 App 改完任务后若在 HA 点一下开关，会把最长 10 分钟前的
+    #      旧快照整条推回服务端 → **静默冲掉 App 上的修改**，表现为
+    #      「集成把 App 的任务大师搞坏了」。
+    #   2) 无用：启停单个任务在 App 里一步就能做，HA 自动化几乎不会去
+    #      开关一个任务；而几十条任务会生成几十个 switch 实体，
+    #      实体名还是中文任务名，把注册表塞满。
+    #
+    #   保留的部分：
+    #   · sensor.任务大师（只读汇总：任务数 + 每任务启停/摘要）
+    #   · 服务 get_tasks / create_task / update_task / delete_task（用户主动调用）
+    #
+    #   注：历史上注册过的 switch 实体会残留在实体注册表里（HA 对
+    #   「平台不再提供」的实体只转 unavailable，不会自动删），
+    #   因此下面主动清理一次，让升级用户也得到干净的实体列表。
+    await _purge_legacy_task_switches(hass, config_entry)
 
 
 class LiCarSwitch(CoordinatorEntity, SwitchEntity):
@@ -753,105 +786,13 @@ class LiCarSwitch(CoordinatorEntity, SwitchEntity):
         await self.coordinator.async_request_refresh()
 
 
-class LiTaskSwitch(CoordinatorEntity, SwitchEntity):
-    """任务大师单任务启停开关（2026-10-07，update-task 全量回传翻转 enabled）。
-
-    任务列表由 coordinator 拉取（data["tasks"]，条目含完整 taskValue）；
-    本实体按 configId 动态注册，任务被删除后实体转 unavailable（不删注册表）。
-    """
-
-    _attr_has_entity_name = True
-
-    def __init__(self, coordinator, li_api, device_info, vin: str,
-                 config_id: str, task_name: str) -> None:
-        super().__init__(coordinator)
-        self._api = li_api
-        self._config_id = config_id
-        self._attr_name = task_name or config_id
-        self._attr_icon = "mdi:format-list-checks"
-        self._rid = route_id_of_vin(vin)
-        self._attr_unique_id = f"{DOMAIN}_{self._rid}_task_{config_id}"
-        self._attr_device_info = device_info
-        self._optimistic: bool | None = None
-        self._optimistic_until: float = 0.0
-        self._last_result: dict | None = None
-
-    def _task(self) -> dict | None:
-        tasks = (self.coordinator.data or {}).get("tasks")
-        if not isinstance(tasks, list):
-            return None
-        for t in tasks:
-            if isinstance(t, dict) and t.get("configId") == self._config_id:
-                return t
-        return None
-
-    @property
-    def available(self) -> bool:
-        data = self.coordinator.data or {}
-        if not self.coordinator.last_update_success:
-            return False
-        # 列表已加载但此任务消失 → 已删除，实体不可用
-        if "tasks" in data and self._task() is None:
-            return False
-        return True
-
-    @property
-    def is_on(self) -> bool | None:
-        import time as _t
-        task = self._task()
-        cur = bool(task.get("enabled")) if task else None
-        if self._optimistic is not None:
-            if _t.monotonic() < self._optimistic_until and self._optimistic != cur:
-                return self._optimistic
-            self._optimistic = None
-            self._optimistic_until = 0.0
-        return cur
-
-    @property
-    def extra_state_attributes(self) -> dict:
-        from .sensor import _task_summary
-        task = self._task() or {}
-        attrs: dict = {
-            "config_id": self._config_id,
-            "automate": task.get("automate"),
-            "run_once": task.get("runOnce"),
-            "voice_execute": task.get("voiceExecute"),
-        }
-        tv = task.get("taskValue")
-        if isinstance(tv, dict) and tv:
-            attrs["summary"] = _task_summary(tv)
-        if self._last_result is not None:
-            attrs["last_command_result"] = self._last_result
-        return attrs
-
-    @require_control
-    async def async_turn_on(self, **kwargs: Any) -> None:
-        await self._set_enabled(True)
-
-    @require_control
-    async def async_turn_off(self, **kwargs: Any) -> None:
-        await self._set_enabled(False)
-
-    async def _set_enabled(self, enabled: bool) -> None:
-        """整条任务回传 update-task，仅翻转 enabled（与 App 行为一致）。"""
-        import time as _t
-        task = self._task()
-        if not task:
-            raise LiApiError("任务数据尚未加载（列表为空），请稍后再试")
-        payload = dict(task)
-        payload["enabled"] = enabled
-        try:
-            res = await self.hass.async_add_executor_job(
-                self._api.update_task, payload)
-            self._last_result = res
-            self._optimistic = enabled
-            self._optimistic_until = _t.monotonic() + OPTIMISTIC_TTL
-            _LOGGER.info("任务启停 %s → enabled=%s: %s",
-                         self._config_id, enabled, res)
-        except Exception as err:  # noqa: BLE001
-            self._optimistic = None
-            _LOGGER.error("任务启停失败 (%s): %s", self._config_id, err)
-            raise
-        if hasattr(self.coordinator, "invalidate_task_cache"):
-            self.coordinator.invalidate_task_cache()
-        await self.coordinator.async_request_refresh()
+# ★ 2026-11-03：原 LiTaskSwitch（任务大师单任务启停开关）已删除。
+#
+#   删除原因：它的启停实现是 payload = dict(task) 后整条 update_task 回传，
+#   而 task 取自 coordinator 缓存（TASK_POLL_INTERVAL_SECONDS = 600 秒）。
+#   用户在 App 改完任务、再在 HA 点开关 → 旧快照整条覆盖线上 →
+#   App 上的修改被静默冲掉。这是「集成把 App 任务大师搞坏」的直接原因。
+#
+#   需要启停/改任务时请用服务 lixiang_auto.update_task —— 它先 get_tasks
+#   拉线上最新，只覆盖传入字段，不会写回旧快照。
+#   任务总览仍由 sensor.任务大师 提供（只读，安全）。

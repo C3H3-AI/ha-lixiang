@@ -5,7 +5,7 @@
      本文件守卫：
        ① li_api 端点/令牌/方法不被误删或改错
        ② build_task_payload 与抓包 schema 逐字段一致（真实执行，不靠子串）
-       ③ 实体与服务接线存在（LiTaskSwitch / LiTaskMasterSensor / create_task）
+       ③ 实体与服务接线（LiTaskMasterSensor / create_task；任务开关实体已移除）
 """
 from __future__ import annotations
 
@@ -246,14 +246,54 @@ class TestBuildTaskPayload:
 # ---------------------------------------------------------------------------
 
 class TestEntitiesAndService:
-    def test_task_switch_class_and_dynamic_registration(self):
+    def test_task_switch_entities_are_not_generated(self):
+        """★ 2026-11-03：任务大师「每任务一个开关」实体必须不再生成。
+
+        危害链（车主实测 + 代码复核）：
+          实体启停 → payload = dict(task) → 整条 update_task 回传；
+          而 task 取自 coordinator 缓存（600 秒轮询）。
+          用户在 App 改完任务后若在 HA 点开关，旧快照整条覆盖线上，
+          App 的修改被静默冲掉 —— 表现为「集成把 App 任务大师搞坏」。
+
+        回归点：只要有人把 LiTaskSwitch 加回来 / 重新注册，
+        这条断言就会失败。
+        """
         s = _src("switch.py")
         tree = ast.parse(s)
         names = {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
-        assert "LiTaskSwitch" in names
-        assert "async_add_listener" in s, "缺少动态注册监听"
-        assert "invalidate_task_cache" in s, "启停后未失效任务缓存"
-        assert "update_task" in s, "开关未走 update_task"
+        assert "LiTaskSwitch" not in names, \
+            "LiTaskSwitch 已删除：它会用旧快照全量回传 update_task，冲掉 App 的修改"
+        # 不再有「随 tasks 增量注册实体」的监听
+        assert "_add_task_switches" not in s, "任务开关不应再有动态注册"
+        # 但注释必须留下原因，避免后人又加回来
+        assert "旧快照" in s and "update_task" in s, \
+            "switch.py 需保留删除原因说明（含 update_task 旧快照覆盖的机制）"
+
+    def test_legacy_task_switches_are_purged(self):
+        """升级用户注册表里的历史任务开关必须被主动清理。
+
+        HA 对「平台不再提供」的实体只转 unavailable，不会删注册表条目。
+        只停止生成而不清理，老用户会永久挂着一堆废实体。
+        """
+        s = _src("switch.py")
+        assert "_purge_legacy_task_switches" in s, "缺少历史实体清理"
+        assert "async_remove" in s, "清理必须真的从注册表删除"
+        # 必须排除汇总传感器，否则会把 sensor.任务大师 一并删掉
+        assert 'endswith("_task_master")' in s, \
+            "清理逻辑必须显式排除 _task_master（汇总传感器）"
+
+    def test_purge_helper_takes_params(self):
+        """清理函数必须接收 hass/config_entry（写成模块级无参函数会 NameError）。"""
+        import inspect as _inspect
+        s = _src("switch.py")
+        tree = ast.parse(s)
+        fn = next((n for n in ast.walk(tree)
+                   if isinstance(n, (ast.AsyncFunctionDef, ast.FunctionDef))
+                   and n.name == "_purge_legacy_task_switches"), None)
+        assert fn is not None, "找不到 _purge_legacy_task_switches"
+        params = [a.arg for a in fn.args.args]
+        assert "hass" in params and "config_entry" in params, \
+            f"清理函数需 (hass, config_entry)，实际 {params}"
 
     def test_task_sensor_class(self):
         s = _src("sensor.py")

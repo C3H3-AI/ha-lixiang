@@ -85,12 +85,45 @@ data:
 | 服务列表里没有 create_task 等 | `__init__.py` / `services.yaml` 未部署 | 覆盖这两个文件并**重启 HA**（重载集成无效，Python 模块有 import 缓存） |
 | 创建/更新报 LiApiError | 服务端拒绝（参数/权限） | 读错误文本中的服务端响应；检查 conditionType/actionType 是否字典外编造 |
 | update 后字段"被改回" | 不会——除非没等自动刷新就看 | 等几秒（写后自动 invalidate+refresh）；仍异常则调 `lixiang_auto.refresh` |
-| 任务开关点击报错 | 任务已被删除 | 开关 available=False 是设计行为；用 get_tasks 核实 |
+| 找不到任务开关实体 | v1.6.2 起已移除 | 不是故障；用 `update_task` 传 `config_id` + `enabled` 启停 |
 
 ## 部署文件清单（任务大师功能涉及）
 
 `li_api.py`（接口+build_task_payload）、`coordinator.py`（拉取/缓存/错误上浮）、
-`sensor.py`（列表传感器）、`switch.py`（动态任务开关）、`__init__.py` + `services.yaml`
+`sensor.py`（列表传感器）、`__init__.py` + `services.yaml`
+（★ v1.6.2 起任务开关实体已移除，见下文「为什么不生成任务开关实体」）
 （四个服务）。验证：`PYTHONUTF8=1 python -m pytest tests/ -q`（上游仓库，1136+ 通过）。
 
 更完整的请求/响应样例、端点与鉴权说明见 [references/schema.md](references/schema.md)。
+
+## 为什么不生成任务开关实体（v1.6.2 起）
+
+**曾经的实现**：按 `data["tasks"]` 为每个任务动态注册一个
+`switch.理想LX_<任务名>`，切换时 `payload = dict(task)` 后整条 `update_task` 回传。
+
+**为什么要删**：
+
+1. **会冲掉 App 的修改（主要）**
+   `payload` 取自 coordinator 的任务快照，而 `TASK_POLL_INTERVAL_SECONDS = 600`（10 分钟）。
+   用户在 App 改完任务（改条件/动作/名字）后，若在 HA 点了某个任务开关，
+   集成会把**最长 10 分钟前的旧快照**整条推回服务端 → App 上的修改被静默覆盖。
+   车主反馈的「集成导致 App 任务大师无法正常使用」就是这个。
+
+2. **本来就没用**
+   启停单个任务在 App 里一步就能做；HA 自动化几乎不会去开关一个任务。
+   而几十条任务会生成几十个 switch 实体，名字还是中文任务名，把注册表塞满。
+
+**保留了什么**：
+- `sensor.任务大师` —— 只读汇总，能看到任务数/启停/条件动作摘要，无害
+- 四个服务 —— 用户主动调用
+- `update_task` 的实现是「先 `get_tasks` 拉线上最新 → 只覆盖传入字段」，
+  不会写回旧快照，因此用它启停任务是安全的：
+  ```yaml
+  service: lixiang_auto.update_task
+  data:
+    config_id: "xxx"
+    enabled: false
+  ```
+
+**回归保护**：`tests/test_task_master.py::test_task_switch_entities_are_not_generated`
+断言 `LiTaskSwitch` 类与 `_add_task_switches` 都不存在 —— 有人加回来就会红。
