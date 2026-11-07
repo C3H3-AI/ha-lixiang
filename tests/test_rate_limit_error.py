@@ -29,16 +29,38 @@ def _src() -> str:
     return CF.read_text(encoding="utf-8")
 
 
-def test_429_maps_to_rate_limited():
-    """源码里必须有 429 分支且赋值为 rate_limited。"""
+def test_429_routes_to_browser_login():
+    """429 必须【转浏览器辅助登录】，而不是报错。
+
+    2026-11-07 实测：/login 被限流时连「设备是否需要短信」都判断不出来。
+    只报错会把用户堵死在门口（此前落到 unknown，显示「未知错误」，
+    连浏览器登录页都进不去）。浏览器 H5 链路（/api/challenge → 滑块 →
+    短信 → challenge_token）不依赖 /login，所以限流时应转过去。
+    """
     s = _src()
-    assert '429' in s, "config_flow 未识别 429"
-    assert 'rate_limited' in s, "429 未映射到 rate_limited"
-    # 429 分支必须在 unknown 的 else 之前（顺序敏感）
+    assert '"429" in msg' in s, "config_flow 未识别 429"
     i429 = s.find('"429" in msg')
     ielse = s.rfind('errors["base"] = "unknown"')
     assert i429 != -1, "找不到 429 判定"
     assert i429 < ielse, "429 分支在 unknown 之后，永远命中不到"
+    # 取到下一个 elif 为止（分支里有长注释，固定窗口会截断）
+    _end = s.find("elif any(k in msg", i429)
+    seg = s[i429:_end if _end != -1 else i429 + 2000]
+    assert "async_step_browser()" in seg, "429 分支未转浏览器辅助登录"
+    assert "_skip_login_probe = True" in seg, "429 分支未设置跳过探测标志"
+
+
+def test_429_skips_trust_probe_loop():
+    """转 browser 后必须跳过 7 次 try_login 探测，否则每次重试都撞 429，
+    限流窗口被无限续期，用户永远等不到解除。"""
+    s = _src()
+    assert "_RETRY_GAPS" in s, "找不到探测循环"
+    i = s.find("_skip_login_probe")
+    j = s.find("_RETRY_GAPS")
+    assert i != -1, "browser 步骤未读取 _skip_login_probe"
+    assert i < j, "跳过判断必须在探测循环之前"
+    seg = s[i:j]
+    assert "getattr(self" in seg and "_skip_login_probe" in seg
 
 
 def test_rate_limited_message_order():
