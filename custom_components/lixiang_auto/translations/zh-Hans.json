@@ -89,7 +89,8 @@
       "password_too_long": "密码太长（最多 64 位）",
       "invalid_vin": "VIN 格式不正确（应为 17 位，不含字母 I / O / Q）",
       "password_required": "切换登录身份需要填写密码",
-      "identity_derive_failed": "签名身份派生失败，请稍后重试（已保留原配置）"
+      "identity_derive_failed": "签名身份派生失败，请稍后重试（已保留原配置）",
+      "rate_limited": "登录请求过于频繁，已被理想服务器限流。这不是密码错误，请等待 10-30 分钟后重试。"
     },
     "abort": {
       "already_configured": "该账号已配置（如需多账号请用不同手机号）",

@@ -278,6 +278,20 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return await self.async_step_browser()
                 if "401" in msg:
                     errors["base"] = "invalid_auth"
+                elif "429" in msg or "Too Many Requests" in msg:
+                    # ★ 2026-11-07：登录接口被限流（login:login:429）。
+                    #   关键：此时 /login 连「设备是否需要短信验证」都判断不出来，
+                    #   所以不能只报错 —— 那会把用户堵死在门口（此前落到 unknown，
+                    #   显示「未知错误」，连浏览器登录页都进不去）。
+                    #   浏览器辅助登录走的是 H5 挑战链路（/api/challenge → 滑块 →
+                    #   短信 → challenge_token），不依赖 /login，
+                    #   因此限流时直接转过去，用户仍能完成登录。
+                    _LOGGER.info("登录接口限流(429)，转浏览器辅助登录绕过 /login")
+                    # ★ 必须同时跳过 browser 步骤里的信任探测：
+                    #   那里有 7 次 try_login 重试（[1,2,3,5,5,8,10] 秒），
+                    #   每次都会再撞 /login 的 429，把限流窗口无限续期。
+                    self._skip_login_probe = True
+                    return await self.async_step_browser()
                 elif any(k in msg for k in ("idps", "auth", "devices")):
                     errors["base"] = "cannot_connect"
                 else:
@@ -388,16 +402,22 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         _RETRY_GAPS = [1, 2, 3, 5, 5, 8, 10]
 
         ok = False
-        for _i, _gap in enumerate(_RETRY_GAPS):
-            try:
-                ok = await self.hass.async_add_executor_job(
-                    try_login, phone, password, device_id, app_type)
-            except Exception as err:  # noqa: BLE001
-                _LOGGER.debug("检测登录异常: %s", err)
-                ok = False
+        # ★ 2026-11-07：若上游已知 /login 被 429 限流，跳过这 7 次探测。
+        #   否则每次重试都撞一次限流，窗口被不断续期，用户永远等不到解除。
+        #   浏览器 H5 登录不依赖 /login，跳过后仍可正常走完滑块 + 短信。
+        if getattr(self, "_skip_login_probe", False):
+            _LOGGER.info("跳过信任探测（/login 已被限流，避免续期限流窗口）")
+        else:
+            for _i, _gap in enumerate(_RETRY_GAPS):
+                try:
+                    ok = await self.hass.async_add_executor_job(
+                        try_login, phone, password, device_id, app_type)
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.debug("检测登录异常: %s", err)
+                    ok = False
 
-            if ok:
-                break
+                if ok:
+                    break
 
             if _i < len(_RETRY_GAPS) - 1:
                 _LOGGER.info(
