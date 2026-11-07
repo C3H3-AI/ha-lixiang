@@ -278,6 +278,11 @@ class LiCarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     return await self.async_step_browser()
                 if "401" in msg:
                     errors["base"] = "invalid_auth"
+                elif "429" in msg or "Too Many Requests" in msg:
+                    # ★ 2026-11-07：登录接口限流。此前落到 unknown，用户只看到
+                    #   「未知错误」，完全不知道是"太频繁、等一会"。实测来源：
+                    #   login:login:429:{"status":429,"error":"Too Many Requests"}
+                    errors["base"] = "rate_limited"
                 elif any(k in msg for k in ("idps", "auth", "devices")):
                     errors["base"] = "cannot_connect"
                 else:

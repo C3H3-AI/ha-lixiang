@@ -89,7 +89,8 @@
       "password_too_long": "Password too long (at most 64 characters)",
       "invalid_vin": "Invalid VIN (must be 17 characters, excluding I / O / Q)",
       "password_required": "切换登录身份需要填写密码",
-      "identity_derive_failed": "签名身份派生失败，请稍后重试（已保留原配置）"
+      "identity_derive_failed": "签名身份派生失败，请稍后重试（已保留原配置）",
+      "rate_limited": "Login was rate limited by Li Auto. This is not a wrong password — please wait 10-30 minutes and try again."
     },
     "abort": {
       "already_configured": "This account is already configured (use a different phone number for a second account)",
