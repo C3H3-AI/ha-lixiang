@@ -100,7 +100,7 @@ class LiCarClimate(CoordinatorEntity, ClimateEntity):
     _attr_has_entity_name = True
     _attr_name = "空调"
     _attr_icon = "mdi:air-conditioner"
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_min_temp = MIN_TEMP
     _attr_max_temp = MAX_TEMP
     _attr_target_temperature_step = TARGET_STEP
@@ -173,7 +173,7 @@ class LiCarClimate(CoordinatorEntity, ClimateEntity):
         # 运行中: 优先用上次下发的模式, 否则按温差推断
         if self._optimistic_mode and self._optimistic_mode != HVACMode.OFF:
             return self._optimistic_mode
-        inside, target = self._sig(KEY_INSIDE_TEMP), self.target_temperature
+        inside, target = self._sig(KEY_INSIDE_TEMP), self.native_target_temperature
         try:
             if inside is not None and target is not None:
                 return (HVACMode.COOL if float(inside) > float(target)
@@ -183,7 +183,7 @@ class LiCarClimate(CoordinatorEntity, ClimateEntity):
         return HVACMode.COOL
 
     @property
-    def current_temperature(self) -> float | None:
+    def native_current_temperature(self) -> float | None:
         """车内温度."""
         val = self._sig(KEY_INSIDE_TEMP)
         try:
@@ -192,7 +192,7 @@ class LiCarClimate(CoordinatorEntity, ClimateEntity):
             return None
 
     @property
-    def target_temperature(self) -> float | None:
+    def native_target_temperature(self) -> float | None:
         """设定温度.
 
         ★ 2026-09-24 修复：乐观更新带 TTL
@@ -240,13 +240,13 @@ class LiCarClimate(CoordinatorEntity, ClimateEntity):
             await self.async_turn_off()
             return
         # 开空调 + 设定温度一并下发
-        temp = self.target_temperature or DEFAULT_TEMP
+        temp = self.native_target_temperature or DEFAULT_TEMP
         await self._send_ac_on(float(temp), mode=hvac_mode)
 
     @require_control
     async def async_turn_on(self, **kwargs: Any) -> None:
         temp = kwargs.get(ATTR_TEMPERATURE)
-        await self._send_ac_on(float(temp) if temp is not None else (self.target_temperature or DEFAULT_TEMP))
+        await self._send_ac_on(float(temp) if temp is not None else (self.native_target_temperature or DEFAULT_TEMP))
 
     @require_control
     async def async_turn_off(self, **kwargs: Any) -> None:
